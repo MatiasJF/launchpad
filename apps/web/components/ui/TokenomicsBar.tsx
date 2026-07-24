@@ -1,4 +1,4 @@
-import type { Allocation } from '../../lib/seed';
+import type { Allocation } from '../../lib/types';
 
 const COLORS = ['var(--c-gold)', 'var(--c-teal)', 'var(--c-info)', '#8b7bd8', 'var(--c-muted)'];
 

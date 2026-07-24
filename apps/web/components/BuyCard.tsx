@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { SaleCardVM } from '../lib/seed';
+import type { SaleCardVM } from '../lib/types';
 import { Button, StatusPill } from './ui';
 import { Countdown } from './ui/Countdown';
 import { ShieldCheck } from './ui/icons';

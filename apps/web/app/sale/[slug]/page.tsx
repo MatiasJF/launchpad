@@ -1,16 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { SEED_SALES, getSaleBySlug } from '../../../lib/seed';
+import { getSaleVMBySlug } from '../../../lib/data';
 import { SiteHeader } from '../../../components/SiteHeader';
 import { SiteFooter } from '../../../components/SiteFooter';
 import { BuyCard } from '../../../components/BuyCard';
 import { StatusPill } from '../../../components/ui';
 import { TokenomicsBar } from '../../../components/ui/TokenomicsBar';
 
-export function generateStaticParams() {
-  return SEED_SALES.map((s) => ({ slug: s.slug }));
-}
+export const dynamic = 'force-dynamic';
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -32,7 +30,7 @@ function Detail({ label, value }: { label: string; value: string }) {
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const s = getSaleBySlug(slug);
+  const s = await getSaleVMBySlug(slug);
   if (!s) notFound();
 
   return (

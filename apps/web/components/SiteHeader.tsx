@@ -18,13 +18,17 @@ export function SiteHeader() {
           BSV Launchpad
         </a>
         <nav className="ml-2 hidden gap-1.5 sm:flex">
-          {['Explore', 'Projects', 'Docs'].map((label, i) => (
+          {[
+            { label: 'Explore', href: '/#explore' },
+            { label: 'Submit', href: '/submit' },
+            { label: 'Docs', href: '#' },
+          ].map((l) => (
             <a
-              key={label}
-              href={i === 0 ? '/#explore' : '#'}
+              key={l.label}
+              href={l.href}
               className="rounded-md px-3 py-2 text-sm font-medium text-muted transition hover:bg-elevated hover:text-fg"
             >
-              {label}
+              {l.label}
             </a>
           ))}
         </nav>

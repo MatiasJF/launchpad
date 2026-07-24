@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { SaleStatus } from '@launchpad/core';
-import { SEED_SALES } from '../lib/seed';
+import type { SaleCardVM } from '../lib/types';
 import { ProjectCard } from './ProjectCard';
 
 const FILTERS: { key: 'all' | SaleStatus; label: string }[] = [
@@ -12,9 +12,9 @@ const FILTERS: { key: 'all' | SaleStatus; label: string }[] = [
   { key: 'finalized', label: 'Finalized' },
 ];
 
-export function ExploreSection() {
+export function ExploreSection({ sales }: { sales: SaleCardVM[] }) {
   const [active, setActive] = useState<'all' | SaleStatus>('all');
-  const items = active === 'all' ? SEED_SALES : SEED_SALES.filter((s) => s.status === active);
+  const items = active === 'all' ? sales : sales.filter((s) => s.status === active);
 
   return (
     <section id="explore" className="mx-auto max-w-[1120px] px-6 pb-20 pt-10">
@@ -31,11 +31,15 @@ export function ExploreSection() {
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-[18px]">
-        {items.map((s) => (
-          <ProjectCard key={s.slug} s={s} />
-        ))}
-      </div>
+      {items.length === 0 ? (
+        <p className="rounded-lg border border-line bg-surface p-8 text-center text-muted">No sales in this view yet.</p>
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-[18px]">
+          {items.map((s) => (
+            <ProjectCard key={s.slug} s={s} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

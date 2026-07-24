@@ -137,3 +137,10 @@ Append-only; newest at the bottom. Template per entry:
 - **Options:** (a) `@bsv/sdk` `WalletClient('auto')` · (b) a custom substrate/integration.
 - **Decision:** (a) `WalletClient('auto')` in `packages/bsv/src/wallet` (probes `window.CWI` + local wallet substrates); non-custodial — keys stay in the user's wallet. The SDK is **lazy-loaded** in the web app on connect to keep the initial bundle light (~100 kB deferred).
 - **Consequences:** standard BRC-100 flow (`waitForAuthentication` → `getPublicKey` → `getNetwork`); requires a running BRC-100 wallet to exercise end-to-end.
+
+## ADR-020 · Admin auth · Accepted · 2026-07-24
+
+- **Context:** Listings need an admin approval gate (ADR-007); this resolves the open "BRC-100 identity vs simple credential" question.
+- **Options:** (a) BRC-100 identity allowlist · (b) dev-grade admin-secret cookie · (c) full auth provider.
+- **Decision:** (b) A server-verified `ADMIN_SECRET` (env) that sets an httpOnly `admin_session` cookie; server actions check it. **Placeholder, not production security.**
+- **Consequences:** unblocks the approval flow now; revisit with BRC-100 identity or a real auth provider before public launch.

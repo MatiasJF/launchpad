@@ -1,0 +1,91 @@
+'use server';
+
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
+import { prisma } from '@launchpad/db';
+import { ADMIN_COOKIE, isAdmin } from './auth';
+
+function field(form: FormData, key: string): string {
+  return String(form.get(key) ?? '').trim();
+}
+
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/** Public submission — creates a pending project awaiting admin approval. */
+export async function createProject(form: FormData): Promise<void> {
+  const name = field(form, 'name');
+  const ticker = field(form, 'ticker');
+  if (!name || !ticker) redirect('/submit?error=missing');
+
+  const slug = slugify(name);
+  const existing = await prisma.project.findUnique({ where: { slug } });
+  if (existing) redirect('/submit?error=slug');
+
+  const issuer = await prisma.account.upsert({
+    where: { identityPubkey: 'seed-issuer' },
+    update: {},
+    create: { identityPubkey: 'seed-issuer', role: 'issuer' },
+  });
+
+  await prisma.project.create({
+    data: {
+      ownerId: issuer.id,
+      slug,
+      name,
+      tagline: field(form, 'blurb'),
+      description: field(form, 'about'),
+      status: 'pending',
+      tokens: {
+        create: {
+          name,
+          ticker,
+          decimals: 0,
+          totalSupply: BigInt(field(form, 'totalSupply') || '0'),
+          allocations: JSON.stringify([{ label: 'Public sale', pct: 100 }]),
+          sales: {
+            create: {
+              type: 'instant',
+              priceSats: BigInt(field(form, 'priceSats') || '0'),
+              allocationForSale: BigInt(field(form, 'publicAllocation') || '0'),
+              status: 'scheduled',
+            },
+          },
+        },
+      },
+    },
+  });
+
+  revalidatePath('/admin');
+  redirect('/submit?ok=1');
+}
+
+export async function adminLogin(form: FormData): Promise<void> {
+  const secret = field(form, 'secret');
+  if (secret && secret === process.env.ADMIN_SECRET) {
+    const store = await cookies();
+    store.set(ADMIN_COOKIE, 'ok', { httpOnly: true, sameSite: 'lax', path: '/' });
+  }
+  redirect('/admin');
+}
+
+export async function adminLogout(): Promise<void> {
+  const store = await cookies();
+  store.delete(ADMIN_COOKIE);
+  redirect('/admin');
+}
+
+export async function setProjectStatus(form: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const id = field(form, 'id');
+  const status = field(form, 'status');
+  if (!id || !status) return;
+  await prisma.project.update({ where: { id }, data: { status } });
+  revalidatePath('/admin');
+  revalidatePath('/');
+}

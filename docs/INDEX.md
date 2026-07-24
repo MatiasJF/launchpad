@@ -21,7 +21,12 @@ present, not implemented.
   → `packages/core/src/entities`
 - Sale state machine (instant | escrow) → `packages/core/src/sale` _(stub)_
 - Prisma schema → `packages/db/prisma/schema.prisma`
-- Prisma client export → `packages/db/src/index.ts`
+- Prisma client (singleton) → `packages/db/src/index.ts`
+- Seed script → `packages/db/prisma/seed.ts`
+- DB reads → view models → `apps/web/lib/data.ts` (listSales, getSaleVMBySlug)
+- View-model types → `apps/web/lib/types.ts`
+- Server actions (submit / approve / admin login) → `apps/web/lib/actions.ts`
+- Admin gate → `apps/web/lib/auth.ts`
 
 ## BSV / on-chain
 
@@ -35,7 +40,8 @@ present, not implemented.
 - Landing + explore → `apps/web/app/page.tsx` · `apps/web/components/ExploreSection.tsx`
 - Project / sale detail → `apps/web/app/sale/[slug]/page.tsx`
 - Buy card (UI) → `apps/web/components/BuyCard.tsx`
-- Admin: create / approve → `apps/web/app/(admin)` _(planned)_
+- Submit a project → `apps/web/app/submit/page.tsx`
+- Admin approval → `apps/web/app/admin/page.tsx`
 - Backend API (sequence/settle) → `apps/web/app/api` _(planned)_
 
 ## Design

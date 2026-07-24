@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
-import type { SaleCardVM } from '../lib/seed';
+import type { SaleCardVM } from '../lib/types';
 import { StatusPill } from './ui';
 import { Countdown } from './ui/Countdown';
 
@@ -53,10 +53,9 @@ export function ProjectCard({ s }: { s: SaleCardVM }) {
           {s.countdown ? (
             <Countdown {...s.countdown} />
           ) : (
-            <div className="flex flex-col gap-1 text-right">
-              <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Holders</span>
-              <span className="font-mono text-base font-semibold tabular-nums text-fg">{s.holders ?? '—'}</span>
-            </div>
+            <span className="font-mono text-xs text-faint">
+              {s.status === 'finalized' ? 'Fully subscribed' : 'Closed'}
+            </span>
           )}
         </div>
       </div>

@@ -3,8 +3,16 @@ import { SiteFooter } from '../components/SiteFooter';
 import { ExploreSection } from '../components/ExploreSection';
 import { Button, StatTile } from '../components/ui';
 import { ArrowRight, ShieldCheck } from '../components/ui/icons';
+import { listSales } from '../lib/data';
 
-export default function Home() {
+export const dynamic = 'force-dynamic';
+
+export default async function Home() {
+  const sales = await listSales();
+  const live = sales.filter((s) => s.status === 'live').length;
+  const raised = sales.reduce((sum, s) => sum + Math.round((s.soldPct / 100) * s.publicAllocation) * s.priceSats, 0);
+  const raisedFmt = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(raised);
+
   return (
     <>
       <SiteHeader />
@@ -28,14 +36,14 @@ export default function Home() {
           </Button>
         </div>
         <div className="mt-11 flex flex-wrap gap-10 border-t border-line pt-7">
-          <StatTile label="Live sales" value="2" />
-          <StatTile label="Raised (sats)" value="48.2M" />
-          <StatTile label="Backers" value="1,204" />
+          <StatTile label="Live sales" value={String(live)} />
+          <StatTile label="Raised (sats)" value={raisedFmt} />
+          <StatTile label="Listings" value={String(sales.length)} />
           <StatTile label="Network" value="Mainnet" />
         </div>
       </section>
 
-      <ExploreSection />
+      <ExploreSection sales={sales} />
 
       <SiteFooter />
     </>

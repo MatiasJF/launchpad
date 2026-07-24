@@ -4,9 +4,10 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 
 ## Current phase
 
-**P1 — Wallet + read path.** Browse UI complete (WEB-001) + wallet connect
-implemented (BSV-001, `WalletClient 'auto'`). Tailwind v4 + navy palette.
-Remaining: exercise wallet vs a running BSV Desktop; wire Prisma reads (DB-002).
+**P1 done; P2 started.** Explore + sale pages now read from **SQLite** (DB-002 ✅,
+verified in-browser). Admin-gated project **submit + approval** flow is live
+(ADMIN-001 ✅). Wallet connect done (BSV-001). Tailwind v4 + navy palette.
+Next: STAS issuance on mainnet (BSV-002).
 
 _P0 — Foundation & Knowledge Base: ✅ Complete (commit `d28a719`). Scaffold built,
 migration applied, verified by `prisma validate`, `core`/`bsv`/`db` typecheck,
@@ -30,12 +31,12 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 
 - `●` BSV-001  BRC-100 connect (WalletClient 'auto'); identity + balance in header — verify vs a running wallet
 - `●` WEB-001  Public browse: landing + explore + project/sale detail (read-only, seed data)
-- `○` DB-002   Seed script → SQLite; swap explore/sale from seed to Prisma reads
+- `●` DB-002   Seed script → SQLite; explore/sale read via Prisma (dynamic pages)
 - `●` WEB-002  Design system + component patterns from Mobbin → `docs/DESIGN.md`
 
 **P2 · Admin-gated issuance** _(backlog)_
 
-- `○` ADMIN-001  Auth gate + admin approval flow
+- `●` ADMIN-001  Submit form → pending project; admin-secret gate; approve/reject (ADR-020)
 - `○` BSV-002    STAS issuance tx on mainnet; split public allocation to pool
 
 **P3 · L0 instant swap (MVP)** _(backlog)_
@@ -49,4 +50,4 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 
 ## Open questions
 
-- Admin auth: BRC-100 identity vs simple credential — decide in P2 (ADMIN-001).
+- _(resolved)_ Admin auth → dev-grade admin-secret cookie (ADR-020); revisit for production.

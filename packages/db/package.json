@@ -8,9 +8,13 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "scripts": {
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
+    "seed": "prisma db seed",
     "studio": "prisma studio",
     "typecheck": "tsc --noEmit"
   },
@@ -19,6 +23,7 @@
   },
   "devDependencies": {
     "prisma": "^5.20.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.6.3"
   }
 }
