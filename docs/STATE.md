@@ -4,9 +4,9 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 
 ## Current phase
 
-**P1 — Wallet + read path.** In progress. Tailwind v4 + navy palette. Browse UI
-complete (WEB-001 ●): landing, explore, and project/sale detail pages on seed
-data. Next: wire Prisma reads (DB-002) + BSV-001 wallet connect.
+**P1 — Wallet + read path.** Browse UI complete (WEB-001) + wallet connect
+implemented (BSV-001, `WalletClient 'auto'`). Tailwind v4 + navy palette.
+Remaining: exercise wallet vs a running BSV Desktop; wire Prisma reads (DB-002).
 
 _P0 — Foundation & Knowledge Base: ✅ Complete (commit `d28a719`). Scaffold built,
 migration applied, verified by `prisma validate`, `core`/`bsv`/`db` typecheck,
@@ -28,7 +28,7 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 
 **P1 · Wallet + read path** _(backlog)_
 
-- `○` BSV-001  BRC-100 connect via BSV Desktop; show identity + balance
+- `●` BSV-001  BRC-100 connect (WalletClient 'auto'); identity + balance in header — verify vs a running wallet
 - `●` WEB-001  Public browse: landing + explore + project/sale detail (read-only, seed data)
 - `○` DB-002   Seed script → SQLite; swap explore/sale from seed to Prisma reads
 - `●` WEB-002  Design system + component patterns from Mobbin → `docs/DESIGN.md`

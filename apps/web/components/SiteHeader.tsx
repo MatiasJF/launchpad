@@ -1,5 +1,5 @@
-import { Button } from './ui';
-import { Bolt, Wallet } from './ui/icons';
+import { Bolt } from './ui/icons';
+import { WalletButton } from './WalletButton';
 
 export function SiteHeader() {
   return (
@@ -21,7 +21,7 @@ export function SiteHeader() {
           {['Explore', 'Projects', 'Docs'].map((label, i) => (
             <a
               key={label}
-              href={i === 0 ? '#explore' : '#'}
+              href={i === 0 ? '/#explore' : '#'}
               className="rounded-md px-3 py-2 text-sm font-medium text-muted transition hover:bg-elevated hover:text-fg"
             >
               {label}
@@ -29,9 +29,7 @@ export function SiteHeader() {
           ))}
         </nav>
         <span className="flex-1" />
-        <Button variant="secondary">
-          <Wallet /> Connect wallet
-        </Button>
+        <WalletButton />
       </div>
     </header>
   );

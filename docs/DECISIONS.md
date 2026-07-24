@@ -130,3 +130,10 @@ Append-only; newest at the bottom. Template per entry:
 - **Options:** (a) hand-rolled CSS classes · (b) Tailwind v4 with tokens mapped via `@theme` · (c) CSS-in-JS.
 - **Decision:** (b) Tailwind CSS v4. Design tokens stay CSS variables on `:root` (theme-switchable) and are exposed to Tailwind via `@theme inline`, so `docs/DESIGN.md` remains the source of truth and utilities (`bg-surface`, `text-gold`) are theme-aware. Repeated primitives live in a small `@layer components` block.
 - **Consequences:** idiomatic utility styling, dark/light via token overrides, shadcn/ui-compatible; `apps/web/postcss.config.mjs` wires `@tailwindcss/postcss`.
+
+## ADR-019 · Wallet connection · Accepted · 2026-07-24
+
+- **Context:** Users must connect a BRC-100 wallet (BSV Desktop) for identity, balance, and later signing.
+- **Options:** (a) `@bsv/sdk` `WalletClient('auto')` · (b) a custom substrate/integration.
+- **Decision:** (a) `WalletClient('auto')` in `packages/bsv/src/wallet` (probes `window.CWI` + local wallet substrates); non-custodial — keys stay in the user's wallet. The SDK is **lazy-loaded** in the web app on connect to keep the initial bundle light (~100 kB deferred).
+- **Consequences:** standard BRC-100 flow (`waitForAuthentication` → `getPublicKey` → `getNetwork`); requires a running BRC-100 wallet to exercise end-to-end.

@@ -28,7 +28,7 @@ present, not implemented.
 - STAS issuance → `packages/bsv/src/issue` _(stub)_
 - Settlement (build/broadcast/ARC) → `packages/bsv/src/settle` _(stub)_
 - SPV verification → `packages/bsv/src/spv` _(stub)_
-- BRC-100 wallet connection → `packages/bsv/src/wallet` _(stub)_
+- BRC-100 wallet connection → `packages/bsv/src/wallet` (WalletClient) · UI `apps/web/components/WalletButton.tsx`
 
 ## App
 
@@ -43,6 +43,6 @@ present, not implemented.
 - Design system & tokens → `docs/DESIGN.md`
 - Tailwind v4 theme + tokens → `apps/web/app/globals.css` · `apps/web/postcss.config.mjs`
 - UI primitives → `apps/web/components/ui` (Button, Card, StatTile, StatusPill, Countdown, TokenomicsBar, icons)
-- Page components → `apps/web/components` (SiteHeader, SiteFooter, ProjectCard, ExploreSection, BuyCard)
+- Page components → `apps/web/components` (SiteHeader, SiteFooter, ProjectCard, ExploreSection, BuyCard, WalletButton)
 - Seed card data → `apps/web/lib/seed.ts` (getSaleBySlug)
 - UI pattern reference → Mobbin · `api.mobbin.com/mcp` _(MCP connected)_

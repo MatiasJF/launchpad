@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@bsv/sdk": "^2.1.9",
     "@launchpad/core": "workspace:*"
   },
   "devDependencies": {
