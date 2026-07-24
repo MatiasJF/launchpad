@@ -1,0 +1,458 @@
+<title>BSV Launchpad — Strategy & Roadmap</title>
+<style>
+  :root {
+    /* neutrals — blue-biased slate, chosen not defaulted */
+    --paper:   #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #eef0f4;
+    --ink:     #161b22;
+    --ink-2:   #3d4653;
+    --ink-3:   #67707e;
+    --line:    #dde1e8;
+    --line-2:  #c9cfda;
+    /* accents */
+    --gold:    #b07d15;   /* on-chain value — primary boldness */
+    --gold-bg: #f6eccf;
+    --teal:    #1f8175;   /* verified / on-chain */
+    --teal-bg: #d9efec;
+    /* semantic status (separate from accent) */
+    --now:     #2f6fb0;
+    --now-bg:  #dfeaf6;
+    --soon:    #7a6a1f;
+    --later:   #8a5a2b;
+    --hard:    #a43f3f;
+    --hard-bg: #f6dede;
+    --shadow:  0 1px 2px rgba(20,25,35,.05), 0 8px 28px rgba(20,25,35,.06);
+    --maxw: 760px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:   #0e1218;
+      --surface: #151b23;
+      --surface-2: #1b222c;
+      --ink:     #e7ebf1;
+      --ink-2:   #b3bcc9;
+      --ink-3:   #808b99;
+      --line:    #262f3b;
+      --line-2:  #33404f;
+      --gold:    #e3b451;
+      --gold-bg: #322910;
+      --teal:    #5cc2b5;
+      --teal-bg: #10312d;
+      --now:     #6ba8e6;
+      --now-bg:  #12253a;
+      --soon:    #d9c168;
+      --later:   #d99a5f;
+      --hard:    #e88a8a;
+      --hard-bg: #351d1d;
+      --shadow:  0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper:#f6f7f9; --surface:#ffffff; --surface-2:#eef0f4; --ink:#161b22; --ink-2:#3d4653;
+    --ink-3:#67707e; --line:#dde1e8; --line-2:#c9cfda; --gold:#b07d15; --gold-bg:#f6eccf;
+    --teal:#1f8175; --teal-bg:#d9efec; --now:#2f6fb0; --now-bg:#dfeaf6; --soon:#7a6a1f;
+    --later:#8a5a2b; --hard:#a43f3f; --hard-bg:#f6dede;
+    --shadow:0 1px 2px rgba(20,25,35,.05), 0 8px 28px rgba(20,25,35,.06);
+  }
+  :root[data-theme="dark"] {
+    --paper:#0e1218; --surface:#151b23; --surface-2:#1b222c; --ink:#e7ebf1; --ink-2:#b3bcc9;
+    --ink-3:#808b99; --line:#262f3b; --line-2:#33404f; --gold:#e3b451; --gold-bg:#322910;
+    --teal:#5cc2b5; --teal-bg:#10312d; --now:#6ba8e6; --now-bg:#12253a; --soon:#d9c168;
+    --later:#d99a5f; --hard:#e88a8a; --hard-bg:#351d1d;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .col { max-width: var(--maxw); margin-left: auto; margin-right: auto; }
+
+  /* ---- typographic system ---- */
+  h1, h2, h3 { line-height: 1.15; text-wrap: balance; margin: 0; font-weight: 700; letter-spacing: -.02em; }
+  h2 { font-size: 1.7rem; margin-top: 0; }
+  h3 { font-size: 1.18rem; letter-spacing: -.01em; }
+  p { margin: 0; }
+  .prose > * + * { margin-top: 1.05em; }
+  strong { font-weight: 650; color: var(--ink); }
+  .lead { font-size: 1.24rem; line-height: 1.55; color: var(--ink-2); }
+  a { color: var(--gold); text-underline-offset: 2px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: .72rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--gold);
+  }
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: .86em;
+  }
+  code {
+    background: var(--surface-2); padding: .1em .38em; border-radius: 4px;
+    border: 1px solid var(--line); color: var(--ink);
+  }
+
+  /* ---- header ---- */
+  header.hero {
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--gold) 9%, transparent) 0%, transparent 55%),
+      var(--surface);
+    padding: 64px 0 40px;
+  }
+  .kicker-row { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+  .brand-dot {
+    width: 26px; height: 26px; border-radius: 6px; flex: none;
+    background: linear-gradient(135deg, var(--gold), color-mix(in srgb, var(--gold) 55%, var(--teal)));
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.25);
+  }
+  header.hero h1 { font-size: clamp(2.1rem, 5.4vw, 3.15rem); letter-spacing: -.03em; }
+  header.hero .lead { margin-top: 18px; max-width: 640px; }
+
+  .meta-grid {
+    display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1px;
+    background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    margin-top: 36px;
+  }
+  .meta-cell { background: var(--surface); padding: 13px 16px; }
+  .meta-cell .k {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .66rem; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;
+  }
+  .meta-cell .v { font-size: .92rem; font-weight: 600; color: var(--ink); }
+  @media (max-width: 620px) { .meta-grid { grid-template-columns: repeat(2,1fr); } }
+
+  /* ---- sections ---- */
+  section { padding: 52px 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: none; }
+  .sec-head { margin-bottom: 26px; }
+  .sec-head .eyebrow { display: block; margin-bottom: 10px; }
+
+  /* callout */
+  .callout {
+    border: 1px solid var(--line); border-left: 3px solid var(--gold);
+    background: var(--surface); border-radius: 0 10px 10px 0; padding: 18px 22px;
+    box-shadow: var(--shadow);
+  }
+  .callout.teal { border-left-color: var(--teal); }
+  .callout .eyebrow { color: var(--ink-3); }
+  .callout.teal .eyebrow { color: var(--teal); }
+
+  /* tables */
+  .table-scroll { overflow-x: auto; margin: 0 auto; border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; background: var(--surface);
+          border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 12px 15px; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  thead th { background: var(--surface-2); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+             color: var(--ink-3); font-weight: 700; }
+  tbody tr:last-child td { border-bottom: none; }
+  td:first-child { font-weight: 600; color: var(--ink); }
+  .rec { color: var(--teal); font-weight: 700; }
+  th.rec-col { background: var(--teal-bg); color: var(--teal); }
+
+  /* pills */
+  .pill { display: inline-block; font-family: ui-monospace, Menlo, monospace; font-size: .68rem;
+          font-weight: 600; letter-spacing: .04em; padding: 2px 9px; border-radius: 100px;
+          border: 1px solid transparent; white-space: nowrap; }
+  .pill.fit  { background: var(--teal-bg); color: var(--teal); }
+  .pill.hard { background: var(--hard-bg); color: var(--hard); }
+  .pill.mid  { background: var(--gold-bg); color: var(--gold); }
+
+  /* feature cards grid */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+          padding: 18px 20px; box-shadow: var(--shadow); }
+  .card .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .card h3 { font-size: 1.02rem; }
+  .card p { font-size: .9rem; color: var(--ink-2); }
+
+  /* timeline */
+  .timeline { position: relative; margin-top: 8px; }
+  .timeline::before { content:""; position:absolute; left: 21px; top: 6px; bottom: 6px; width: 2px;
+                      background: linear-gradient(var(--gold), var(--line)); }
+  .phase { position: relative; padding-left: 62px; padding-bottom: 30px; }
+  .phase:last-child { padding-bottom: 0; }
+  .phase .num {
+    position: absolute; left: 0; top: -2px; width: 44px; height: 44px; border-radius: 50%;
+    display: grid; place-items: center; font-family: ui-monospace, Menlo, monospace; font-weight: 700;
+    font-size: .95rem; background: var(--surface); border: 2px solid var(--line-2); color: var(--ink);
+    z-index: 1;
+  }
+  .phase.active .num { border-color: var(--gold); background: var(--gold-bg); color: var(--gold); }
+  .phase .phead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .phase h3 { font-size: 1.12rem; }
+  .phase .tag {
+    font-family: ui-monospace, Menlo, monospace; font-size: .66rem; letter-spacing: .08em;
+    text-transform: uppercase; padding: 2px 8px; border-radius: 5px; font-weight: 600;
+  }
+  .tag.now   { background: var(--now-bg);  color: var(--now); }
+  .tag.next  { background: var(--gold-bg); color: var(--gold); }
+  .tag.later { background: var(--surface-2); color: var(--ink-3); }
+  .phase p { color: var(--ink-2); font-size: .95rem; }
+  .phase .deliver {
+    margin-top: 8px; font-size: .85rem; color: var(--ink-2);
+    border-left: 2px solid var(--teal); padding-left: 12px;
+  }
+  .phase .deliver b { color: var(--teal); font-weight: 600; letter-spacing: .01em; }
+
+  ul.clean { margin: 0; padding-left: 1.15em; }
+  ul.clean li { margin: .3em 0; color: var(--ink-2); }
+  ul.clean li::marker { color: var(--gold); }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 680px){ .two { grid-template-columns: 1fr; } }
+
+  .footer { padding: 40px 0 60px; color: var(--ink-3); font-size: .84rem; }
+  .footer .mono { color: var(--ink-3); }
+
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 3px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .phase, .card { transition: none; }
+  }
+</style>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker-row">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <span class="eyebrow">BSVA · Strategy &amp; Roadmap · Internal</span>
+    </div>
+    <h1>A token launchpad, native to the BSV&nbsp;Blockchain</h1>
+    <p class="lead">Issue, price, and sell project tokens on a UTXO chain — starting from a focused offering engine, not a clone of an account-based DeFi platform.</p>
+
+    <div class="meta-grid">
+      <div class="meta-cell"><div class="k">Trust model</div><div class="v">Hybrid · operator-settled</div></div>
+      <div class="meta-cell"><div class="k">MVP scope</div><div class="v">Offering engine</div></div>
+      <div class="meta-cell"><div class="k">Chain / tokens</div><div class="v">BSV · STAS</div></div>
+      <div class="meta-cell"><div class="k">Wallet layer</div><div class="v">BRC-100</div></div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<section>
+  <div class="wrap col prose">
+    <div class="sec-head">
+      <span class="eyebrow">The thesis</span>
+      <h2>Build the offering engine excellently; defer the AMM.</h2>
+    </div>
+    <p class="lead">BSV is genuinely well-suited to the <strong>issuance → sale → distribution</strong> half of a launchpad — that half is just structured UTXOs, and it plays to the chain's strengths: cheap, scalable, SPV-verifiable. The <strong>AMM / farm / vault</strong> half fights the grain of the UTXO model and should be prototyped later, kept partly operator-mediated for a long time.</p>
+    <p>The reference platforms — DAO Maker, Binance Launchpool, PinkSale, DxSale — were all built for account-based chains with Turing-complete smart contracts. Their feature lists assume a shared, mutable, global pool state that every user can call at once. <strong>BSV has no such thing.</strong> Don't let their feature lists set our scope: the offering engine is ~80% of the value and ~40% of the difficulty.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap col prose">
+    <div class="sec-head">
+      <span class="eyebrow">The core constraint</span>
+      <h2>No global mutable state</h2>
+    </div>
+    <p>Everything downstream follows from this. On BSV we work with:</p>
+    <ul class="clean">
+      <li><strong>UTXOs</strong> — discrete coins, each spent exactly once. No mutable account balances.</li>
+      <li><strong>STAS</strong> — a token protocol where each token amount lives <em>inside a UTXO</em> with a colored-coin script. Total supply is minted at issuance; a "transfer" spends STAS UTXOs and re-creates them under the protocol rules.</li>
+      <li><strong>BRC-100</strong> — the wallet↔application interface standard (what Metanet Desktop and compatible wallets expose). This is our "connect wallet" layer — an interface protocol, not a token or DeFi standard.</li>
+      <li><strong>sCrypt / Bitcoin Script</strong> — on-chain enforcement (covenants), with <strong>overlay services</strong> (BRC-22/24) to index and track our app's UTXO set.</li>
+    </ul>
+    <div class="callout" style="margin-top:26px">
+      <span class="eyebrow">Design consequence</span>
+      <p style="margin-top:8px">Any feature that needs "many users hitting one pool at once" — an AMM, a bonding curve, a staking vault — becomes a <strong>single-UTXO-contention problem</strong>: only one party can spend the pool UTXO per step. This is solved with transaction chaining, operator sequencing, or off-chain matching with on-chain settlement. It is the central engineering decision of the entire project, and everything else is anchored on it.</p>
+    </div>
+  </div>
+</section>
+
+<section style="background:var(--surface)">
+  <div class="wrap">
+    <div class="col sec-head">
+      <span class="eyebrow">Decision · locked</span>
+      <h2>Trust model: hybrid, operator-settled</h2>
+      <p class="lead" style="margin-top:12px">Token issuance, sale settlement, and user holdings are all real on-chain STAS UTXOs (independently verifiable). The matching &amp; pricing engine is our backend. We publish enough on-chain that a user can verify they got what they paid for — then migrate individual primitives to full covenants over time.</p>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th>Fully trustless<br><span style="font-weight:400;text-transform:none;letter-spacing:0">on-chain covenant</span></th>
+            <th class="rec-col">Hybrid · chosen<br><span style="font-weight:400;text-transform:none;letter-spacing:0">operator + on-chain settlement</span></th>
+            <th>Custodial<br><span style="font-weight:400;text-transform:none;letter-spacing:0">operator DB</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Rules enforced by</td><td>sCrypt covenant on-chain</td><td class="rec">Operator backend; on-chain, SPV-verifiable settlement</td><td>Operator database</td></tr>
+          <tr><td>Concurrency</td><td>Very hard (UTXO contention)</td><td class="rec">Operator sequences buys, batches settlement</td><td>Trivial</td></tr>
+          <tr><td>Trust required</td><td>Minimal</td><td class="rec">Trust operator to settle honestly — auditable on-chain</td><td>High</td></tr>
+          <tr><td>Time to build</td><td>Long</td><td class="rec">Realistic</td><td>Fast, but not credible</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap col prose">
+    <div class="sec-head">
+      <span class="eyebrow">System shape</span>
+      <h2>Five moving parts</h2>
+    </div>
+    <div class="cards">
+      <div class="card"><h3>Public launchpad</h3><p>React/Next app. Connect via BRC-100 wallet, browse projects, view tokenomics &amp; info, buy tokens. Buys are transactions the user's <strong>own</strong> wallet signs — non-custodial.</p></div>
+      <div class="card"><h3>Project / issuer panel</h3><p>Authenticated dashboard: define supply (total + public), price, sale window, vesting; submit team, docs, links, logo. Emits a STAS issuance tx + sale config.</p></div>
+      <div class="card"><h3>Curation &amp; admin</h3><p>Platform reviews/approves listings before they go public. Also our legal and anti-scam gate — non-optional given the reputational surface.</p></div>
+      <div class="card"><h3>Backend + overlay</h3><p>Indexes STAS UTXOs, tracks sale state, sequences purchases, serves the API. Off-chain metadata anchored on-chain by hash so it's tamper-evident.</p></div>
+      <div class="card"><h3>Settlement engine</h3><p>Builds STAS transfer + payment transactions, broadcasts via ARC, verifies with SPV. The bridge between backend intent and on-chain truth.</p></div>
+    </div>
+    <div class="callout teal" style="margin-top:24px">
+      <span class="eyebrow">Not from zero</span>
+      <p style="margin-top:8px">Several MCP servers and agents already wired into this environment target exactly this: STAS/BTMS token handlers, wallet setup, overlay nodes, SPV verification, and script templates. The plumbing has strong starting points.</p>
+    </div>
+  </div>
+</section>
+
+<section style="background:var(--surface)">
+  <div class="wrap col prose">
+    <div class="sec-head">
+      <span class="eyebrow">Pricing</span>
+      <h2>Fixed price now, bonding curves as a study track</h2>
+    </div>
+    <p><strong>Fixed price (MVP).</strong> A project sets <code>X sats per token</code>. We pre-split the public allocation into STAS UTXOs; a buy is "user pays X, receives tokens, change returns to the pool." Predictable and simple to settle.</p>
+    <p><strong>Bonding curves (design now, ship later).</strong> A bonding curve makes price a deterministic function of supply sold — price rises as tokens are bought, falls on sell-back — so the curve <em>is</em> the market maker, no counterparty needed. Common shapes:</p>
+    <ul class="clean">
+      <li><strong>Linear</strong> — <code>price = m·sold + b</code>. Easy to reason about.</li>
+      <li><strong>Exponential</strong> — <code>price = b·e^(k·sold)</code>. Rewards early buyers hard; can feel predatory.</li>
+      <li><strong>Constant-product (x·y=k)</strong> — the Uniswap model; a reserve of tokens and a reserve of sats, price = ratio. Best-understood for a two-sided market.</li>
+    </ul>
+    <div class="callout" style="margin-top:22px">
+      <span class="eyebrow">The BSV catch</span>
+      <p style="margin-top:8px">A bonding curve is a <strong>stateful contract</strong> — it must remember <code>sold</code>. On UTXO that's a single "curve UTXO" spent-and-recreated on each trade, which serializes trades and needs either an sCrypt covenant enforcing the math on-chain, or an operator enforcing it and settling verifiably. <strong>Recommended path:</strong> launch fixed-price → model the curve off-chain (operator-enforced, published state) → harden into an sCrypt covenant once proven. Curves also invite front-running/MEV — study the failure modes before committing.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="col sec-head">
+      <span class="eyebrow">Feature map</span>
+      <h2>DeFi primitives against the UTXO model</h2>
+      <p class="lead" style="margin-top:12px">How well each requested primitive fits BSV, and how it's built. Fit degrades as a feature needs shared concurrent pool state.</p>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Primitive</th><th>Fit</th><th>How it maps to UTXO</th></tr></thead>
+        <tbody>
+          <tr><td>Offering / IDO</td><td><span class="pill fit">Strong</span></td><td>Fixed-price or curve sale of the public allocation. The core. Vesting = timelocked STAS UTXOs (nLockTime / CLTV) unlocking in tranches.</td></tr>
+          <tr><td>Airdrops</td><td><span class="pill fit">Strong</span></td><td>Distribute STAS UTXOs to a list, or a <strong>claim</strong> model (users pull their allocation via Merkle proof) — cheaper, avoids dust to inactive users.</td></tr>
+          <tr><td>Staking</td><td><span class="pill mid">Moderate</span></td><td>Lock STAS UTXOs in a timelocked/covenant script; rewards computed by operator (or covenant) as amount×duration, paid as new UTXOs. Reward accounting leans on the overlay.</td></tr>
+          <tr><td>Bonding curve</td><td><span class="pill mid">Moderate</span></td><td>Single stateful "curve UTXO" — serialized trades. Operator-enforced first, sCrypt covenant later.</td></tr>
+          <tr><td>Farms (LP mining)</td><td><span class="pill hard">Hard</span></td><td>Presupposes an AMM pool (the contention problem). Phase 4+, downstream of a working pool.</td></tr>
+          <tr><td>Vaults</td><td><span class="pill hard">Hard</span></td><td>Auto-compounding wrappers over staking/farms. Only meaningful once those exist.</td></tr>
+          <tr><td>Tokenomics</td><td><span class="pill fit">Design</span></td><td>Not code but design: supply split, vesting, emission curves, sinks/burns. STAS handles supply &amp; transfer; we design the distribution and encode vesting as timelocks.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section style="background:var(--surface)">
+  <div class="wrap col">
+    <div class="sec-head">
+      <span class="eyebrow">Sequence</span>
+      <h2>Phased roadmap</h2>
+    </div>
+    <div class="timeline">
+
+      <div class="phase active">
+        <div class="num">0</div>
+        <div class="phead"><h3>Foundations &amp; decisions</h3><span class="tag now">Now</span></div>
+        <p>Lock the trust model (done: hybrid). Confirm the STAS + BRC-100 + overlay stack. Build issuance + settlement + SPV plumbing as a spike.</p>
+        <div class="deliver"><b>Deliverable</b> — one token issued and sold end-to-end on testnet.</div>
+      </div>
+
+      <div class="phase active">
+        <div class="num">1</div>
+        <div class="phead"><h3>MVP launchpad</h3><span class="tag next">Target MVP</span></div>
+        <p>Project panel (create token, define supply/price, submit info), curation/approval, public app (connect wallet, browse, buy fixed-price), on-chain settlement.</p>
+        <div class="deliver"><b>Deliverable</b> — a shippable offering-engine product.</div>
+      </div>
+
+      <div class="phase">
+        <div class="num">2</div>
+        <div class="phead"><h3>Distribution</h3><span class="tag later">Later</span></div>
+        <p>Vesting (timelocks), airdrops / claims, richer project pages, portfolio view.</p>
+      </div>
+
+      <div class="phase">
+        <div class="num">3</div>
+        <div class="phead"><h3>Staking</h3><span class="tag later">Later</span></div>
+        <p>Lock-and-earn with operator-enforced rewards and overlay-based accounting.</p>
+      </div>
+
+      <div class="phase">
+        <div class="num">4</div>
+        <div class="phead"><h3>Market-making</h3><span class="tag later">Later</span></div>
+        <p>Bonding curve (operator-enforced → sCrypt covenant), secondary trading, sell-back.</p>
+      </div>
+
+      <div class="phase">
+        <div class="num">5</div>
+        <div class="phead"><h3>Farms &amp; vaults</h3><span class="tag later">Later</span></div>
+        <p>Only once a pool primitive exists and is battle-tested.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap col prose">
+    <div class="sec-head">
+      <span class="eyebrow">Cross-cutting · every phase</span>
+      <h2>Security, legal &amp; anti-scam curation</h2>
+    </div>
+    <p>A launchpad handles other people's money and lists strangers' tokens — that is the reputational and legal center of gravity, not an afterthought. PinkSale's reputation is the cautionary example. At BSVA this routes through the proper classification and legal process <strong>early</strong>: listing review, issuer KYC posture, disclaimers, and a clear line on what the platform does and does not vouch for.</p>
+  </div>
+</section>
+
+<section style="background:var(--surface)">
+  <div class="wrap col prose">
+    <div class="sec-head">
+      <span class="eyebrow">Next steps</span>
+      <h2>Open questions to close before build</h2>
+    </div>
+    <div class="two">
+      <ul class="clean">
+        <li>Confirm the STAS variant / issuance tooling and overlay host.</li>
+        <li>Which BRC-100 wallets do we target first (Metanet Desktop + others)?</li>
+        <li>Curation policy: who approves listings, against what criteria?</li>
+      </ul>
+      <ul class="clean">
+        <li>Legal review of the operator-settlement model and issuer obligations.</li>
+        <li>Fee model — platform take on issuance and on sale volume.</li>
+        <li>Testnet target date for the Phase 0 end-to-end spike.</li>
+      </ul>
+    </div>
+    <div class="callout teal" style="margin-top:26px">
+      <span class="eyebrow">Workflow</span>
+      <p style="margin-top:8px">As BSVA-internal strategic work, this roadmap should be captured as a Nestr nest with a past-tense title and acceptance criteria, aligned to the owning circle's strategy — the CAPTURE step. The nest description block can be prepared directly from this document.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="footer">
+  <div class="wrap col">
+    <p class="mono">BSV Launchpad · Strategy &amp; Roadmap v1 · Classification: Internal · Prepared for BSVA circulation</p>
+  </div>
+</div>

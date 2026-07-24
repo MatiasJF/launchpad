@@ -1,0 +1,383 @@
+<title>BSV Launchpad — Foundation &amp; Knowledge Base Plan</title>
+<style>
+  :root{
+    --paper:#f6f7f9; --surface:#ffffff; --surface-2:#eef0f4; --ink:#161b22; --ink-2:#3d4653;
+    --ink-3:#67707e; --line:#dde1e8; --line-2:#c9cfda;
+    --gold:#b07d15; --gold-bg:#f6eccf; --teal:#1f8175; --teal-bg:#d9efec;
+    --blue:#2f6fb0; --blue-bg:#dfeaf6; --hard:#a43f3f; --hard-bg:#f6dede; --brown:#8a5a2b;
+    --code-bg:#f2f0e9;
+    --shadow:0 1px 2px rgba(20,25,35,.05), 0 6px 22px rgba(20,25,35,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#0e1218; --surface:#151b23; --surface-2:#1b222c; --ink:#e7ebf1; --ink-2:#b3bcc9;
+      --ink-3:#808b99; --line:#262f3b; --line-2:#33404f;
+      --gold:#e3b451; --gold-bg:#322910; --teal:#5cc2b5; --teal-bg:#10312d;
+      --blue:#6ba8e6; --blue-bg:#12253a; --hard:#e88a8a; --hard-bg:#351d1d; --brown:#d99a5f;
+      --code-bg:#10151c;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#f6f7f9; --surface:#ffffff; --surface-2:#eef0f4; --ink:#161b22; --ink-2:#3d4653;
+    --ink-3:#67707e; --line:#dde1e8; --line-2:#c9cfda; --gold:#b07d15; --gold-bg:#f6eccf;
+    --teal:#1f8175; --teal-bg:#d9efec; --blue:#2f6fb0; --blue-bg:#dfeaf6; --hard:#a43f3f; --hard-bg:#f6dede; --brown:#8a5a2b; --code-bg:#f2f0e9;
+    --shadow:0 1px 2px rgba(20,25,35,.05), 0 6px 22px rgba(20,25,35,.06);
+  }
+  :root[data-theme="dark"]{
+    --paper:#0e1218; --surface:#151b23; --surface-2:#1b222c; --ink:#e7ebf1; --ink-2:#b3bcc9;
+    --ink-3:#808b99; --line:#262f3b; --line-2:#33404f; --gold:#e3b451; --gold-bg:#322910;
+    --teal:#5cc2b5; --teal-bg:#10312d; --blue:#6ba8e6; --blue-bg:#12253a; --hard:#e88a8a; --hard-bg:#351d1d; --brown:#d99a5f; --code-bg:#10151c;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; font-size:15.5px; line-height:1.55; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1120px; margin:0 auto; padding:0 22px;}
+  h1,h2,h3,h4{margin:0; line-height:1.15; text-wrap:balance; letter-spacing:-.02em; font-weight:700;}
+  p{margin:0;}
+  .eyebrow{font-family:ui-monospace,Menlo,monospace; font-size:.7rem; font-weight:600; letter-spacing:.15em;
+    text-transform:uppercase; color:var(--gold);}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; background:var(--surface-2); border:1px solid var(--line);
+    border-radius:4px; padding:.08em .34em; font-size:.85em; color:var(--ink);}
+
+  header{padding:44px 0 26px; border-bottom:1px solid var(--line);
+    background:radial-gradient(120% 130% at 100% 0%, color-mix(in srgb,var(--gold) 8%, transparent), transparent 55%), var(--surface);}
+  .krow{display:flex; align-items:center; gap:11px; margin-bottom:16px;}
+  .dot{width:24px;height:24px;border-radius:6px;flex:none;
+    background:linear-gradient(135deg,var(--gold),color-mix(in srgb,var(--gold) 55%,var(--teal)));
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);}
+  header h1{font-size:clamp(1.7rem,4vw,2.4rem); letter-spacing:-.03em;}
+  header p.sub{margin-top:10px; font-size:1.05rem; color:var(--ink-2); max-width:680px;}
+  .siblings{display:flex; flex-wrap:wrap; gap:7px; margin-top:20px;}
+  .sib{font-family:ui-monospace,Menlo,monospace; font-size:.72rem; padding:4px 11px; border-radius:100px;
+    border:1px solid var(--line-2); background:var(--surface); color:var(--ink-3);}
+  .sib.here{background:var(--gold-bg); border-color:transparent; color:var(--gold); font-weight:700;}
+
+  section{padding:34px 0; border-bottom:1px solid var(--line);} section:last-of-type{border-bottom:none;}
+  .shead{display:flex; align-items:baseline; gap:12px; margin-bottom:6px; flex-wrap:wrap;}
+  .shead h2{font-size:1.35rem;} .shead .n{font-family:ui-monospace,Menlo,monospace; color:var(--gold); font-weight:700;}
+  .sdesc{color:var(--ink-2); font-size:.95rem; margin-bottom:18px; max-width:740px;}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; box-shadow:var(--shadow);}
+  .grid{display:grid; gap:14px;} .g2{grid-template-columns:repeat(2,1fr);} .g3{grid-template-columns:repeat(3,1fr);} .g4{grid-template-columns:repeat(4,1fr);}
+  @media (max-width:900px){ .g3,.g4{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:620px){ .g2,.g3,.g4{grid-template-columns:1fr;} }
+
+  .note{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--gold); border-radius:0 10px 10px 0;
+    padding:13px 16px; box-shadow:var(--shadow); margin-top:16px;}
+  .note.t{border-left-color:var(--teal);} .note p{font-size:.86rem; color:var(--ink-2);}
+
+  /* KB file list */
+  .kb{display:grid; gap:10px;}
+  .kbrow{display:grid; grid-template-columns:210px 1fr; gap:14px; align-items:start; padding:12px 15px;
+    background:var(--surface); border:1px solid var(--line); border-radius:11px; box-shadow:var(--shadow);}
+  @media (max-width:640px){ .kbrow{grid-template-columns:1fr; gap:5px;} }
+  .kbrow .fn{font-family:ui-monospace,Menlo,monospace; font-size:.82rem; font-weight:700; color:var(--ink); word-break:break-all;}
+  .kbrow .fn .tg{display:inline-block; margin-top:5px; font-size:.58rem; letter-spacing:.08em; text-transform:uppercase;
+    padding:2px 7px; border-radius:100px; font-weight:700;}
+  .tg.live{background:var(--teal-bg); color:var(--teal);} .tg.boot{background:var(--gold);color:#fff;}
+  .tg.ref{background:var(--surface-2); color:var(--ink-3);}
+  .kbrow p{font-size:.85rem; color:var(--ink-2);} .kbrow p b{color:var(--ink);}
+
+  /* boot / protocol steps */
+  .steps{display:grid; gap:9px; counter-reset:s;}
+  .stp{display:grid; grid-template-columns:30px 1fr; gap:12px; align-items:start;
+    background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:11px 14px; box-shadow:var(--shadow);}
+  .stp .b{width:24px;height:24px;border-radius:50%; display:grid; place-items:center; background:var(--gold-bg); color:var(--gold);
+    font-family:ui-monospace,Menlo,monospace; font-weight:700; font-size:.78rem;}
+  .stp p{font-size:.86rem; color:var(--ink-2);} .stp p b{color:var(--ink);}
+  .stp.t .b{background:var(--teal-bg); color:var(--teal);}
+
+  /* directory tree */
+  pre.tree{background:var(--code-bg); border:1px solid var(--line); border-radius:12px; padding:18px 20px; overflow-x:auto;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:.82rem; line-height:1.62; color:var(--ink-2); box-shadow:var(--shadow);}
+  pre.tree b{color:var(--ink); font-weight:700;} pre.tree .c{color:var(--ink-3);}
+  pre.tree .g{color:var(--gold); font-weight:700;} pre.tree .t{color:var(--teal); font-weight:700;}
+
+  /* entity schema */
+  .ent{background:var(--surface); border:1px solid var(--line); border-radius:12px; overflow:hidden; box-shadow:var(--shadow);}
+  .ent .eh{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:11px 15px; background:var(--surface-2); border-bottom:1px solid var(--line);}
+  .ent .eh h4{font-family:ui-monospace,Menlo,monospace; font-size:.92rem; color:var(--ink);}
+  .ent .eh .rel{font-family:ui-monospace,Menlo,monospace; font-size:.64rem; color:var(--ink-3);}
+  .ent ul{list-style:none; margin:0; padding:9px 15px 12px;}
+  .ent li{font-family:ui-monospace,Menlo,monospace; font-size:.76rem; color:var(--ink-2); padding:2.5px 0; display:flex; gap:8px;}
+  .ent li .fk{color:var(--gold);} .ent li .pk{color:var(--teal); font-weight:700;}
+  .ent li .en{color:var(--ink); font-weight:600;} .ent li .ty{color:var(--ink-3); margin-left:auto;}
+
+  /* roadmap phases */
+  .ph{display:grid; grid-template-columns:52px 1fr; gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden;
+    background:var(--surface); box-shadow:var(--shadow); margin-bottom:10px;}
+  .ph .r{display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--surface-2); border-right:1px solid var(--line);
+    font-family:ui-monospace,Menlo,monospace; font-weight:700; color:var(--ink-2);}
+  .ph.hl{border-color:var(--gold);} .ph.hl .r{background:var(--gold-bg); color:var(--gold);}
+  .ph .bd{padding:13px 17px;}
+  .ph .top{display:flex; flex-wrap:wrap; align-items:center; gap:9px; margin-bottom:6px;}
+  .ph h3{font-size:1.02rem;}
+  .ph .tag{font-family:ui-monospace,Menlo,monospace; font-size:.6rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase; padding:2px 8px; border-radius:100px;}
+  .tag.now{background:var(--gold);color:#fff;} .tag.next{background:var(--blue-bg);color:var(--blue);} .tag.later{background:var(--surface-2);color:var(--ink-3);}
+  .ph ul{margin:0; padding-left:1.05em;} .ph li{font-size:.85rem; color:var(--ink-2); margin:.25em 0;} .ph li::marker{color:var(--gold);}
+  .ph .out{margin-top:8px; font-size:.8rem; color:var(--teal); border-left:2px solid var(--teal); padding-left:11px;}
+  .ph .out b{color:var(--teal);}
+
+  .foot{padding:26px 0 46px; color:var(--ink-3); font-size:.78rem; font-family:ui-monospace,Menlo,monospace;}
+  :focus-visible{outline:2px solid var(--gold); outline-offset:2px; border-radius:3px;}
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="krow"><span class="dot" aria-hidden="true"></span><span class="eyebrow">BSV Launchpad · Foundation &amp; Knowledge Base · Internal</span></div>
+    <h1>A clean base that documents itself</h1>
+    <p class="sub">The plan for the project skeleton, the self-updating knowledge base, and the entity schema — designed so any Claude (or teammate) can boot from cold, even after total context loss, and know what exists, how it's going, and where everything lives.</p>
+    <div class="siblings">
+      <span class="sib">Roadmap</span><span class="sib">Deep-Dive</span><span class="sib">Vision Map</span>
+      <span class="sib here">Foundation + KB</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- KB SYSTEM -->
+<section>
+  <div class="shead"><span class="n">01</span><h2>The knowledge base — the part that survives context loss</h2></div>
+  <p class="sdesc">Eight files, each with one job. Two are <b>living</b> (rewritten as work happens), one is the <b>boot file</b>, the rest are reference. Together they answer: <em>what is this, how's it going, where is what, and why is it built this way.</em></p>
+  <div class="kb">
+    <div class="kbrow"><div class="fn">CLAUDE.md<br><span class="tg boot">Boot file</span></div><p><b>The 30-second entry point.</b> Project in one paragraph, the golden rules, the current stack, and the exact read-order for a cold start. Every Claude reads this first. Points to everything else.</p></div>
+    <div class="kbrow"><div class="fn">docs/STATE.md<br><span class="tg live">Living</span></div><p><b>"How's it going."</b> Current phase, what's <em>done</em> / <em>in progress</em> / <em>next</em>, known issues, blockers, and a <code>last-updated</code> stamp. Rewritten on every meaningful change — the single source of truth for status.</p></div>
+    <div class="kbrow"><div class="fn">docs/INDEX.md<br><span class="tg live">Living</span></div><p><b>"Where is what."</b> A topic → file map: <em>"looking for X? it's in Y."</em> Sale settlement, the entity types, the wallet connection, the admin gate — each points to its file. Updated whenever files are added or moved.</p></div>
+    <div class="kbrow"><div class="fn">docs/ARCHITECTURE.md<br><span class="tg ref">Reference</span></div><p><b>"How it's built."</b> Module boundaries, the data-flow and settlement-flow diagrams, the hybrid operator model. Changes only when the structure changes.</p></div>
+    <div class="kbrow"><div class="fn">docs/SCHEMA.md<br><span class="tg ref">Reference</span></div><p><b>The data model, in prose + types.</b> Source of truth for the entities in §03. Mirrors the code's type definitions so the two never drift.</p></div>
+    <div class="kbrow"><div class="fn">docs/DECISIONS.md<br><span class="tg live">Living (append)</span></div><p><b>"Why it's this way."</b> A dated decision log (ADR-style). Seeded with what we've already settled: hybrid trust, mainnet-always, STAS, BSV Desktop, no fees, admin-gating, the <code>saleType</code> abstraction. Append-only.</p></div>
+    <div class="kbrow"><div class="fn">docs/ROADMAP.md<br><span class="tg ref">Reference</span></div><p><b>Phases &amp; status.</b> The plain-text mirror of the Roadmap artifact, with a status flag per phase.</p></div>
+    <div class="kbrow"><div class="fn">docs/GLOSSARY.md<br><span class="tg ref">Reference</span></div><p><b>The vocabulary.</b> STAS, UTXO, BRC-100, escrow, bonding curve, SPV, covenant — so terms mean one thing across the project.</p></div>
+  </div>
+  <p class="sdesc" style="margin-top:18px; margin-bottom:0"><span class="eyebrow" style="color:var(--ink-3)">The published artifacts</span><br>The four HTML docs (this one included) live in <code>docs/artifacts/</code> and are the visual companions to the markdown KB — same information, richer form.</p>
+</section>
+
+<!-- COLD START + UPDATE PROTOCOL -->
+<section>
+  <div class="shead"><span class="n">02</span><h2>The two protocols that make it work</h2></div>
+  <p class="sdesc">A knowledge base is only as good as the discipline that keeps it current. Two short rituals — one for arriving, one for leaving — do all the work.</p>
+  <div class="grid g2" style="align-items:start">
+    <div>
+      <div class="card" style="margin-bottom:12px"><span class="eyebrow" style="color:var(--gold)">Cold start · arriving</span><p style="font-size:.9rem;color:var(--ink-2);margin-top:6px">A fresh Claude with zero context is productive within three files.</p></div>
+      <div class="steps">
+        <div class="stp"><span class="b">1</span><p>Read <b>CLAUDE.md</b> — grasp what this is, the rules, the stack.</p></div>
+        <div class="stp"><span class="b">2</span><p>Read <b>STATE.md</b> — know the current phase, what's done, what's next.</p></div>
+        <div class="stp"><span class="b">3</span><p>Open <b>INDEX.md</b>, jump to the file for the task at hand. Working.</p></div>
+      </div>
+      <div class="note t"><p><b>The guarantee:</b> context loss costs three file reads, not a re-explanation of the project.</p></div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:12px"><span class="eyebrow" style="color:var(--teal)">Definition of Done · leaving</span><p style="font-size:.9rem;color:var(--ink-2);margin-top:6px">No change is "done" until the KB reflects it. This is the self-updating mechanic.</p></div>
+      <div class="steps">
+        <div class="stp t"><span class="b">✓</span><p>Update <b>STATE.md</b> — what changed, new status, any new blocker.</p></div>
+        <div class="stp t"><span class="b">✓</span><p>Touch <b>INDEX.md</b> if any file was added, moved, or renamed.</p></div>
+        <div class="stp t"><span class="b">✓</span><p>Append <b>DECISIONS.md</b> if a choice was made worth remembering.</p></div>
+        <div class="stp t"><span class="b">✓</span><p>Sync <b>SCHEMA / ARCHITECTURE</b> if the model or structure moved.</p></div>
+      </div>
+      <div class="note"><p><b>Enforcement:</b> stated as a golden rule in CLAUDE.md now; can harden into a <code>Stop</code> hook or PR checklist later so it's mechanical, not just habit.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PROJECT STRUCTURE -->
+<section>
+  <div class="shead"><span class="n">03</span><h2>The clean project structure</h2></div>
+  <p class="sdesc">One repo, clear module boundaries. Domain logic and BSV plumbing live in <code>packages/</code> so they're testable and reusable; the app is a thin shell over them. Stack: <b>TypeScript · Next.js · SQLite (Prisma)</b> — confirmed.</p>
+  <pre class="tree"><b>launchpad/</b>
+├─ <span class="g">CLAUDE.md</span>              <span class="c"># boot file — any Claude starts here</span>
+├─ README.md               <span class="c"># human entry point</span>
+├─ <b>docs/</b>                   <span class="t"># the knowledge base (§01)</span>
+│  ├─ STATE.md  INDEX.md  ARCHITECTURE.md  SCHEMA.md
+│  ├─ DECISIONS.md  ROADMAP.md  GLOSSARY.md
+│  └─ <b>artifacts/</b>            <span class="c"># the published HTML docs</span>
+├─ <b>apps/</b>
+│  └─ <b>web/</b>                  <span class="c"># Next.js: public launchpad + admin routes</span>
+│     ├─ app/(public)/       <span class="c"># browse, project pages, buy</span>
+│     ├─ app/(admin)/        <span class="c"># auth-gated: create project, approve</span>
+│     └─ app/api/            <span class="c"># backend: sequencing, settlement</span>
+├─ <b>packages/</b>
+│  ├─ <span class="t">core/</span>                <span class="c"># domain: entities, sale logic, state machine</span>
+│  ├─ <span class="t">bsv/</span>                 <span class="c"># STAS issuance, settlement, SPV, BRC-100 wallet</span>
+│  ├─ <span class="t">db/</span>                  <span class="c"># Prisma schema + SQLite → Postgres (§04)</span>
+│  └─ shared/              <span class="c"># types, config, utils</span>
+├─ .env.example
+└─ package.json</pre>
+  <div class="note"><p><b>Why the split:</b> <code>core/</code> and <code>bsv/</code> hold the logic that's hard to get right and must be tested in isolation. The Next.js app stays a shell — swappable, and never the place business rules hide.</p></div>
+</section>
+
+<!-- ENTITY SCHEMA -->
+<section>
+  <div class="shead"><span class="n">04</span><h2>The project / entity schema</h2></div>
+  <p class="sdesc">Six entities. Two design choices from the Vision Map are baked in from day one: <code>Sale.type</code> (the <b>instant | escrow-presale</b> abstraction) and <code>Order.state</code> (which carries <b>refunded / withdrawn</b> — the hold-and-return settlement). Nothing to rewrite when the future layers arrive.</p>
+  <div class="grid g3" style="align-items:start">
+
+    <div class="ent">
+      <div class="eh"><h4>Account</h4><span class="rel">1 → * Project</span></div>
+      <ul>
+        <li><span class="pk">id</span><span class="ty">pk</span></li>
+        <li><span class="en">identityPubkey</span><span class="ty">brc-100</span></li>
+        <li><span class="en">paymail</span><span class="ty">str?</span></li>
+        <li><span class="en">role</span><span class="ty">admin·issuer·public</span></li>
+      </ul>
+    </div>
+
+    <div class="ent">
+      <div class="eh"><h4>Project</h4><span class="rel">1 → * Token</span></div>
+      <ul>
+        <li><span class="pk">id</span><span class="ty">pk</span></li>
+        <li><span class="fk">ownerId</span><span class="ty">→Account</span></li>
+        <li><span class="en">slug · name</span><span class="ty">str</span></li>
+        <li><span class="en">tagline · description</span><span class="ty">text</span></li>
+        <li><span class="en">logo · media[]</span><span class="ty">url</span></li>
+        <li><span class="en">links · team[] · docs[]</span><span class="ty">json</span></li>
+        <li><span class="en">status</span><span class="ty">draft→live</span></li>
+      </ul>
+    </div>
+
+    <div class="ent">
+      <div class="eh"><h4>Token</h4><span class="rel">1 → * Sale</span></div>
+      <ul>
+        <li><span class="pk">id</span><span class="ty">pk</span></li>
+        <li><span class="fk">projectId</span><span class="ty">→Project</span></li>
+        <li><span class="en">name · ticker</span><span class="ty">str</span></li>
+        <li><span class="en">totalSupply · decimals</span><span class="ty">int</span></li>
+        <li><span class="en">allocations</span><span class="ty">json</span></li>
+        <li><span class="en">stasTokenId</span><span class="ty">str?</span></li>
+        <li><span class="en">issuanceTxid</span><span class="ty">str?</span></li>
+      </ul>
+    </div>
+
+    <div class="ent">
+      <div class="eh"><h4>Sale</h4><span class="rel">1 → * Order</span></div>
+      <ul>
+        <li><span class="pk">id</span><span class="ty">pk</span></li>
+        <li><span class="fk">tokenId</span><span class="ty">→Token</span></li>
+        <li><span class="en">type</span><span class="ty">instant·escrow</span></li>
+        <li><span class="en">priceSats</span><span class="ty">int</span></li>
+        <li><span class="en">allocationForSale</span><span class="ty">int</span></li>
+        <li><span class="en">startsAt · endsAt</span><span class="ty">ts</span></li>
+        <li><span class="en">softCap · hardCap</span><span class="ty">int?</span></li>
+        <li><span class="en">status</span><span class="ty">sched→final</span></li>
+      </ul>
+    </div>
+
+    <div class="ent">
+      <div class="eh"><h4>Order</h4><span class="rel">* → 1 Sale</span></div>
+      <ul>
+        <li><span class="pk">id</span><span class="ty">pk</span></li>
+        <li><span class="fk">saleId</span><span class="ty">→Sale</span></li>
+        <li><span class="en">buyerIdentity</span><span class="ty">pubkey</span></li>
+        <li><span class="en">kind</span><span class="ty">buy·contribute</span></li>
+        <li><span class="en">tokens · satsPaid</span><span class="ty">int</span></li>
+        <li><span class="en">state</span><span class="ty">pending→settled</span></li>
+        <li><span class="en">state</span><span class="ty">·refunded·withdrawn</span></li>
+        <li><span class="en">txid · refundTxid</span><span class="ty">str?</span></li>
+      </ul>
+    </div>
+
+    <div class="ent">
+      <div class="eh"><h4>Event</h4><span class="rel">append-only ledger</span></div>
+      <ul>
+        <li><span class="pk">id</span><span class="ty">pk</span></li>
+        <li><span class="en">entity · entityId</span><span class="ty">ref</span></li>
+        <li><span class="en">type</span><span class="ty">str</span></li>
+        <li><span class="en">actor</span><span class="ty">→Account</span></li>
+        <li><span class="en">payloadHash</span><span class="ty">on-chain</span></li>
+        <li><span class="en">at</span><span class="ty">ts</span></li>
+      </ul>
+    </div>
+
+  </div>
+  <div class="note t"><p><b>The chain of custody:</b> <code>Account → Project → Token → Sale → Order</code>, with <code>Event</code> as an append-only audit log whose <code>payloadHash</code> can be anchored on-chain — so the off-chain database stays tamper-evident against the mainnet record.</p></div>
+</section>
+
+<!-- IMPLEMENTATION ROADMAP -->
+<section>
+  <div class="shead"><span class="n">05</span><h2>Implementation roadmap</h2></div>
+  <p class="sdesc">Phase 0 builds the base and the knowledge base <em>before</em> any feature — so the project is documentable from its first commit. Then the L0 instant swap from the Vision Map.</p>
+
+  <div class="ph hl">
+    <div class="r">P0</div>
+    <div class="bd">
+      <div class="top"><h3>Foundation &amp; knowledge base</h3><span class="tag now">Start here</span></div>
+      <ul>
+        <li>Scaffold the repo structure (§03); confirm the stack.</li>
+        <li>Write the eight KB files; seed <code>DECISIONS.md</code> with settled choices &amp; <code>GLOSSARY.md</code>.</li>
+        <li>Encode the entity schema (§04) in <code>packages/db</code> + <code>packages/core</code> types.</li>
+        <li>Establish the golden rules &amp; Definition-of-Done in <code>CLAUDE.md</code>.</li>
+      </ul>
+      <div class="out"><b>Deliverable</b> — an empty but fully-documented project any Claude can pick up in three reads.</div>
+    </div>
+  </div>
+
+  <div class="ph">
+    <div class="r">P1</div>
+    <div class="bd">
+      <div class="top"><h3>Wallet + read path</h3><span class="tag next">Then</span></div>
+      <ul>
+        <li>BRC-100 connect via BSV Desktop; show identity &amp; balance.</li>
+        <li>Public browse: project list + project page from the schema (read-only).</li>
+      </ul>
+      <div class="out"><b>Deliverable</b> — connect a wallet and browse a seeded project on mainnet.</div>
+    </div>
+  </div>
+
+  <div class="ph">
+    <div class="r">P2</div>
+    <div class="bd">
+      <div class="top"><h3>Admin-gated issuance</h3><span class="tag next">Then</span></div>
+      <ul>
+        <li>Auth gate; issuer creates a Project + Token; admin approves.</li>
+        <li>STAS issuance tx on mainnet; public allocation split into sale-pool UTXOs.</li>
+      </ul>
+      <div class="out"><b>Deliverable</b> — a real token issued on mainnet behind admin auth.</div>
+    </div>
+  </div>
+
+  <div class="ph">
+    <div class="r">P3</div>
+    <div class="bd">
+      <div class="top"><h3>L0 · instant swap</h3><span class="tag next">MVP complete</span></div>
+      <ul>
+        <li>Fixed-price buy: user signs payment, operator sequences &amp; settles.</li>
+        <li>Broadcast via ARC; buyer SPV-verifies; <code>Order</code> + <code>Event</code> recorded.</li>
+      </ul>
+      <div class="out"><b>Deliverable</b> — the one honest loop: buy a project token on mainnet, end to end.</div>
+    </div>
+  </div>
+
+  <div class="ph">
+    <div class="r">P4+</div>
+    <div class="bd">
+      <div class="top"><h3>The layers</h3><span class="tag later">Future — per Vision Map</span></div>
+      <ul>
+        <li>L1 project surface (dashboards, metrics, docs) · L2 escrow presale · L3+ identity, distribution, rewards.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span class="n">06</span><h2>Status — decisions locked, scaffold on hold</h2></div>
+  <div class="grid g2" style="align-items:start">
+    <div class="card"><h4 style="font-size:.98rem;margin-bottom:7px">Locked ✓</h4>
+      <ul style="margin:0;padding-left:1.05em;font-size:.87rem;color:var(--ink-2)">
+        <li>Stack: <b>TypeScript + Next.js</b></li>
+        <li>Storage: <b>SQLite</b> (Prisma) to start → Postgres later</li>
+        <li>Trust: hybrid · Network: mainnet · Wallet: BSV Desktop</li>
+        <li>Gating: admin auth · Fees: none · Tokens: STAS</li>
+      </ul>
+    </div>
+    <div class="card"><h4 style="font-size:.98rem;margin-bottom:7px">Current mode — planning</h4>
+      <p style="font-size:.87rem;color:var(--ink-2)">Scaffold is deliberately on hold. Next planning moves on the table: draft the actual content of the boot files (<code>CLAUDE.md</code>, <code>STATE.md</code>, <code>INDEX.md</code>) as a preview; expand the schema into a full Prisma model; or deepen the escrow settlement design. On the word "go", P0 scaffolds all eight KB files + the schema into this directory.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">BSV Launchpad · Foundation &amp; Knowledge Base Plan v1 · Classification: Internal · Boots from: CLAUDE.md → STATE.md → INDEX.md</div>

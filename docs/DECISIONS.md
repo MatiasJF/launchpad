@@ -1,0 +1,118 @@
+# Decision Log (ADR)
+
+Append-only; newest at the bottom. Template per entry:
+`Status · Date — Context — Options — Decision — Consequences`.
+
+---
+
+## ADR-001 · Trust model · Accepted · 2026-07-23
+
+- **Context:** BSV has no global mutable state; the launchpad needs pricing + settlement.
+- **Options:** (a) fully on-chain sCrypt covenant · (b) hybrid operator-settled · (c) custodial DB.
+- **Decision:** (b) Hybrid — issuance/holdings/settlement are on-chain STAS UTXOs (SPV-verifiable); the pricing/matching engine is the operator backend.
+- **Consequences:** fastest credible path; users trust the operator to settle honestly (auditable on-chain); can harden toward covenants later.
+
+## ADR-002 · MVP scope · Accepted · 2026-07-23
+
+- **Context:** Reference platforms carry huge feature lists (staking, AMM, farms).
+- **Options:** (a) match their breadth · (b) offering engine only · (c) broad-but-shallow.
+- **Decision:** (b) Offering engine — fixed-price issuance + sale + panel + admin curation.
+- **Consequences:** ~80% of value at ~40% of difficulty; other primitives deferred to layers.
+
+## ADR-003 · Network · Accepted · 2026-07-24
+
+- **Context:** Need a target network for issuance and settlement.
+- **Options:** (a) testnet first · (b) mainnet always.
+- **Decision:** (b) Mainnet always — no testnet fallback (user directive).
+- **Consequences:** real sats, permanent records; demo tokens must be labelled + admin-gated.
+
+## ADR-004 · Token protocol · Accepted · 2026-07-24
+
+- **Context:** Need a UTXO-native token standard.
+- **Options:** STAS, among available BSV token protocols.
+- **Decision:** STAS (user-confirmed).
+- **Consequences:** supply minted at issuance into UTXOs; transfer = spend + recreate.
+
+## ADR-005 · Wallet interface · Accepted · 2026-07-24
+
+- **Context:** Users must connect a wallet and sign their own txs.
+- **Options:** (a) BRC-100 standard interface · (b) custom integration.
+- **Decision:** (a) BRC-100; BSV Desktop as the first target wallet.
+- **Consequences:** non-custodial; standard app-to-wallet interface; other wallets later.
+
+## ADR-006 · Fees · Accepted · 2026-07-24
+
+- **Context:** Platform could take a cut of issuance/volume.
+- **Options:** (a) charge fees · (b) none for now.
+- **Decision:** (b) No fees in the MVP (user directive).
+- **Consequences:** simpler first demo; revisit as a lever later.
+
+## ADR-007 · Curation gate · Accepted · 2026-07-24
+
+- **Context:** Listings need vetting; legal/KYC is out of scope for the demo.
+- **Options:** (a) legal/compliance process · (b) admin-authenticated approval.
+- **Decision:** (b) Admin-gated approval as the stand-in.
+- **Consequences:** proves the loop without legal overhead; legal revisited before scale.
+
+## ADR-008 · Sale-type abstraction · Accepted · 2026-07-24
+
+- **Context:** Escrow presales (refunds, emergency withdraw) are a likely future layer.
+- **Options:** (a) model only instant now · (b) carry `Sale.type = instant | escrow_presale`.
+- **Decision:** (b) Model the type from day one; implement only instant.
+- **Consequences:** escrow slots in later as a new type — no data-model rewrite.
+
+## ADR-009 · Settlement shape · Accepted · 2026-07-24
+
+- **Context:** Escrow needs to hold and return funds, not only deliver.
+- **Options:** (a) deliver-only settlement · (b) hold-and-return settlement.
+- **Decision:** (b) `Order.state` carries `refunded` + `withdrawn`; settlement can return funds.
+- **Consequences:** refunds/emergency-withdraw become configs of one engine (pairs ADR-008).
+
+## ADR-010 · Stack · Accepted · 2026-07-24
+
+- **Context:** Web app + admin + BSV settlement code share one codebase.
+- **Options:** (a) TS + Next.js · (b) TS + separate API/SPA · (c) other language split.
+- **Decision:** (a) TypeScript + Next.js (App Router).
+- **Consequences:** shared types end-to-end; matches BSV SDK/MCP tooling.
+
+## ADR-011 · Storage · Accepted · 2026-07-24
+
+- **Context:** Need persistence for the six entities in the MVP.
+- **Options:** (a) SQLite via Prisma · (b) Postgres from day one · (c) files/in-memory.
+- **Decision:** (a) SQLite via Prisma now → Postgres later.
+- **Consequences:** zero-setup fast MVP; the same Prisma schema migrates cleanly. Note: SQLite does not support Prisma enums, so enum-like fields are `String` with allowed values documented in the schema and enforced by the union types in `packages/core`.
+
+## ADR-012 · Knowledge base · Accepted · 2026-07-24
+
+- **Context:** The project must be resumable from cold after context loss.
+- **Options:** (a) ad-hoc README · (b) 8-file KB + Definition-of-Done protocol.
+- **Decision:** (b) Self-updating 8-file KB; no change done until the KB reflects it.
+- **Consequences:** 3-file cold start; a small upkeep tax per change (CLAUDE.md rule 1).
+
+## ADR-013 · Repo layout · Accepted · 2026-07-24
+
+- **Context:** Keep hard-to-get-right logic testable and framework-independent.
+- **Options:** (a) logic in Next.js routes · (b) logic in `packages/`, app as thin shell.
+- **Decision:** (b) `packages/core` + `packages/bsv` + `packages/db`; `apps/web` is a shell.
+- **Consequences:** domain/on-chain logic unit-testable; framework swappable.
+
+## ADR-014 · Commit convention · Accepted · 2026-07-24
+
+- **Context:** Default tooling appends co-author/session trailers to commits.
+- **Options:** (a) keep trailers · (b) plain commit messages.
+- **Decision:** (b) No `Co-Authored-By` or `Claude-Session` trailers (user directive).
+- **Consequences:** clean git history; CLAUDE.md rule 6.
+
+## ADR-015 · Build workflow · Accepted · 2026-07-24
+
+- **Context:** Multi-file build work benefits from decomposition + verification.
+- **Options:** (a) ad-hoc solo edits · (b) `/orchestrator:orchestrate` multi-agent.
+- **Decision:** (b) Drive build work through `/orchestrator:orchestrate` (user directive).
+- **Consequences:** decompose → fan out → verify; CLAUDE.md rule 7.
+
+## ADR-016 · UI component sourcing · Accepted · 2026-07-24
+
+- **Context:** The product UI should feel polished — proven launchpad/fintech patterns, not screens invented from scratch.
+- **Options:** (a) design from scratch · (b) reference real app patterns via Mobbin.
+- **Decision:** (b) Source component/screen patterns from Mobbin (`api.mobbin.com/mcp`, user has an account) during frontend work; capture the resulting system in `docs/DESIGN.md`.
+- **Consequences:** faster, more credible UI; Mobbin MCP connected at user scope. Our own token/theme system still owns the brand.

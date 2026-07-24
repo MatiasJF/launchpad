@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# builds
+.next/
+dist/
+out/
+*.tsbuildinfo
+
+# env (keep .env.example)
+.env
+.env.local
+.env.*.local
+
+# prisma local db
+*.db
+*.db-journal
+
+# os / editor
+.DS_Store

@@ -1,0 +1,371 @@
+<title>BSV Launchpad — KB Boot Files (Preview)</title>
+<style>
+  :root{
+    --paper:#f6f7f9; --surface:#ffffff; --surface-2:#eef0f4; --ink:#161b22; --ink-2:#3d4653;
+    --ink-3:#67707e; --line:#dde1e8; --line-2:#c9cfda;
+    --gold:#b07d15; --gold-bg:#f6eccf; --teal:#1f8175; --teal-bg:#d9efec;
+    --blue:#2f6fb0; --blue-bg:#dfeaf6; --hard:#a43f3f;
+    --editor:#f4f2ec; --editor-bar:#e9e6dd; --cmt:#8a8778; --hd:#8a5a12; --kw:#1f6f65;
+    --shadow:0 1px 2px rgba(20,25,35,.05), 0 6px 22px rgba(20,25,35,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#0e1218; --surface:#151b23; --surface-2:#1b222c; --ink:#e7ebf1; --ink-2:#b3bcc9;
+      --ink-3:#808b99; --line:#262f3b; --line-2:#33404f;
+      --gold:#e3b451; --gold-bg:#322910; --teal:#5cc2b5; --teal-bg:#10312d;
+      --blue:#6ba8e6; --blue-bg:#12253a; --hard:#e88a8a;
+      --editor:#11161d; --editor-bar:#1a212b; --cmt:#6b7688; --hd:#e3b451; --kw:#5cc2b5;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#f6f7f9; --surface:#ffffff; --surface-2:#eef0f4; --ink:#161b22; --ink-2:#3d4653; --ink-3:#67707e;
+    --line:#dde1e8; --line-2:#c9cfda; --gold:#b07d15; --gold-bg:#f6eccf; --teal:#1f8175; --teal-bg:#d9efec;
+    --blue:#2f6fb0; --blue-bg:#dfeaf6; --hard:#a43f3f;
+    --editor:#f4f2ec; --editor-bar:#e9e6dd; --cmt:#8a8778; --hd:#8a5a12; --kw:#1f6f65;
+    --shadow:0 1px 2px rgba(20,25,35,.05), 0 6px 22px rgba(20,25,35,.06);
+  }
+  :root[data-theme="dark"]{
+    --paper:#0e1218; --surface:#151b23; --surface-2:#1b222c; --ink:#e7ebf1; --ink-2:#b3bcc9; --ink-3:#808b99;
+    --line:#262f3b; --line-2:#33404f; --gold:#e3b451; --gold-bg:#322910; --teal:#5cc2b5; --teal-bg:#10312d;
+    --blue:#6ba8e6; --blue-bg:#12253a; --hard:#e88a8a;
+    --editor:#11161d; --editor-bar:#1a212b; --cmt:#6b7688; --hd:#e3b451; --kw:#5cc2b5;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; font-size:15.5px; line-height:1.55; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:940px; margin:0 auto; padding:0 22px;}
+  h1,h2{margin:0; line-height:1.15; text-wrap:balance; letter-spacing:-.02em; font-weight:700;}
+  .eyebrow{font-family:ui-monospace,Menlo,monospace; font-size:.7rem; font-weight:600; letter-spacing:.15em;
+    text-transform:uppercase; color:var(--gold);}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; background:var(--surface-2); border:1px solid var(--line);
+    border-radius:4px; padding:.08em .34em; font-size:.85em; color:var(--ink);}
+
+  header{padding:42px 0 24px; border-bottom:1px solid var(--line);
+    background:radial-gradient(120% 130% at 100% 0%, color-mix(in srgb,var(--gold) 8%, transparent), transparent 55%), var(--surface);}
+  .krow{display:flex; align-items:center; gap:11px; margin-bottom:15px;}
+  .dot{width:24px;height:24px;border-radius:6px;flex:none;
+    background:linear-gradient(135deg,var(--gold),color-mix(in srgb,var(--gold) 55%,var(--teal)));
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);}
+  header h1{font-size:clamp(1.6rem,4vw,2.2rem); letter-spacing:-.03em;}
+  header p.sub{margin-top:10px; font-size:1.02rem; color:var(--ink-2); max-width:640px;}
+  .banner{margin-top:18px; display:inline-flex; align-items:center; gap:9px; font-size:.82rem; color:var(--teal);
+    background:var(--teal-bg); border-radius:100px; padding:6px 14px; font-weight:600;}
+
+  main{padding:14px 0 0;}
+  .file{margin:26px 0;}
+  .file .cap{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+  .file .cap .fn{font-family:ui-monospace,Menlo,monospace; font-weight:700; font-size:1rem; color:var(--ink);}
+  .file .cap .purpose{font-size:.88rem; color:var(--ink-2);}
+
+  .win{border:1px solid var(--line); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); background:var(--editor);}
+  .bar{display:flex; align-items:center; gap:9px; padding:9px 14px; background:var(--editor-bar); border-bottom:1px solid var(--line);}
+  .bar .dots{display:flex; gap:6px;} .bar .dots i{width:11px;height:11px;border-radius:50%; display:block; opacity:.55;}
+  .bar .dots i:nth-child(1){background:#e0685f;} .bar .dots i:nth-child(2){background:#e2b23f;} .bar .dots i:nth-child(3){background:#5aac54;}
+  .bar .path{font-family:ui-monospace,Menlo,monospace; font-size:.76rem; color:var(--ink-3); margin-left:4px;}
+  .bar .tag{margin-left:auto; font-family:ui-monospace,Menlo,monospace; font-size:.58rem; font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; padding:3px 9px; border-radius:100px;}
+  .tag.boot{background:var(--gold); color:#fff;} .tag.living{background:var(--teal-bg); color:var(--teal);}
+  .tag.append{background:var(--blue-bg); color:var(--blue);}
+
+  pre{margin:0; padding:16px 18px; overflow-x:auto; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    font-size:.8rem; line-height:1.68; color:var(--ink-2); tab-size:2;}
+  pre .h{color:var(--hd); font-weight:700;}
+  pre .c{color:var(--cmt);}
+  pre .k{color:var(--kw); font-weight:600;}
+  pre .b{color:var(--ink); font-weight:700;}
+
+  .note{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--gold); border-radius:0 10px 10px 0;
+    padding:14px 16px; box-shadow:var(--shadow); margin:30px 0 40px;}
+  .note p{font-size:.88rem; color:var(--ink-2);} .note p b{color:var(--ink);}
+  .foot{padding:8px 0 46px; color:var(--ink-3); font-size:.78rem; font-family:ui-monospace,Menlo,monospace;}
+  :focus-visible{outline:2px solid var(--gold); outline-offset:2px; border-radius:3px;}
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="krow"><span class="dot" aria-hidden="true"></span><span class="eyebrow">BSV Launchpad · KB Boot Files · Preview for review</span></div>
+    <h1>The four files that boot the project</h1>
+    <p class="sub">Literal content of the knowledge-base boot files, shown for review — not yet written to the repo. Tune the wording, structure, and rules here; on "go" they scaffold verbatim into <code>./</code> and <code>docs/</code>.</p>
+    <span class="banner">◆ Review draft — nothing committed to the project yet</span>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- CLAUDE.md -->
+  <div class="file">
+    <div class="cap"><span class="fn">CLAUDE.md</span><span class="purpose">— the 30-second entry point; every Claude reads this first</span></div>
+    <div class="win">
+      <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="path">./CLAUDE.md</span><span class="tag boot">Boot file</span></div>
+<pre><span class="h"># BSV Launchpad — Claude Boot File</span>
+
+<span class="b">Read this first.</span> With no context, read in order:
+this file → `docs/STATE.md` → `docs/INDEX.md`. Three files and you are productive.
+
+<span class="h">## What this is</span>
+A token launchpad native to the BSV Blockchain. Projects issue STAS tokens
+and sell them to the public; buyers connect a BRC-100 wallet (BSV Desktop)
+and buy on mainnet. The MVP is a single fixed-price "instant swap": pay sats,
+receive tokens, verify on-chain. Everything else (escrow presales, staking,
+curves, farms) is a future layer on top of that spine.
+
+<span class="h">## How it works</span>
+Hybrid, operator-settled. Issuance, holdings, and settlement are real on-chain
+STAS UTXOs — independently SPV-verifiable. The pricing / matching / sequencing
+engine is our backend. We publish enough on-chain that a buyer can verify they
+got what they paid for. BSV has no global mutable state, so the operator
+sequences buys to avoid UTXO contention.
+
+<span class="h">## Golden rules</span>
+<span class="k">1. The KB is part of every change (Definition of Done).</span> No task is done until:
+   STATE.md reflects it · INDEX.md updated if files moved · DECISIONS.md
+   appended if a choice was made · SCHEMA.md / ARCHITECTURE.md synced if the
+   model or structure moved.
+<span class="k">2. Mainnet always — real sats, permanent records.</span> No testnet fallback.
+   Label demo tokens clearly; never issue anything mistakable for a live
+   project outside the admin gate.
+<span class="k">3. Never handle wallet secrets.</span> No private keys, seed phrases, mnemonics —
+   ever. Users sign in their own wallet. If a secret appears, stop and warn.
+<span class="k">4. Keep the app a thin shell.</span> Business rules live in `packages/core` and
+   `packages/bsv`, not in Next.js routes.
+<span class="k">5. Decisions are logged, not remembered.</span> Worth keeping? Append DECISIONS.md.
+<span class="k">6. Commits are plain — no trailers.</span> Never add `Co-Authored-By` or
+   `Claude-Session` lines to commit messages.
+<span class="k">7. Build through orchestration.</span> Run substantive build work via the
+   `/orchestrator:orchestrate` skill — decompose, fan out, verify — not
+   ad-hoc solo edits. Trivial one-liners may stay solo.
+
+<span class="h">## Stack</span>
+TypeScript · Next.js (App Router) · SQLite via Prisma (→ Postgres later) ·
+BSV TS SDK for STAS / settlement / SPV · BRC-100 wallet (BSV Desktop).
+
+<span class="h">## Scope right now</span>
+<span class="b">In:</span>  admin-gated project creation · STAS issuance on mainnet ·
+     fixed-price public buy · on-chain settlement + SPV.
+<span class="b">Out:</span> fees · legal/KYC process (admin approval stands in) · escrow presales ·
+     staking · bonding curves · farms · vaults.
+
+<span class="h">## The map</span>
+- `docs/STATE.md`        current status — done / in progress / next  <span class="c">(living)</span>
+- `docs/INDEX.md`        where-is-what: topic → file                 <span class="c">(living)</span>
+- `docs/DECISIONS.md`    why it's this way (ADR log)                 <span class="c">(append-only)</span>
+- `docs/ARCHITECTURE.md` how it's built
+- `docs/SCHEMA.md`       the data model
+- `docs/ROADMAP.md`      phases &amp; status
+- `docs/GLOSSARY.md`     STAS, UTXO, BRC-100, escrow, SPV, covenant…
+- `docs/artifacts/`      the visual planning docs</pre>
+    </div>
+  </div>
+
+  <!-- STATE.md -->
+  <div class="file">
+    <div class="cap"><span class="fn">docs/STATE.md</span><span class="purpose">— "how's it going": the single source of truth for status</span></div>
+    <div class="win">
+      <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="path">docs/STATE.md</span><span class="tag living">Living</span></div>
+<pre><span class="h"># Project State</span>
+
+<span class="c">_Last updated: 2026-07-24 — by: planning session_</span>
+
+<span class="h">## Current phase</span>
+<span class="b">P0 — Foundation &amp; Knowledge Base.</span> Planned, not started. Awaiting go.
+
+<span class="h">## Task board</span>
+<span class="c">Legend: ○ todo · ◐ doing · ● done · ⨯ blocked
+IDs: AREA-nnn — flat per-area sequence, not reset by phase.
+Areas: OPS · KB · DB · BSV · WEB · ADMIN</span>
+
+<span class="b">P0 · Foundation &amp; KB</span>
+  ○ OPS-001  Init repo · package manager · tsconfig · lint/format
+  ○ OPS-002  Scaffold structure: apps/web + packages/core|bsv|db
+  ○ KB-001   Write the KB files (4 boot + reference)
+  ○ KB-002   Wire CLAUDE.md golden rules + Definition-of-Done
+  ○ DB-001   Prisma schema: 6 entities on SQLite + first migration
+
+<span class="b">P1 · Wallet + read path</span>  <span class="c">(backlog)</span>
+  ○ BSV-001  BRC-100 connect via BSV Desktop; show identity + balance
+  ○ WEB-001  Public browse: project list + project page (read-only)
+  ○ WEB-002  Design system + component patterns from Mobbin → docs/DESIGN.md
+
+<span class="b">P2 · Admin-gated issuance</span>  <span class="c">(backlog)</span>
+  ○ ADMIN-001  Auth gate + admin approval flow
+  ○ BSV-002    STAS issuance tx on mainnet; split public allocation to pool
+
+<span class="b">P3 · L0 instant swap (MVP)</span>  <span class="c">(backlog)</span>
+  ○ BSV-003  Fixed-price buy: user signs, operator sequences + settles
+  ○ WEB-003  Buy UI; ARC broadcast + SPV verify; record Order + Event
+
+<span class="h">## Known issues / blockers</span>
+- None yet.
+
+<span class="h">## Open questions</span>
+- Package manager (npm / pnpm) — decide at OPS-001.
+- Admin auth: BRC-100 identity vs simple credential — decide in P2 (ADMIN-001).</pre>
+    </div>
+  </div>
+
+  <!-- INDEX.md -->
+  <div class="file">
+    <div class="cap"><span class="fn">docs/INDEX.md</span><span class="purpose">— "what file for X": the stable where-is-what map</span></div>
+    <div class="win">
+      <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="path">docs/INDEX.md</span><span class="tag living">Living</span></div>
+<pre><span class="h"># Index — Where Is What</span>
+
+Topic → location. Entries marked <span class="c">(planned)</span> don't exist yet; they name
+where the thing WILL live so the map is stable from day one.
+
+<span class="h">## Knowledge &amp; decisions</span>
+- Project overview &amp; rules      → `CLAUDE.md`
+- Current status                → `docs/STATE.md`
+- Why a thing is the way it is  → `docs/DECISIONS.md`
+- Terminology                   → `docs/GLOSSARY.md`
+- Visual planning docs          → `docs/artifacts/`
+
+<span class="h">## Domain &amp; data</span>
+- Entity types (Project, Token, Sale, Order, Account, Event)
+                                → `packages/core/src/entities`  <span class="c">(planned)</span>
+- Sale state machine (instant | escrow)
+                                → `packages/core/src/sale`      <span class="c">(planned)</span>
+- Prisma schema                 → `packages/db/schema.prisma`   <span class="c">(planned)</span>
+
+<span class="h">## BSV / on-chain</span>
+- STAS issuance                 → `packages/bsv/src/issue`      <span class="c">(planned)</span>
+- Settlement (build/broadcast/ARC) → `packages/bsv/src/settle`  <span class="c">(planned)</span>
+- SPV verification              → `packages/bsv/src/spv`        <span class="c">(planned)</span>
+- BRC-100 wallet connection     → `packages/bsv/src/wallet`     <span class="c">(planned)</span>
+
+<span class="h">## App</span>
+- Public browse &amp; project pages → `apps/web/app/(public)`       <span class="c">(planned)</span>
+- Buy flow                      → `apps/web/app/(public)/sale`  <span class="c">(planned)</span>
+- Admin: create / approve       → `apps/web/app/(admin)`        <span class="c">(planned)</span>
+- Backend API (sequence/settle) → `apps/web/app/api`            <span class="c">(planned)</span>
+
+<span class="h">## Design</span>
+- Design system &amp; tokens        → `docs/DESIGN.md`               <span class="c">(planned, P1)</span>
+- UI pattern reference          → Mobbin · mobbin.com/mcp       <span class="c">(account)</span></pre>
+    </div>
+  </div>
+
+  <!-- DECISIONS.md -->
+  <div class="file">
+    <div class="cap"><span class="fn">docs/DECISIONS.md</span><span class="purpose">— "why it's this way": append-only, seeded with everything settled so far</span></div>
+    <div class="win">
+      <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="path">docs/DECISIONS.md</span><span class="tag append">Append-only</span></div>
+<pre><span class="h"># Decision Log (ADR)</span>
+
+Append-only; newest at the bottom. Template per entry:
+<span class="c">  Status · Date — Context — Options — Decision — Consequences</span>
+
+<span class="c">---</span>
+<span class="h">## ADR-001 · Trust model</span>  <span class="c">· Accepted · 2026-07-23</span>
+<span class="b">Context:</span> BSV has no global mutable state; the launchpad needs pricing + settlement.
+<span class="b">Options:</span> (a) fully on-chain sCrypt covenant · (b) hybrid operator-settled · (c) custodial DB
+<span class="b">Decision:</span> (b) Hybrid — issuance/holdings/settlement are on-chain STAS UTXOs
+          (SPV-verifiable); the pricing/matching engine is the operator backend.
+<span class="b">Consequences:</span> fastest credible path; users trust the operator to settle honestly
+          (auditable on-chain); can harden toward covenants later.
+
+<span class="h">## ADR-002 · MVP scope</span>  <span class="c">· Accepted · 2026-07-23</span>
+<span class="b">Context:</span> Reference platforms carry huge feature lists (staking, AMM, farms).
+<span class="b">Options:</span> (a) match their breadth · (b) offering engine only · (c) broad-but-shallow
+<span class="b">Decision:</span> (b) Offering engine — fixed-price issuance + sale + panel + admin curation.
+<span class="b">Consequences:</span> ~80% of value at ~40% of difficulty; other primitives deferred to layers.
+
+<span class="h">## ADR-003 · Network</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Need a target network for issuance and settlement.
+<span class="b">Options:</span> (a) testnet first · (b) mainnet always
+<span class="b">Decision:</span> (b) Mainnet always — no testnet fallback (user directive).
+<span class="b">Consequences:</span> real sats, permanent records; demo tokens must be labelled + admin-gated.
+
+<span class="h">## ADR-004 · Token protocol</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Need a UTXO-native token standard.
+<span class="b">Options:</span> STAS, among available BSV token protocols.
+<span class="b">Decision:</span> STAS (user-confirmed).
+<span class="b">Consequences:</span> supply minted at issuance into UTXOs; transfer = spend + recreate.
+
+<span class="h">## ADR-005 · Wallet interface</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Users must connect a wallet and sign their own txs.
+<span class="b">Options:</span> (a) BRC-100 standard interface · (b) custom integration
+<span class="b">Decision:</span> (a) BRC-100; BSV Desktop as the first target wallet.
+<span class="b">Consequences:</span> non-custodial; standard app-to-wallet interface; other wallets later.
+
+<span class="h">## ADR-006 · Fees</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Platform could take a cut of issuance/volume.
+<span class="b">Options:</span> (a) charge fees · (b) none for now
+<span class="b">Decision:</span> (b) No fees in the MVP (user directive).
+<span class="b">Consequences:</span> simpler first demo; revisit as a lever later.
+
+<span class="h">## ADR-007 · Curation gate</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Listings need vetting; legal/KYC is out of scope for the demo.
+<span class="b">Options:</span> (a) legal/compliance process · (b) admin-authenticated approval
+<span class="b">Decision:</span> (b) Admin-gated approval as the stand-in.
+<span class="b">Consequences:</span> proves the loop without legal overhead; legal revisited before scale.
+
+<span class="h">## ADR-008 · Sale-type abstraction</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Escrow presales (refunds, emergency withdraw) are a likely future layer.
+<span class="b">Options:</span> (a) model only instant now · (b) carry Sale.type = instant | escrow-presale
+<span class="b">Decision:</span> (b) Model the type from day one; implement only instant.
+<span class="b">Consequences:</span> escrow slots in later as a new type — no data-model rewrite.
+
+<span class="h">## ADR-009 · Settlement shape</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Escrow needs to hold and return funds, not only deliver.
+<span class="b">Options:</span> (a) deliver-only settlement · (b) hold-and-return settlement
+<span class="b">Decision:</span> (b) Order.state carries refunded + withdrawn; settlement can return funds.
+<span class="b">Consequences:</span> refunds/emergency-withdraw become configs of one engine (pairs ADR-008).
+
+<span class="h">## ADR-010 · Stack</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Web app + admin + BSV settlement code share one codebase.
+<span class="b">Options:</span> (a) TS + Next.js · (b) TS + separate API/SPA · (c) other language split
+<span class="b">Decision:</span> (a) TypeScript + Next.js (App Router).
+<span class="b">Consequences:</span> shared types end-to-end; matches BSV SDK/MCP tooling.
+
+<span class="h">## ADR-011 · Storage</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Need persistence for the six entities in the MVP.
+<span class="b">Options:</span> (a) SQLite via Prisma · (b) Postgres from day one · (c) files/in-memory
+<span class="b">Decision:</span> (a) SQLite via Prisma now → Postgres later.
+<span class="b">Consequences:</span> zero-setup fast MVP; the same Prisma schema migrates cleanly.
+
+<span class="h">## ADR-012 · Knowledge base</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> The project must be resumable from cold after context loss.
+<span class="b">Options:</span> (a) ad-hoc README · (b) 8-file KB + Definition-of-Done protocol
+<span class="b">Decision:</span> (b) Self-updating 8-file KB; no change done until the KB reflects it.
+<span class="b">Consequences:</span> 3-file cold start; a small upkeep tax per change (CLAUDE.md rule 1).
+
+<span class="h">## ADR-013 · Repo layout</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Keep hard-to-get-right logic testable and framework-independent.
+<span class="b">Options:</span> (a) logic in Next.js routes · (b) logic in packages/, app as thin shell
+<span class="b">Decision:</span> (b) packages/core + packages/bsv + packages/db; apps/web is a shell.
+<span class="b">Consequences:</span> domain/on-chain logic unit-testable; framework swappable.
+
+<span class="h">## ADR-014 · Commit convention</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Default tooling appends co-author/session trailers to commits.
+<span class="b">Options:</span> (a) keep trailers · (b) plain commit messages
+<span class="b">Decision:</span> (b) No Co-Authored-By or Claude-Session trailers (user directive).
+<span class="b">Consequences:</span> clean git history; CLAUDE.md rule 6.
+
+<span class="h">## ADR-015 · Build workflow</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> Multi-file build work benefits from decomposition + verification.
+<span class="b">Options:</span> (a) ad-hoc solo edits · (b) /orchestrator:orchestrate multi-agent
+<span class="b">Decision:</span> (b) Drive build work through /orchestrator:orchestrate (user directive).
+<span class="b">Consequences:</span> decompose → fan out → verify; CLAUDE.md rule 7.
+
+<span class="h">## ADR-016 · UI component sourcing</span>  <span class="c">· Accepted · 2026-07-24</span>
+<span class="b">Context:</span> The product UI should feel polished — proven launchpad/fintech patterns,
+not screens invented from scratch.
+<span class="b">Options:</span> (a) design from scratch · (b) reference real app patterns via Mobbin
+<span class="b">Decision:</span> (b) Source component/screen patterns from Mobbin (mobbin.com/mcp, user has
+an account) during frontend work; capture the resulting system in docs/DESIGN.md.
+<span class="b">Consequences:</span> faster, more credible UI; Mobbin MCP to be connected at P1. Our own
+token/theme system still owns the brand.</pre>
+    </div>
+  </div>
+
+  <div class="note">
+    <p><b>The other four KB files</b> — <code>ARCHITECTURE.md</code>, <code>SCHEMA.md</code>, <code>ROADMAP.md</code>, <code>GLOSSARY.md</code> — are reference docs that lift almost verbatim from the four visual planning artifacts, so they're quick to generate at scaffold time. These four boot files are the ones whose <em>conventions</em> are worth agreeing on now.</p>
+  </div>
+
+</main>
+
+<div class="foot wrap">BSV Launchpad · KB Boot Files Preview v1 · Classification: Internal · Review draft — not committed</div>

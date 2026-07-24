@@ -1,0 +1,386 @@
+<title>BSV Launchpad — Mechanics Deep-Dive</title>
+<style>
+  :root {
+    --paper:#f6f7f9; --surface:#ffffff; --surface-2:#eef0f4; --ink:#161b22; --ink-2:#3d4653;
+    --ink-3:#67707e; --line:#dde1e8; --line-2:#c9cfda;
+    --gold:#b07d15; --gold-bg:#f6eccf;
+    --teal:#1f8175; --teal-bg:#d9efec;
+    --blue:#2f6fb0; --blue-bg:#dfeaf6;
+    --hard:#a43f3f; --hard-bg:#f6dede;
+    --shadow:0 1px 2px rgba(20,25,35,.05), 0 6px 22px rgba(20,25,35,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#0e1218; --surface:#151b23; --surface-2:#1b222c; --ink:#e7ebf1; --ink-2:#b3bcc9;
+      --ink-3:#808b99; --line:#262f3b; --line-2:#33404f;
+      --gold:#e3b451; --gold-bg:#322910;
+      --teal:#5cc2b5; --teal-bg:#10312d;
+      --blue:#6ba8e6; --blue-bg:#12253a;
+      --hard:#e88a8a; --hard-bg:#351d1d;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#f6f7f9; --surface:#ffffff; --surface-2:#eef0f4; --ink:#161b22; --ink-2:#3d4653;
+    --ink-3:#67707e; --line:#dde1e8; --line-2:#c9cfda; --gold:#b07d15; --gold-bg:#f6eccf;
+    --teal:#1f8175; --teal-bg:#d9efec; --blue:#2f6fb0; --blue-bg:#dfeaf6; --hard:#a43f3f; --hard-bg:#f6dede;
+    --shadow:0 1px 2px rgba(20,25,35,.05), 0 6px 22px rgba(20,25,35,.06);
+  }
+  :root[data-theme="dark"]{
+    --paper:#0e1218; --surface:#151b23; --surface-2:#1b222c; --ink:#e7ebf1; --ink-2:#b3bcc9;
+    --ink-3:#808b99; --line:#262f3b; --line-2:#33404f; --gold:#e3b451; --gold-bg:#322910;
+    --teal:#5cc2b5; --teal-bg:#10312d; --blue:#6ba8e6; --blue-bg:#12253a; --hard:#e88a8a; --hard-bg:#351d1d;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:15.5px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:0 22px;}
+  h1,h2,h3,h4{margin:0; line-height:1.15; text-wrap:balance; letter-spacing:-.02em; font-weight:700;}
+  p{margin:0;}
+  .mono, code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  .eyebrow{
+    font-family:ui-monospace,Menlo,monospace; font-size:.7rem; font-weight:600; letter-spacing:.15em;
+    text-transform:uppercase; color:var(--gold);
+  }
+  code{background:var(--surface-2); border:1px solid var(--line); border-radius:4px; padding:.08em .34em; font-size:.85em; color:var(--ink);}
+
+  /* header */
+  header{
+    padding:44px 0 26px; border-bottom:1px solid var(--line);
+    background:radial-gradient(120% 130% at 100% 0%, color-mix(in srgb,var(--gold) 8%, transparent), transparent 55%), var(--surface);
+  }
+  .krow{display:flex; align-items:center; gap:11px; margin-bottom:16px;}
+  .dot{width:24px;height:24px;border-radius:6px;flex:none;
+    background:linear-gradient(135deg,var(--gold),color-mix(in srgb,var(--gold) 55%,var(--teal)));
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);}
+  header h1{font-size:clamp(1.7rem,4vw,2.5rem); letter-spacing:-.03em;}
+  header p.sub{margin-top:10px; font-size:1.05rem; color:var(--ink-2); max-width:640px;}
+  .chips{display:flex; flex-wrap:wrap; gap:7px; margin-top:22px;}
+  .chip{font-family:ui-monospace,Menlo,monospace; font-size:.72rem; font-weight:600; letter-spacing:.02em;
+    padding:4px 10px; border-radius:100px; border:1px solid var(--line-2); background:var(--surface); color:var(--ink-2);}
+  .chip b{color:var(--gold); font-weight:700;}
+  .chip.on{background:var(--teal-bg); border-color:transparent; color:var(--teal);}
+
+  /* grid scaffold */
+  .grid{display:grid; gap:16px; margin-top:22px;}
+  .g2{grid-template-columns:repeat(2,1fr);}
+  .g3{grid-template-columns:repeat(3,1fr);}
+  @media (max-width:860px){ .g2,.g3{grid-template-columns:1fr;} }
+
+  section{padding:34px 0; border-bottom:1px solid var(--line);}
+  section:last-of-type{border-bottom:none;}
+  .shead{display:flex; align-items:baseline; gap:12px; margin-bottom:6px; flex-wrap:wrap;}
+  .shead h2{font-size:1.35rem;}
+  .shead .n{font-family:ui-monospace,Menlo,monospace; color:var(--gold); font-weight:700; font-size:.95rem;}
+  .sdesc{color:var(--ink-2); font-size:.95rem; margin-bottom:18px; max-width:720px;}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; box-shadow:var(--shadow);}
+  .card h3{font-size:1rem; margin-bottom:6px;}
+  .card h4{font-size:.9rem; margin-bottom:5px;}
+  .card p{font-size:.88rem; color:var(--ink-2);}
+  .card + .card{margin-top:0;}
+
+  .lbl{font-family:ui-monospace,Menlo,monospace; font-size:.64rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3);}
+  .k-list{display:grid; gap:10px;}
+  .k-item{display:grid; grid-template-columns:22px 1fr; gap:11px; align-items:start;}
+  .k-item .ix{font-family:ui-monospace,Menlo,monospace; color:var(--gold); font-weight:700; font-size:.85rem; padding-top:1px;}
+  .k-item p{font-size:.88rem; color:var(--ink-2);} .k-item b{color:var(--ink);}
+
+  /* pills */
+  .pill{display:inline-block; font-family:ui-monospace,Menlo,monospace; font-size:.66rem; font-weight:700;
+    letter-spacing:.03em; padding:2px 9px; border-radius:100px; white-space:nowrap;}
+  .pill.s{background:var(--teal-bg); color:var(--teal);}
+  .pill.m{background:var(--gold-bg); color:var(--gold);}
+  .pill.h{background:var(--hard-bg); color:var(--hard);}
+
+  /* bonding curve figure */
+  .fig{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; box-shadow:var(--shadow);}
+  canvas{width:100%; height:auto; display:block;}
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin-top:12px;}
+  .lg{display:flex; align-items:center; gap:7px; font-size:.8rem; color:var(--ink-2);}
+  .lg .sw{width:16px; height:3px; border-radius:2px;}
+
+  .curve-detail{display:grid; gap:12px;}
+  .curve-detail .card .top{display:flex; align-items:center; gap:9px; margin-bottom:5px;}
+  .curve-detail .card .top .sw{width:12px;height:12px;border-radius:3px;}
+  .curve-detail code.f{display:inline-block; margin:4px 0 6px;}
+  .curve-detail .bsv{font-size:.8rem; color:var(--teal); border-left:2px solid var(--teal); padding-left:9px; margin-top:6px;}
+
+  /* tokenomics stacked bar */
+  .bar{display:flex; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--line); margin-bottom:14px;}
+  .seg{display:flex; align-items:center; justify-content:center; font-family:ui-monospace,Menlo,monospace;
+    font-size:.7rem; font-weight:700; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.25);}
+  .tk-legend{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:9px;}
+  .tk{display:flex; align-items:center; gap:9px; font-size:.83rem;}
+  .tk .sw{width:12px;height:12px;border-radius:3px;flex:none;}
+  .tk b{color:var(--ink);} .tk span{color:var(--ink-3); font-family:ui-monospace,Menlo,monospace; font-size:.78rem;}
+
+  /* matrix table */
+  .tscroll{overflow-x:auto; border-radius:12px;}
+  table{border-collapse:collapse; width:100%; font-size:.86rem; background:var(--surface); border:1px solid var(--line);}
+  th,td{text-align:left; padding:10px 13px; border-bottom:1px solid var(--line); vertical-align:top;}
+  thead th{background:var(--surface-2); font-family:ui-monospace,Menlo,monospace; font-size:.64rem; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--ink-3); font-weight:700;}
+  tbody tr:last-child td{border-bottom:none;}
+  td:first-child{font-weight:700; color:var(--ink); white-space:nowrap;}
+  td.u{color:var(--ink-2);}
+
+  /* flow steps */
+  .flow{display:grid; grid-template-columns:repeat(4,1fr); gap:10px;}
+  @media (max-width:860px){ .flow{grid-template-columns:1fr 1fr;} }
+  .step{background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:13px 15px; position:relative; box-shadow:var(--shadow);}
+  .step .s-n{font-family:ui-monospace,Menlo,monospace; font-size:.7rem; color:var(--gold); font-weight:700; letter-spacing:.06em;}
+  .step h4{font-size:.92rem; margin:4px 0 5px;}
+  .step p{font-size:.8rem; color:var(--ink-2);}
+  .step .chn{font-family:ui-monospace,Menlo,monospace; font-size:.62rem; letter-spacing:.06em; color:var(--teal); margin-top:7px; text-transform:uppercase;}
+
+  .note{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--gold); border-radius:0 10px 10px 0;
+    padding:13px 16px; box-shadow:var(--shadow);}
+  .note.t{border-left-color:var(--teal);}
+  .note p{font-size:.86rem; color:var(--ink-2);}
+
+  .foot{padding:26px 0 46px; color:var(--ink-3); font-size:.78rem; font-family:ui-monospace,Menlo,monospace;}
+  :focus-visible{outline:2px solid var(--gold); outline-offset:2px; border-radius:3px;}
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="krow"><span class="dot" aria-hidden="true"></span><span class="eyebrow">BSV Launchpad · Mechanics Deep-Dive · Internal</span></div>
+    <h1>The primitives, priced and mapped to UTXO</h1>
+    <p class="sub">A one-pass reference: how STAS behaves, how to price a sale, how tokens are distributed, and where each DeFi primitive lands on the BSV grain — tuned to a first working demo.</p>
+    <div class="chips">
+      <span class="chip on">STAS · confirmed</span>
+      <span class="chip">Wallet · <b>BSV Desktop</b> (BRC-100)</span>
+      <span class="chip">Network · <b>Mainnet</b></span>
+      <span class="chip">Trust · <b>Hybrid</b> operator-settled</span>
+      <span class="chip">Gating · <b>Admin auth</b> (no legal yet)</span>
+      <span class="chip">Fees · <b>None</b> for now</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- STAS SUBSTRATE -->
+<section>
+  <div class="shead"><span class="n">01</span><h2>The substrate — how STAS behaves</h2></div>
+  <p class="sdesc">Everything the launchpad does is spending and re-creating UTXOs under the STAS colored-coin rules. Four behaviours define what's possible.</p>
+  <div class="grid g2">
+    <div class="card">
+      <div class="k-list">
+        <div class="k-item"><span class="ix">↳</span><p><b>Supply is minted once.</b> Issuance creates the full token supply inside UTXOs. "Total vs public" is just how you slice those UTXOs — public allocation to the sale pool, the rest to treasury/team/rewards addresses.</p></div>
+        <div class="k-item"><span class="ix">↳</span><p><b>Transfer = spend + recreate.</b> Sending tokens spends STAS UTXOs and creates new ones for the recipient, following the protocol script. There are no balances — only coins.</p></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="k-list">
+        <div class="k-item"><span class="ix">↳</span><p><b>Split &amp; merge.</b> One STAS UTXO of 1,000 tokens splits into 300 + 700; small ones merge back. This is how a buyer gets an exact amount and how the pool makes change.</p></div>
+        <div class="k-item"><span class="ix">↳</span><p><b>Vesting = timelocks.</b> Team/treasury tranches are STAS UTXOs locked with <code>nLockTime</code> / <code>CLTV</code> — unspendable until a block height/time. Native, no contract needed.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="note" style="margin-top:16px">
+    <span class="eyebrow" style="color:var(--ink-3)">The one constraint to design around</span>
+    <p style="margin-top:6px">Any "shared pool everyone hits at once" (AMM, bonding curve, staking vault) is a <b>single-UTXO-contention</b> problem — one spender per step. The hybrid model sidesteps it: the operator <b>sequences</b> purchases and settles them on mainnet, so users never race for the same UTXO.</p>
+  </div>
+</section>
+
+<!-- BONDING CURVES -->
+<section>
+  <div class="shead"><span class="n">02</span><h2>Pricing — fixed now, curves as the study track</h2></div>
+  <p class="sdesc">MVP ships a <b>fixed price</b> (<code>X sats / token</code>). The next question is dynamic pricing: a bonding curve makes price a deterministic function of supply sold, so the curve itself is the market maker. Three shapes, same axes — pick the aggression.</p>
+  <div class="grid g2" style="align-items:start">
+    <div class="fig">
+      <div class="lbl" style="margin-bottom:8px">Price&nbsp;↑ &nbsp;vs&nbsp; supply sold&nbsp;→</div>
+      <canvas id="curves" width="620" height="380" role="img" aria-label="Comparison of linear, exponential, and constant-product bonding curves: price rising as supply sells out"></canvas>
+      <div class="legend">
+        <span class="lg"><span class="sw" style="background:var(--blue)"></span>Linear</span>
+        <span class="lg"><span class="sw" style="background:var(--gold)"></span>Exponential</span>
+        <span class="lg"><span class="sw" style="background:var(--teal)"></span>Constant-product</span>
+      </div>
+    </div>
+    <div class="curve-detail">
+      <div class="card">
+        <div class="top"><span class="sw" style="background:var(--blue)"></span><h4>Linear</h4></div>
+        <code class="f">price = m · sold + b</code>
+        <p>Steady, legible climb. Easiest to explain to buyers; mild early-buyer advantage.</p>
+      </div>
+      <div class="card">
+        <div class="top"><span class="sw" style="background:var(--gold)"></span><h4>Exponential</h4></div>
+        <code class="f">price = b · e^(k · sold)</code>
+        <p>Cheap early, expensive late. Strong early-buyer reward — can read as predatory; use with care.</p>
+      </div>
+      <div class="card">
+        <div class="top"><span class="sw" style="background:var(--teal)"></span><h4>Constant-product · x·y=k</h4></div>
+        <code class="f">price = reserve_sats / reserve_tokens</code>
+        <p>The Uniswap model. Best-understood two-sided market; supports sell-back. Steepens sharply as the pool drains.</p>
+        <p class="bsv">On UTXO: a single stateful "curve UTXO" carrying <code>k</code> and reserves, spent-and-recreated per trade.</p>
+      </div>
+    </div>
+  </div>
+  <div class="note t" style="margin-top:16px">
+    <span class="eyebrow" style="color:var(--teal)">Path to it</span>
+    <p style="margin-top:6px">A curve is a <b>stateful contract</b> (must remember <code>sold</code>). Sequence: fixed-price → operator-enforced curve with published state → <b>sCrypt covenant</b> enforcing the math on-chain. Curves invite front-running / MEV — model those failure modes before real value flows.</p>
+  </div>
+</section>
+
+<!-- TOKENOMICS -->
+<section>
+  <div class="shead"><span class="n">03</span><h2>Tokenomics — the distribution is the design</h2></div>
+  <p class="sdesc">STAS handles supply and transfer; the value question is how you split and release it. A worked example of a 100M-token project — the numbers are a starting template, not a prescription.</p>
+  <div class="grid g2" style="align-items:start">
+    <div class="card">
+      <div class="lbl" style="margin-bottom:9px">Example allocation · 100,000,000 supply</div>
+      <div class="bar" id="allocbar">
+        <div class="seg" style="width:30%; background:var(--gold)">30%</div>
+        <div class="seg" style="width:25%; background:var(--teal)">25%</div>
+        <div class="seg" style="width:20%; background:var(--blue)">20%</div>
+        <div class="seg" style="width:15%; background:#8a5a2b">15%</div>
+        <div class="seg" style="width:10%; background:var(--ink-3)">10%</div>
+      </div>
+      <div class="tk-legend">
+        <div class="tk"><span class="sw" style="background:var(--gold)"></span><div><b>Public sale</b> <span>30M · fixed price</span></div></div>
+        <div class="tk"><span class="sw" style="background:var(--teal)"></span><div><b>Staking / rewards</b> <span>25M · emitted</span></div></div>
+        <div class="tk"><span class="sw" style="background:var(--blue)"></span><div><b>Treasury</b> <span>20M · timelocked</span></div></div>
+        <div class="tk"><span class="sw" style="background:#8a5a2b"></span><div><b>Team</b> <span>15M · vested</span></div></div>
+        <div class="tk"><span class="sw" style="background:var(--ink-3)"></span><div><b>Airdrop / community</b> <span>10M · claim</span></div></div>
+      </div>
+    </div>
+    <div class="grid" style="gap:12px">
+      <div class="card"><h4>Vesting</h4><p>Team &amp; treasury don't unlock at once. Slice each into tranches as separate timelocked STAS UTXOs (e.g. quarterly cliffs) — the schedule is enforced by <code>CLTV</code>, visible on-chain.</p></div>
+      <div class="card"><h4>Emissions</h4><p>Staking rewards flow over time from the rewards pool. The <em>emission curve</em> (flat, decaying, halving) is its own tokenomic lever — front-loaded emissions bootstrap; decaying emissions protect late holders.</p></div>
+      <div class="card"><h4>Sinks &amp; burns</h4><p>Optional demand levers: burn a slice on certain actions, or route value to treasury. On UTXO a "burn" is a provably-unspendable output. Keep out of MVP; note as a lever.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRIMITIVE MATRIX -->
+<section>
+  <div class="shead"><span class="n">04</span><h2>Primitive matrix — fit &amp; mechanic</h2></div>
+  <p class="sdesc">Every requested feature, its fit with the UTXO grain, and the one-line mechanic. Fit degrades as a feature needs shared concurrent pool state.</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>Primitive</th><th>Fit</th><th>UTXO mechanic</th><th>Phase</th></tr></thead>
+      <tbody>
+        <tr><td>Offering / IDO</td><td><span class="pill s">Strong</span></td><td class="u">Fixed-price (then curve) sale of the public STAS UTXOs; buyer pays, pool makes change.</td><td class="u mono">MVP</td></tr>
+        <tr><td>Airdrops</td><td><span class="pill s">Strong</span></td><td class="u">Merkle-proof <b>claim</b> model — users pull their allocation; avoids dust to inactive wallets.</td><td class="u mono">2</td></tr>
+        <tr><td>Tokenomics</td><td><span class="pill s">Design</span></td><td class="u">Supply split + vesting via timelocks + emission schedule. Not code — design.</td><td class="u mono">1–2</td></tr>
+        <tr><td>Staking</td><td><span class="pill m">Moderate</span></td><td class="u">Lock STAS in a timelock/covenant; rewards = amount × duration, paid as new UTXOs via overlay accounting.</td><td class="u mono">3</td></tr>
+        <tr><td>Bonding curve</td><td><span class="pill m">Moderate</span></td><td class="u">Single stateful curve UTXO; operator-enforced → sCrypt covenant.</td><td class="u mono">4</td></tr>
+        <tr><td>Farms (LP mining)</td><td><span class="pill h">Hard</span></td><td class="u">Presupposes an AMM pool (the contention problem). Downstream of a working pool.</td><td class="u mono">5</td></tr>
+        <tr><td>Vaults</td><td><span class="pill h">Hard</span></td><td class="u">Auto-compounding wrappers over staking/farms. Only once those exist.</td><td class="u mono">5+</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- FIRST SHOW -->
+<section>
+  <div class="shead"><span class="n">05</span><h2>What the first show proves</h2></div>
+  <p class="sdesc">Legal and fees are out of scope for now — the demo's job is to prove the loop works on <b>mainnet</b>, gated by a simple admin-authenticated approval rather than a legal process.</p>
+  <div class="flow">
+    <div class="step"><span class="s-n">STEP 1</span><h4>Admin-gated create</h4><p>Authenticated project fills supply, public split &amp; fixed price. Admin approves the listing.</p><div class="chn">Off-chain + auth</div></div>
+    <div class="step"><span class="s-n">STEP 2</span><h4>Issue on mainnet</h4><p>Backend builds the STAS issuance tx; public allocation split into sale-pool UTXOs.</p><div class="chn">On-chain · STAS</div></div>
+    <div class="step"><span class="s-n">STEP 3</span><h4>Public buys</h4><p>Client connects BSV Desktop, buys at the fixed price; their own wallet signs the payment.</p><div class="chn">BRC-100 · non-custodial</div></div>
+    <div class="step"><span class="s-n">STEP 4</span><h4>Settle &amp; verify</h4><p>Operator sequences the buy, delivers tokens, broadcasts via ARC; buyer SPV-verifies.</p><div class="chn">On-chain · SPV</div></div>
+  </div>
+  <div class="note t" style="margin-top:16px">
+    <span class="eyebrow" style="color:var(--teal)">Success = one honest loop</span>
+    <p style="margin-top:6px">A real project token, created behind admin auth, sold to a real wallet on mainnet, with holdings and settlement independently verifiable on-chain. Everything after — airdrops, staking, curves — is additive on top of this proven spine.</p>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">BSV Launchpad · Mechanics Deep-Dive v1 · Classification: Internal · Mainnet · Hybrid operator-settled</div>
+
+<script>
+(function(){
+  var cv = document.getElementById('curves');
+  if(!cv) return;
+  var ctx = cv.getContext('2d');
+
+  function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+  function draw(){
+    var cssW = cv.clientWidth || 620;
+    var ratio = window.devicePixelRatio || 1;
+    var H = Math.round(cssW * 0.61);
+    cv.width = cssW * ratio; cv.height = H * ratio;
+    cv.style.height = H + 'px';
+    ctx.setTransform(ratio,0,0,ratio,0,0);
+    ctx.clearRect(0,0,cssW,H);
+
+    var padL=34, padR=14, padT=14, padB=28;
+    var w = cssW - padL - padR, h = H - padT - padB;
+    var x0 = padL, y0 = padT + h;
+
+    var line = css('--line'), ink3 = css('--ink-3');
+    var blue = css('--blue'), gold = css('--gold'), teal = css('--teal');
+
+    // grid
+    ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.font = '10px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = ink3;
+    for(var i=0;i<=4;i++){
+      var gy = padT + h*(i/4);
+      ctx.beginPath(); ctx.moveTo(x0, gy); ctx.lineTo(x0+w, gy); ctx.stroke();
+    }
+    // axes
+    ctx.strokeStyle = ink3; ctx.globalAlpha=.5;
+    ctx.beginPath(); ctx.moveTo(x0,padT); ctx.lineTo(x0,y0); ctx.lineTo(x0+w,y0); ctx.stroke();
+    ctx.globalAlpha=1;
+
+    function px(t){ return x0 + t*w; }
+    function py(v){ return y0 - Math.max(0,Math.min(1,v))*h; }
+
+    function plot(fn, color){
+      ctx.beginPath();
+      for(var s=0;s<=1.0001;s+=0.01){
+        var v = fn(s);
+        var X=px(s), Y=py(v);
+        if(s===0) ctx.moveTo(X,Y); else ctx.lineTo(X,Y);
+      }
+      ctx.strokeStyle = color; ctx.lineWidth = 2.4; ctx.lineJoin='round';
+      ctx.stroke();
+      // endpoint dot
+      var ev = fn(1);
+      ctx.beginPath(); ctx.arc(px(1), py(ev), 3.4, 0, Math.PI*2);
+      ctx.fillStyle = color; ctx.fill();
+    }
+
+    var lin = function(s){ return 0.12 + 0.80*s; };
+    var ex  = function(s){ return 0.09*Math.exp(2.35*s); };           // ~0.94 at s=1
+    var cp  = function(s){ return 0.12/(1-0.87*s); };                 // hockey stick, clipped at 1
+
+    // faint fill under exponential for emphasis
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(px(0), py(ex(0)));
+    for(var s2=0;s2<=1.0001;s2+=0.01){ ctx.lineTo(px(s2), py(ex(s2))); }
+    ctx.lineTo(px(1), y0); ctx.lineTo(px(0), y0); ctx.closePath();
+    ctx.fillStyle = gold; ctx.globalAlpha = 0.07; ctx.fill();
+    ctx.restore();
+
+    plot(lin, blue);
+    plot(cp, teal);
+    plot(ex, gold);
+
+    // axis ticks text
+    ctx.fillStyle = ink3; ctx.textAlign='center';
+    ctx.fillText('0', x0, y0+16);
+    ctx.fillText('sold out', x0+w, y0+16);
+  }
+
+  draw();
+  window.addEventListener('resize', draw);
+  if(window.matchMedia){
+    try{ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw); }catch(e){}
+  }
+  new MutationObserver(draw).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+})();
+</script>
