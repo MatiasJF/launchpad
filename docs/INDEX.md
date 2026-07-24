@@ -34,6 +34,8 @@ present, not implemented.
 - Settlement (build/broadcast/ARC) → `packages/bsv/src/settle` _(stub)_
 - SPV verification → `packages/bsv/src/spv` _(stub)_
 - BRC-100 wallet connection → `packages/bsv/src/wallet` (WalletClient) · UI `apps/web/components/WalletButton.tsx`
+- STAS issuance/transfer → `packages/bsv/src/issue` · `packages/bsv/src/settle` (ADR-021)
+- STAS knowledge (external) → `stas-knowledge-mcp` MCP (local) + `../stas-knowledge-mcp/knowledge`
 
 ## App
 

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Artifact",
+      "WebFetch(domain:docs.pinksale.finance)",
+      "WebFetch(domain:dao-maker-1.gitbook.io)",
+      "WebFetch(domain:docs.dxsale.network)",
+      "Bash(claude mcp *)",
+      "Bash(echo \"---EXIT:$?---\")",
+      "Bash(curl -s -o /dev/null -w \"http_code=%{http_code}\\\\n\" -L https://mobbin.com/mcp)",
+      "Bash(curl -sI https://mobbin.com/mcp)",
+      "Bash(curl -s -X POST https://mobbin.com/mcp -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"probe\",\"version\":\"0\"}}}')",
+      "WebFetch(domain:mobbin.com)",
+      "Bash(pnpm -v)",
+      "Read(//Users/matiasjackson/**)",
+      "Bash(corepack enable *)",
+      "Bash(corepack prepare *)",
+      "Bash(echo \"pnpm now: $\\(pnpm -v 2>&1\\)\")",
+      "Bash(git init *)",
+      "Bash(curl -s -o /dev/null -w \"registry.npmjs.org http=%{http_code} time=%{time_total}s\\\\n\" --max-time 8 https://registry.npmjs.org/next)"
+    ]
+  }
+}

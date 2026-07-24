@@ -7,7 +7,8 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 **P1 done; P2 started.** Explore + sale pages now read from **SQLite** (DB-002 ✅,
 verified in-browser). Admin-gated project **submit + approval** flow is live
 (ADMIN-001 ✅). Wallet connect done (BSV-001). Tailwind v4 + navy palette.
-Next: STAS issuance on mainnet (BSV-002).
+Next: STAS issuance on mainnet (BSV-002, in progress — classic STAS,
+non-custodial via BRC-100; `stas-knowledge-mcp` wired; ADR-021).
 
 _P0 — Foundation & Knowledge Base: ✅ Complete (commit `d28a719`). Scaffold built,
 migration applied, verified by `prisma validate`, `core`/`bsv`/`db` typecheck,
@@ -37,7 +38,7 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 **P2 · Admin-gated issuance** _(backlog)_
 
 - `●` ADMIN-001  Submit form → pending project; admin-secret gate; approve/reject (ADR-020)
-- `○` BSV-002    STAS issuance tx on mainnet; split public allocation to pool
+- `◐` BSV-002    STAS issuance on mainnet (non-custodial, prepare→confirm→broadcast)
 
 **P3 · L0 instant swap (MVP)** _(backlog)_
 

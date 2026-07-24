@@ -1,0 +1,14 @@
+# --- Database (SQLite for the MVP; Postgres later) ---
+# Consumed by packages/db (Prisma). Copy to packages/db/.env for local dev.
+DATABASE_URL="file:./dev.db"
+
+# --- BSV / network ---
+# Mainnet always (ADR-003). No testnet fallback.
+BSV_NETWORK="mainnet"
+
+# ARC broadcaster endpoint (used by settlement in P3)
+ARC_URL=""
+
+# --- Wallet ---
+# BRC-100 via BSV Desktop. Users sign in their own wallet.
+# NEVER put private keys, seed phrases, or mnemonics in any env file.

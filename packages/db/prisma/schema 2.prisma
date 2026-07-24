@@ -1,0 +1,120 @@
+// BSV Launchpad — data model. See docs/SCHEMA.md for prose + allowed values.
+//
+// SQLite does NOT support Prisma enums (ADR-011), so enum-like fields are
+// `String` with allowed values documented in comments and enforced by the
+// `as const` unions in packages/core. Amounts are BigInt (satoshi/token scale).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// An authenticated identity (admin | issuer | public).
+model Account {
+  id             String    @id @default(cuid())
+  identityPubkey String    @unique // BRC-100 identity public key
+  paymail        String?
+  role           String    @default("public") // admin | issuer | public
+  projects       Project[]
+  events         Event[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+/// A team/business launching a token.
+model Project {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       Account  @relation(fields: [ownerId], references: [id])
+  slug        String   @unique
+  name        String
+  tagline     String?
+  description  String?
+  logoUrl     String?
+  media       String? // JSON array of media URLs
+  links       String? // JSON object of links
+  team        String? // JSON array of team members
+  docs        String? // JSON array of doc links
+  status      String   @default("draft") // draft | pending | approved | live | closed
+  tokens      Token[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
+/// A STAS token issued by a project.
+model Token {
+  id           String   @id @default(cuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id])
+  name         String
+  ticker       String
+  decimals     Int      @default(0)
+  totalSupply  BigInt
+  allocations  String? // JSON: { public, team, treasury, rewards, airdrop }
+  stasTokenId  String?
+  issuanceTxid String?
+  sales        Sale[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+/// An offering of a token's public allocation.
+model Sale {
+  id                String    @id @default(cuid())
+  tokenId           String
+  token             Token     @relation(fields: [tokenId], references: [id])
+  type              String    @default("instant") // instant | escrow_presale
+  priceSats         BigInt // sats per token
+  allocationForSale BigInt
+  startsAt          DateTime?
+  endsAt            DateTime?
+  softCap           BigInt?
+  hardCap           BigInt?
+  status            String    @default("scheduled") // scheduled | live | finalized | failed
+  orders            Order[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([tokenId])
+}
+
+/// A buy (instant) or contribution (escrow) against a sale.
+model Order {
+  id            String   @id @default(cuid())
+  saleId        String
+  sale          Sale     @relation(fields: [saleId], references: [id])
+  buyerIdentity String // BRC-100 pubkey
+  kind          String   @default("instant_buy") // instant_buy | escrow_contribution
+  tokens        BigInt
+  satsPaid      BigInt
+  state         String   @default("pending") // pending | settled | refunded | withdrawn | failed
+  txid          String?
+  refundTxid    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([saleId])
+  @@index([buyerIdentity])
+}
+
+/// Append-only audit ledger; payloadHash can be anchored on-chain.
+model Event {
+  id          String   @id @default(cuid())
+  entity      String // e.g. "Sale", "Order"
+  entityId    String
+  type        String
+  actorId     String?
+  actor       Account? @relation(fields: [actorId], references: [id])
+  payloadHash String? // hash anchored on-chain
+  createdAt   DateTime @default(now())
+
+  @@index([entity, entityId])
+}
