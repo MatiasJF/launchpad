@@ -15,8 +15,11 @@ like `bg-surface text-gold rounded-lg` stay theme-aware. Repeated primitives
 
 ## Principles
 
-1. **Dark-first.** The app leads in a refined dark theme (crypto convention;
-   see refs), with a fully-styled light theme via `data-theme="light"`.
+1. **Dark-first, navy neutrals.** The app leads in a refined dark theme
+   (crypto convention; see refs) built on a **navy-blue** neutral palette —
+   brand-adjacent to the BSV ecosystem without using the BSV Association's owned
+   identity; the gold accent keeps it distinctly ours. Fully-styled light theme
+   via `data-theme="light"`.
 2. **Value forward.** Price, supply, and progress are the loudest elements on a
    sale — the gold accent is reserved for value and primary actions.
 3. **Trust is visible.** On-chain / verified states use teal; every sale surface
@@ -44,18 +47,18 @@ Both are also driven by `prefers-color-scheme`.
 
 | Token             | Dark      | Light     | Use                              |
 | ----------------- | --------- | --------- | -------------------------------- |
-| `--bg`            | `#0c1015` | `#f6f7f9` | app background                   |
-| `--surface`       | `#141a22` | `#ffffff` | cards / panels                   |
-| `--surface-2`     | `#1b232d` | `#eef1f5` | inputs / elevated                |
-| `--border`        | `#232d38` | `#e2e6ec` | hairlines                        |
-| `--text`          | `#e8ecf2` | `#131820` | primary text                    |
-| `--text-muted`    | `#9aa5b3` | `#5a6675` | secondary text                  |
-| `--gold`          | `#e3b451` | `#b07d15` | **value + primary action**       |
-| `--teal`          | `#57c4b6` | `#1f8175` | **verified / on-chain**          |
-| `--success`       | `#46c479` | `#1f9d57` | sale live                       |
-| `--warning`       | `#e0b34a` | `#9a7a1f` | caution                         |
-| `--danger`        | `#e8776f` | `#c0453d` | failed / destructive            |
-| `--info`          | `#5aa2e6` | `#2f6fb0` | scheduled / neutral status      |
+| `--bg`            | `#0a1124` | `#f6f7f9` | app background                   |
+| `--surface`       | `#111a31` | `#ffffff` | cards / panels                   |
+| `--surface-2`     | `#182444` | `#eef1f5` | inputs / elevated                |
+| `--border`        | `#24325a` | `#e2e6ec` | hairlines                        |
+| `--text`          | `#e9edf8` | `#131820` | primary text                    |
+| `--text-muted`    | `#9aa6c4` | `#5a6675` | secondary text                  |
+| `--gold`          | `#f0ba4a` | `#b07d15` | **value + primary action**       |
+| `--teal`          | `#4fd0c0` | `#1f8175` | **verified / on-chain**          |
+| `--success`       | `#4fce84` | `#1f9d57` | sale live                       |
+| `--warning`       | `#e6bd57` | `#9a7a1f` | caution                         |
+| `--danger`        | `#ef7a72` | `#c0453d` | failed / destructive            |
+| `--info`          | `#62a8ee` | `#2f6fb0` | scheduled / neutral status      |
 
 **Status mapping** — Sale: `scheduled → info`, `live → success`,
 `finalized → gold`, `failed → danger`. Order: `pending → info`,

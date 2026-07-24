@@ -38,14 +38,14 @@
 
 /* raw tokens — dark (default) */
 :root {
-  --c-ink: #0a0e15;
-  --c-surface: #121826;
-  --c-elevated: #182031;
-  --c-line: #212b3d;
-  --c-line-strong: #33405a;
-  --c-fg: #eaeef6;
-  --c-muted: #9aa6ba;
-  --c-faint: #626f86;
+  --c-ink: #0a1124;
+  --c-surface: #111a31;
+  --c-elevated: #182444;
+  --c-line: #24325a;
+  --c-line-strong: #384a7d;
+  --c-fg: #e9edf8;
+  --c-muted: #9aa6c4;
+  --c-faint: #616e93;
   --c-gold: #f0ba4a;
   --c-gold2: #e79b3c;
   --c-gold-ink: #1a1200;
@@ -118,7 +118,7 @@
     min-height: 100vh;
     background:
       radial-gradient(60% 40% at 82% -5%, color-mix(in srgb, var(--c-gold) 12%, transparent), transparent 70%),
-      radial-gradient(50% 40% at 8% 0%, color-mix(in srgb, var(--c-teal) 9%, transparent), transparent 70%),
+      radial-gradient(50% 40% at 8% 0%, color-mix(in srgb, var(--c-info) 13%, transparent), transparent 70%),
       var(--c-ink);
     color: var(--c-fg);
     font-family: var(--font-sans);
