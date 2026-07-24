@@ -8,6 +8,11 @@ Tokens live in `apps/web/app/globals.css`; primitive components in
 `apps/web/components/ui`. Update this doc when tokens or primitives change
 (golden rule 1).
 
+Styling is **Tailwind CSS v4** (ADR-018): the tokens are CSS variables on
+`:root` (theme-switchable) exposed to Tailwind via `@theme inline`, so utilities
+like `bg-surface text-gold rounded-lg` stay theme-aware. Repeated primitives
+(`.btn`, `.pill`, `.chip`, `.progress`, `.countdown`) sit in `@layer components`.
+
 ## Principles
 
 1. **Dark-first.** The app leads in a refined dark theme (crypto convention;

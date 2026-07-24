@@ -1,69 +1,47 @@
-import { Button, Card, StatTile, StatusPill } from '../components/ui';
+import { SiteHeader } from '../components/SiteHeader';
+import { ExploreSection } from '../components/ExploreSection';
+import { Button, StatTile } from '../components/ui';
+import { ArrowRight, ShieldCheck } from '../components/ui/icons';
 
-/**
- * Home is a temporary design-system preview (WEB-002). The real explore page
- * arrives in WEB-001. It exercises the tokens + primitives so the build proves
- * they render.
- */
 export default function Home() {
   return (
-    <main style={{ maxWidth: 920, margin: '0 auto', padding: '48px 24px' }}>
-      <header style={{ marginBottom: 32 }}>
-        <p
-          className="mono"
-          style={{
-            fontSize: 'var(--text-xs)',
-            letterSpacing: '0.16em',
-            textTransform: 'uppercase',
-            color: 'var(--gold)',
-            margin: 0,
-          }}
-        >
-          BSV Launchpad · Design System
-        </p>
-        <h1 style={{ fontSize: 'var(--text-3xl)', letterSpacing: '-0.03em', margin: '8px 0 0' }}>
-          Issue and sell tokens on BSV
-        </h1>
-        <p style={{ color: 'var(--text-muted)', marginTop: 8 }}>
-          Foundation + P1 in progress. This page previews the design tokens and primitives.
-        </p>
-      </header>
+    <>
+      <SiteHeader />
 
-      <section style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
-        <Button variant="primary">Buy tokens</Button>
-        <Button variant="secondary">Connect wallet</Button>
-        <Button variant="ghost">View on-chain</Button>
+      <section className="mx-auto max-w-[1120px] px-6 pb-10 pt-[72px]">
+        <span className="font-mono text-xs uppercase tracking-[0.18em] text-gold">On the BSV Blockchain</span>
+        <h1 className="mt-3 max-w-[16ch] text-4xl font-semibold">
+          Launch and back tokens,{' '}
+          <span className="bg-gradient-to-r from-gold to-gold2 bg-clip-text text-transparent">settled on-chain</span>.
+        </h1>
+        <p className="mt-4 max-w-[54ch] text-lg text-muted">
+          Projects issue STAS tokens and sell them at a fixed price. Connect your wallet and buy on mainnet — every
+          purchase is a real, SPV-verifiable transaction.
+        </p>
+        <div className="mt-7 flex flex-wrap gap-3">
+          <Button variant="primary">
+            Explore sales <ArrowRight />
+          </Button>
+          <Button variant="secondary">
+            <ShieldCheck /> How settlement works
+          </Button>
+        </div>
+        <div className="mt-11 flex flex-wrap gap-10 border-t border-line pt-7">
+          <StatTile label="Live sales" value="2" />
+          <StatTile label="Raised (sats)" value="48.2M" />
+          <StatTile label="Backers" value="1,204" />
+          <StatTile label="Network" value="Mainnet" />
+        </div>
       </section>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
-        <Card>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-            <StatusPill status="live" />
-            <StatusPill status="scheduled" />
-            <StatusPill status="finalized" />
-            <StatusPill status="failed" />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-            <StatTile label="Price" value="120 sats" />
-            <StatTile label="Supply" value="30,000,000" />
-            <StatTile label="Sold" value="41%" />
-          </div>
-        </Card>
+      <ExploreSection />
 
-        {/* Buy-card sketch (BuyCard primitive lands in WEB-001) */}
-        <Card>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <StatTile label="Price per token" value="120 sats" />
-            <StatTile label="Ends in" value="4d 05h 12m" />
-            <Button variant="primary" block>
-              Buy on mainnet
-            </Button>
-            <p className="mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--teal)', margin: 0 }}>
-              ✓ settlement is SPV-verifiable
-            </p>
-          </div>
-        </Card>
-      </div>
-    </main>
+      <footer className="border-t border-line py-7">
+        <div className="mx-auto flex max-w-[1120px] flex-wrap items-center justify-between gap-4 px-6 font-mono text-sm text-faint">
+          <span>BSV Launchpad — hybrid, operator-settled · mainnet</span>
+          <span>non-custodial · SPV-verifiable</span>
+        </div>
+      </footer>
+    </>
   );
 }

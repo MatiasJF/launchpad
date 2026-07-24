@@ -123,3 +123,10 @@ Append-only; newest at the bottom. Template per entry:
 - **Options:** (a) light-first like the planning docs · (b) dark-first, crypto-convention · (c) single-theme only.
 - **Decision:** (b) Dark-first and theme-aware (light via `data-theme` / `prefers-color-scheme`), carrying brand accents gold=value, teal=verified. Tokens in `apps/web/app/globals.css`, primitives in `apps/web/components/ui`, documented in `docs/DESIGN.md`.
 - **Consequences:** matches category expectations; one accent per view; the planning-doc artifacts keep their separate print-ish identity.
+
+## ADR-018 · Styling: Tailwind CSS v4 · Accepted · 2026-07-24
+
+- **Context:** The app needs a scalable styling system; design tooling and component libraries (e.g. shadcn/ui) target Tailwind.
+- **Options:** (a) hand-rolled CSS classes · (b) Tailwind v4 with tokens mapped via `@theme` · (c) CSS-in-JS.
+- **Decision:** (b) Tailwind CSS v4. Design tokens stay CSS variables on `:root` (theme-switchable) and are exposed to Tailwind via `@theme inline`, so `docs/DESIGN.md` remains the source of truth and utilities (`bg-surface`, `text-gold`) are theme-aware. Repeated primitives live in a small `@layer components` block.
+- **Consequences:** idiomatic utility styling, dark/light via token overrides, shadcn/ui-compatible; `apps/web/postcss.config.mjs` wires `@tailwindcss/postcss`.

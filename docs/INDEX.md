@@ -40,6 +40,8 @@ present, not implemented.
 ## Design
 
 - Design system & tokens → `docs/DESIGN.md`
-- CSS tokens (dark-first, theme-aware) → `apps/web/app/globals.css`
-- UI primitives (Button, Card, StatTile, StatusPill) → `apps/web/components/ui`
+- Tailwind v4 theme + tokens → `apps/web/app/globals.css` · `apps/web/postcss.config.mjs`
+- UI primitives → `apps/web/components/ui` (Button, Card, StatTile, StatusPill, Countdown, icons)
+- Page components → `apps/web/components` (SiteHeader, ProjectCard, ExploreSection)
+- Seed card data → `apps/web/lib/seed.ts`
 - UI pattern reference → Mobbin · `api.mobbin.com/mcp` _(MCP connected)_
