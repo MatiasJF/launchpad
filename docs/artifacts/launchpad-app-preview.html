@@ -1,0 +1,160 @@
+<title>BSV Launchpad — App Design Preview</title>
+<style>
+  :root{
+    --bg:#0c1015; --surface:#141a22; --surface-2:#1b232d; --border:#232d38; --border-strong:#33404f;
+    --text:#e8ecf2; --text-muted:#9aa5b3; --text-faint:#66717f;
+    --gold:#e3b451; --gold-hover:#eabf63; --gold-contrast:#1a1400; --teal:#57c4b6;
+    --success:#46c479; --warning:#e0b34a; --danger:#e8776f; --info:#5aa2e6;
+    --status-scheduled:var(--info); --status-live:var(--success); --status-finalized:var(--gold); --status-failed:var(--danger);
+    --font-sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --font-mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+    --r-sm:6px; --r-md:10px; --r-lg:14px; --r-pill:999px;
+    --shadow-1:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.28);
+    --shadow-2:0 8px 40px rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --surface:#fff; --surface-2:#eef1f5; --border:#e2e6ec; --border-strong:#cdd4de;
+    --text:#131820; --text-muted:#5a6675; --text-faint:#8a95a3;
+    --gold:#b07d15; --gold-hover:#9a6c10; --gold-contrast:#fff; --teal:#1f8175;
+    --success:#1f9d57; --warning:#9a7a1f; --danger:#c0453d; --info:#2f6fb0;
+    --shadow-1:0 1px 2px rgba(20,25,35,.05),0 6px 20px rgba(20,25,35,.07);
+    --shadow-2:0 8px 40px rgba(20,25,35,.16);
+  }
+  @media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+    --bg:#f6f7f9; --surface:#fff; --surface-2:#eef1f5; --border:#e2e6ec; --border-strong:#cdd4de;
+    --text:#131820; --text-muted:#5a6675; --text-faint:#8a95a3;
+    --gold:#b07d15; --gold-hover:#9a6c10; --gold-contrast:#fff; --teal:#1f8175;
+    --success:#1f9d57; --warning:#9a7a1f; --danger:#c0453d; --info:#2f6fb0;
+    --shadow-1:0 1px 2px rgba(20,25,35,.05),0 6px 20px rgba(20,25,35,.07);
+    --shadow-2:0 8px 40px rgba(20,25,35,.16);
+  }}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans);line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:960px;margin:0 auto;padding:40px 24px 64px;}
+  .eyebrow{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin:0;}
+  h1{font-size:2.1rem;letter-spacing:-.03em;margin:8px 0 0;}
+  h2{font-size:.72rem;font-family:var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);margin:38px 0 14px;font-weight:600;}
+  .sub{color:var(--text-muted);margin-top:8px;}
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+  /* button */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font:inherit;font-weight:600;font-size:.875rem;line-height:1;padding:10px 18px;border-radius:var(--r-pill);border:1px solid transparent;cursor:pointer;}
+  .btn-block{width:100%;}
+  .btn-primary{background:var(--gold);color:var(--gold-contrast);}
+  .btn-primary:hover{background:var(--gold-hover);}
+  .btn-secondary{background:var(--surface-2);color:var(--text);border-color:var(--border-strong);}
+  .btn-ghost{background:transparent;color:var(--text-muted);}
+  /* card */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-1);}
+  .pad{padding:20px;}
+  /* stat */
+  .stat{display:flex;flex-direction:column;gap:4px;}
+  .stat .label{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);}
+  .stat .value{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:1.375rem;font-weight:600;}
+  /* pill */
+  .pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:.72rem;font-weight:600;letter-spacing:.03em;padding:3px 10px;border-radius:var(--r-pill);border:1px solid color-mix(in srgb,var(--tone) 40%,transparent);background:color-mix(in srgb,var(--tone) 15%,transparent);color:var(--tone);}
+  .pill::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--tone);}
+  /* progress */
+  .prog{height:8px;border-radius:var(--r-pill);background:var(--surface-2);overflow:hidden;}
+  .prog>i{display:block;height:100%;width:41%;background:linear-gradient(90deg,var(--gold),var(--gold-hover));}
+  /* countdown chips */
+  .cd{display:flex;gap:6px;}
+  .cd b{font-family:var(--font-mono);background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 9px;font-size:.9rem;min-width:38px;text-align:center;}
+  .cd span{font-size:.6rem;color:var(--text-faint);display:block;text-transform:uppercase;letter-spacing:.05em;font-weight:400;}
+  /* project card */
+  .grid3{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;}
+  .pcard .media{height:120px;border-radius:var(--r-md);background:linear-gradient(135deg,#243244,#16202c);position:relative;margin-bottom:12px;overflow:hidden;}
+  .pcard .media .badge{position:absolute;top:8px;right:8px;font-family:var(--font-mono);font-size:.62rem;font-weight:700;letter-spacing:.06em;background:rgba(0,0,0,.45);color:#fff;padding:3px 8px;border-radius:var(--r-pill);}
+  .pcard .tt{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .pcard h3{margin:0;font-size:1rem;}
+  .pcard .foot{display:flex;justify-content:space-between;margin-top:12px;}
+  /* sale layout */
+  .sale{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;}
+  .sale .hero{height:180px;border-radius:var(--r-md);background:linear-gradient(135deg,#28374a,#151f2b);border:none;}
+  .modal{max-width:380px;}
+  .wrow{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2);cursor:pointer;}
+  .wrow:hover{border-color:var(--gold);}
+  .wrow .ic{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,var(--gold),var(--teal));flex:none;}
+  .theme-note{margin-top:10px;color:var(--text-faint);font-size:.8rem;}
+  @media(max-width:720px){.sale{grid-template-columns:1fr;}}
+</style>
+<div class="wrap">
+  <p class="eyebrow">BSV Launchpad · App Design Preview</p>
+  <h1>Dark-first, value-forward</h1>
+  <p class="sub">The product design language (WEB-002), applied to real launchpad surfaces. Toggle your system/theme to see light mode — every token is theme-aware.</p>
+
+  <h2>Buttons</h2>
+  <div class="row">
+    <button class="btn btn-primary">Buy tokens</button>
+    <button class="btn btn-secondary">Connect wallet</button>
+    <button class="btn btn-ghost">View on-chain</button>
+  </div>
+
+  <h2>Status</h2>
+  <div class="row">
+    <span class="pill" style="--tone:var(--status-live)">live</span>
+    <span class="pill" style="--tone:var(--status-scheduled)">scheduled</span>
+    <span class="pill" style="--tone:var(--status-finalized)">finalized</span>
+    <span class="pill" style="--tone:var(--status-failed)">failed</span>
+    <span class="pill" style="--tone:var(--teal)">settled</span>
+  </div>
+
+  <h2>Explore — project cards</h2>
+  <div class="grid3">
+    <div class="card pad pcard">
+      <div class="media"><span class="badge">$ORCA</span></div>
+      <div class="tt"><h3>Orca Protocol</h3><span class="pill" style="--tone:var(--status-live)">live</span></div>
+      <div class="foot"><div class="stat"><span class="label">Price</span><span class="value" style="font-size:1rem">120 sats</span></div><div class="stat"><span class="label">Sold</span><span class="value" style="font-size:1rem">41%</span></div></div>
+    </div>
+    <div class="card pad pcard">
+      <div class="media"><span class="badge">$MERI</span></div>
+      <div class="tt"><h3>Meridian</h3><span class="pill" style="--tone:var(--status-scheduled)">scheduled</span></div>
+      <div class="foot"><div class="stat"><span class="label">Price</span><span class="value" style="font-size:1rem">80 sats</span></div><div class="stat"><span class="label">Starts</span><span class="value" style="font-size:1rem">2d</span></div></div>
+    </div>
+    <div class="card pad pcard">
+      <div class="media"><span class="badge">$VANE</span></div>
+      <div class="tt"><h3>Vane</h3><span class="pill" style="--tone:var(--status-finalized)">finalized</span></div>
+      <div class="foot"><div class="stat"><span class="label">Raised</span><span class="value" style="font-size:1rem">100%</span></div><div class="stat"><span class="label">Holders</span><span class="value" style="font-size:1rem">312</span></div></div>
+    </div>
+  </div>
+
+  <h2>Project / sale page</h2>
+  <div class="sale">
+    <div>
+      <div class="card hero" style="margin-bottom:16px"></div>
+      <div class="card pad">
+        <div class="row" style="justify-content:space-between">
+          <div><h3 style="margin:0;font-size:1.25rem">Orca Protocol</h3><p class="sub" style="margin-top:4px">Liquidity routing on the BSV Blockchain.</p></div>
+          <span class="pill" style="--tone:var(--status-live)">live</span>
+        </div>
+        <div class="row" style="margin-top:16px;gap:24px">
+          <div class="stat"><span class="label">Total supply</span><span class="value">100,000,000</span></div>
+          <div class="stat"><span class="label">Public</span><span class="value">30,000,000</span></div>
+          <div class="stat"><span class="label">Ticker</span><span class="value">$ORCA</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card pad" style="display:flex;flex-direction:column;gap:16px">
+      <div class="stat"><span class="label">Price per token</span><span class="value">120 sats</span></div>
+      <div>
+        <div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="label" style="font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint)">Sold</span><span class="mono" style="font-size:.8rem;color:var(--text-muted)">41%</span></div>
+        <div class="prog"><i></i></div>
+      </div>
+      <div>
+        <div class="label" style="font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:6px">Ends in</div>
+        <div class="cd"><b>04<span>days</span></b><b>05<span>hrs</span></b><b>12<span>min</span></b><b>39<span>sec</span></b></div>
+      </div>
+      <button class="btn btn-primary btn-block">Buy on mainnet</button>
+      <p class="mono" style="font-size:.72rem;color:var(--teal);margin:0">✓ settlement is SPV-verifiable</p>
+    </div>
+  </div>
+
+  <h2>Connect wallet</h2>
+  <div class="card pad modal">
+    <h3 style="margin:0 0 4px">Connect your wallet</h3>
+    <p class="sub" style="margin:0 0 16px;font-size:.88rem">You sign every transaction in your own wallet — no keys ever leave BSV Desktop.</p>
+    <div class="wrow"><span class="ic"></span><div><div style="font-weight:600">BSV Desktop</div><div class="mono" style="font-size:.72rem;color:var(--text-faint)">BRC-100</div></div><span style="margin-left:auto;color:var(--text-faint)">›</span></div>
+  </div>
+
+  <p class="theme-note mono">gold = value · teal = verified/on-chain · one accent per view · numbers tabular/mono</p>
+</div>
