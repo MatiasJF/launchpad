@@ -32,8 +32,9 @@ present, not implemented.
 
 ## App
 
-- Public browse & project pages → `apps/web/app/(public)` _(planned)_
-- Buy flow → `apps/web/app/(public)/sale` _(planned)_
+- Landing + explore → `apps/web/app/page.tsx` · `apps/web/components/ExploreSection.tsx`
+- Project / sale detail → `apps/web/app/sale/[slug]/page.tsx`
+- Buy card (UI) → `apps/web/components/BuyCard.tsx`
 - Admin: create / approve → `apps/web/app/(admin)` _(planned)_
 - Backend API (sequence/settle) → `apps/web/app/api` _(planned)_
 
@@ -41,7 +42,7 @@ present, not implemented.
 
 - Design system & tokens → `docs/DESIGN.md`
 - Tailwind v4 theme + tokens → `apps/web/app/globals.css` · `apps/web/postcss.config.mjs`
-- UI primitives → `apps/web/components/ui` (Button, Card, StatTile, StatusPill, Countdown, icons)
-- Page components → `apps/web/components` (SiteHeader, ProjectCard, ExploreSection)
-- Seed card data → `apps/web/lib/seed.ts`
+- UI primitives → `apps/web/components/ui` (Button, Card, StatTile, StatusPill, Countdown, TokenomicsBar, icons)
+- Page components → `apps/web/components` (SiteHeader, SiteFooter, ProjectCard, ExploreSection, BuyCard)
+- Seed card data → `apps/web/lib/seed.ts` (getSaleBySlug)
 - UI pattern reference → Mobbin · `api.mobbin.com/mcp` _(MCP connected)_

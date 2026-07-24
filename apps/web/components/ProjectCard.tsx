@@ -1,11 +1,15 @@
 import type { CSSProperties } from 'react';
+import Link from 'next/link';
 import type { SaleCardVM } from '../lib/seed';
 import { StatusPill } from './ui';
 import { Countdown } from './ui/Countdown';
 
 export function ProjectCard({ s }: { s: SaleCardVM }) {
   return (
-    <article className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-[var(--shadow-1)] transition hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[var(--shadow-2)]">
+    <Link
+      href={`/sale/${s.slug}`}
+      className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-[var(--shadow-1)] transition hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[var(--shadow-2)]"
+    >
       <div
         className="relative h-32"
         style={
@@ -56,6 +60,6 @@ export function ProjectCard({ s }: { s: SaleCardVM }) {
           )}
         </div>
       </div>
-    </article>
+    </Link>
   );
 }
