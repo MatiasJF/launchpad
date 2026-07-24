@@ -4,10 +4,12 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 
 ## Current phase
 
-**P0 — Foundation & Knowledge Base.** ✅ Complete. Scaffold built, dependencies
-installed, first migration applied. Verified by `prisma validate`, `core`/`bsv`/
-`db` typecheck, `next build`, and a 4-dimension adversarial verification pass
-(no must-fix / should-fix). **Ready for P1.**
+**P1 — Wallet + read path.** In progress — starting with WEB-002 (design system
+from Mobbin).
+
+_P0 — Foundation & Knowledge Base: ✅ Complete (commit `d28a719`). Scaffold built,
+migration applied, verified by `prisma validate`, `core`/`bsv`/`db` typecheck,
+`next build`, and a 4-dimension adversarial verification pass._
 
 ## Task board
 
@@ -27,7 +29,7 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 
 - `○` BSV-001  BRC-100 connect via BSV Desktop; show identity + balance
 - `○` WEB-001  Public browse: project list + project page (read-only)
-- `○` WEB-002  Design system + component patterns from Mobbin → `docs/DESIGN.md`
+- `●` WEB-002  Design system + component patterns from Mobbin → `docs/DESIGN.md`
 
 **P2 · Admin-gated issuance** _(backlog)_
 

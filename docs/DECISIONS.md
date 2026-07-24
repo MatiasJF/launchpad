@@ -116,3 +116,10 @@ Append-only; newest at the bottom. Template per entry:
 - **Options:** (a) design from scratch · (b) reference real app patterns via Mobbin.
 - **Decision:** (b) Source component/screen patterns from Mobbin (`api.mobbin.com/mcp`, user has an account) during frontend work; capture the resulting system in `docs/DESIGN.md`.
 - **Consequences:** faster, more credible UI; Mobbin MCP connected at user scope. Our own token/theme system still owns the brand.
+
+## ADR-017 · App design language · Accepted · 2026-07-24
+
+- **Context:** The product app needs one coherent visual language; surveyed real launchpad/web3 UIs on Mobbin (see docs/DESIGN.md references).
+- **Options:** (a) light-first like the planning docs · (b) dark-first, crypto-convention · (c) single-theme only.
+- **Decision:** (b) Dark-first and theme-aware (light via `data-theme` / `prefers-color-scheme`), carrying brand accents gold=value, teal=verified. Tokens in `apps/web/app/globals.css`, primitives in `apps/web/components/ui`, documented in `docs/DESIGN.md`.
+- **Consequences:** matches category expectations; one accent per view; the planning-doc artifacts keep their separate print-ish identity.

@@ -39,5 +39,7 @@ present, not implemented.
 
 ## Design
 
-- Design system & tokens → `docs/DESIGN.md` _(planned, P1)_
+- Design system & tokens → `docs/DESIGN.md`
+- CSS tokens (dark-first, theme-aware) → `apps/web/app/globals.css`
+- UI primitives (Button, Card, StatTile, StatusPill) → `apps/web/components/ui`
 - UI pattern reference → Mobbin · `api.mobbin.com/mcp` _(MCP connected)_
