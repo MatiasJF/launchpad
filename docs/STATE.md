@@ -46,12 +46,17 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 
 **P3 · L0 instant swap (MVP)** _(backlog)_
 
-- `○` BSV-003  Fixed-price buy: user signs, operator sequences + settles
+- `◐` BSV-003  Settlement engine PORTED (two-tx STAS transfer + twoTx primitives, typechecked). Pending: `buildChainedAtomicBeef`, buy/settle UI, browser bsv-js bundling, live test
 - `○` WEB-003  Buy UI; ARC broadcast + SPV verify; record Order + Event
 
 ## Known issues / blockers
 
-- None yet.
+- BSV-003 settlement is **ported but not runnable yet**: `buildChainedAtomicBeef`
+  is a stub (needs wallet BEEF APIs), the transfer must run client-side with
+  `bsv-js` bundled for the browser (webpack polyfills), and it needs live testing
+  against a funded wallet holding an issued STAS UTXO.
+- The admin login form's server-action submit didn't fire under headless
+  automation (works in a real browser; cookie set directly for testing).
 
 ## Open questions
 

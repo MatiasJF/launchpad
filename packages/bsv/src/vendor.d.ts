@@ -3,3 +3,4 @@
 declare module 'bsv';
 declare module 'stas-js';
 declare module 'stas-js/lib/stas';
+declare module 'stas-js/lib/stas.js';
