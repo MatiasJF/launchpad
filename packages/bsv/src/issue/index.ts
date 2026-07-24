@@ -1,18 +1,21 @@
+/// <reference path="../vendor.d.ts" />
+
 /**
  * STAS token issuance — non-custodial (ADR-021).
  *
- * Stage 1 (this file): derive the token's wallet keys and build the STAS
- * locking script + a dry-run MINT PLAN (no broadcast). The contract/issue
- * transaction assembly, wallet signing bridge, and broadcast are Stage 2
- * (`buildAndBroadcastMint`).
+ * `planMint` builds the classic STAS locking script + mint economics from
+ * wallet-derived owner/redemption public keys. It runs SERVER-SIDE (uses the
+ * heavy `bsv` + `stas-js` libs) — see `apps/web/lib/mint.ts`. The client wallet
+ * only derives the keys and signs/broadcasts the `createAction` (bsv/stas-js
+ * never reach the browser bundle).
  *
- * STAS carries token value in satoshis: 1 satoshi = 1 token unit. Owner and
- * redemption keys are wallet-derived (BRC-42) — never raw keys in the app
- * (Golden Rule 3).
+ * Issuance inputs satisfy no covenant, so the wallet's normal funding/change is
+ * safe here; the two-transaction flow is only needed for transfers (BSV-003).
+ * STAS carries value in satoshis: 1 satoshi = 1 token unit. Keys are
+ * wallet-derived (BRC-42), never raw keys in the app (Golden Rule 3).
  */
 import bsv from 'bsv';
 import stasLib from 'stas-js/lib/stas';
-import type { WalletClient } from '@bsv/sdk';
 
 /** Canonical STAS BRC-42 protocol id (shared with DSTAS). See stas-knowledge-mcp. */
 export const STAS_PROTOCOL_ID: [2, string] = [2, '3241645161d8'];
@@ -94,36 +97,4 @@ export function planMint(schema: TokenSchema, ownerPubkeyHex: string, redemption
     estFeeSats,
     totalSatsRequired: tokenSatoshis + estFeeSats,
   };
-}
-
-/** Derive the token's wallet keys (BRC-42) and produce the dry-run mint plan. */
-export async function prepareMint(
-  wallet: WalletClient,
-  schema: TokenSchema,
-  tokenKeyId: string,
-): Promise<MintPlan> {
-  const owner = await wallet.getPublicKey({
-    protocolID: STAS_PROTOCOL_ID,
-    keyID: `${tokenKeyId}-owner`,
-    counterparty: 'self',
-  });
-  const redemption = await wallet.getPublicKey({
-    protocolID: STAS_PROTOCOL_ID,
-    keyID: `${tokenKeyId}-redeem`,
-    counterparty: 'self',
-  });
-  return planMint(schema, owner.publicKey, redemption.publicKey);
-}
-
-/**
- * Stage 2 (not implemented): assemble the contract + issue transactions via
- * `stas-js` `unsignedContract`/`unsignedIssue`, fund + sign them through the
- * wallet (`createSignature`, per the two-tx funding pattern), and broadcast via
- * ARC. Returns the issuance txid + token id.
- */
-export async function buildAndBroadcastMint(): Promise<{ txid: string; tokenId: string }> {
-  throw new Error(
-    'Not implemented — Stage 2: assemble contract+issue via stas-js unsignedContract/unsignedIssue, ' +
-      'fund + sign through the wallet (createSignature, two-tx pattern), broadcast via ARC.',
-  );
 }

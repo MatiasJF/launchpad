@@ -34,7 +34,11 @@ present, not implemented.
 - Settlement (build/broadcast/ARC) → `packages/bsv/src/settle` _(stub)_
 - SPV verification → `packages/bsv/src/spv` _(stub)_
 - BRC-100 wallet connection → `packages/bsv/src/wallet` (WalletClient) · UI `apps/web/components/WalletButton.tsx`
-- STAS issuance/transfer → `packages/bsv/src/issue` · `packages/bsv/src/settle` (ADR-021)
+- STAS mint construction → `packages/bsv/src/issue` (`planMint`, server-only; ADR-021)
+- Mint plan + record (server actions) → `apps/web/lib/mint.ts` (`buildMintPlan`, `recordIssuance`)
+- Issue-token UI (client, wallet createAction) → `apps/web/components/IssueButton.tsx`
+- STAS libs kept server-external → `apps/web/next.config.mjs`
+- STAS transfer (settlement) → `packages/bsv/src/settle` _(stub, BSV-003)_
 - STAS knowledge (external) → `stas-knowledge-mcp` MCP (local) + `../stas-knowledge-mcp/knowledge`
 
 ## App

@@ -7,11 +7,12 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 **P1 done; P2 started.** Explore + sale pages now read from **SQLite** (DB-002 ✅,
 verified in-browser). Admin-gated project **submit + approval** flow is live
 (ADMIN-001 ✅). Wallet connect done (BSV-001). Tailwind v4 + navy palette.
-STAS issuance (BSV-002, in progress — classic STAS, non-custodial, ADR-021):
-**Stage 1 ✅** — mint construction (`packages/bsv/src/issue`: `planMint`/`prepareMint`)
-verified by test (real STAS script + 1-sat-=-1-token economics; dry-run, no
-broadcast). **Stage 2/3 next**: wallet signing bridge + broadcast, then the
-"Issue token" UI. `stas-knowledge-mcp` wired.
+STAS issuance (BSV-002 ✅ — classic STAS, non-custodial, ADR-021): mint
+construction (`planMint`, tested) → server plan (`lib/mint.ts`) → **wallet
+`createAction`** signs + broadcasts (non-custodial, keys stay in wallet) →
+`recordIssuance`. Issue-token UI + confirm gate on `/admin`. Verified: typecheck,
+build, admin render. **The live broadcast needs a funded BSV Desktop** — use a
+tiny-supply project (e.g. "Sat", 1,000) to mint on ~1,000 sats.
 
 _P0 — Foundation & Knowledge Base: ✅ Complete (commit `d28a719`). Scaffold built,
 migration applied, verified by `prisma validate`, `core`/`bsv`/`db` typecheck,
@@ -41,7 +42,7 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 **P2 · Admin-gated issuance** _(backlog)_
 
 - `●` ADMIN-001  Submit form → pending project; admin-secret gate; approve/reject (ADR-020)
-- `◐` BSV-002    STAS issuance on mainnet (non-custodial, prepare→confirm→broadcast)
+- `●` BSV-002    STAS issuance: non-custodial mint via wallet createAction; Issue-token UI + confirm gate (broadcast needs funded wallet)
 
 **P3 · L0 instant swap (MVP)** _(backlog)_
 

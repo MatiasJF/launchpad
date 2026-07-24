@@ -3,6 +3,7 @@ import { prisma } from '@launchpad/db';
 import { SiteHeader } from '../../components/SiteHeader';
 import { SiteFooter } from '../../components/SiteFooter';
 import { Button } from '../../components/ui';
+import { IssueButton } from '../../components/IssueButton';
 import { isAdmin } from '../../lib/auth';
 import { adminLogin, adminLogout, setProjectStatus } from '../../lib/actions';
 
@@ -15,11 +16,11 @@ async function PendingList() {
   });
 
   if (pending.length === 0) {
-    return <p className="mt-6 text-muted">No projects awaiting review.</p>;
+    return <p className="mt-4 text-muted">No projects awaiting review.</p>;
   }
 
   return (
-    <div className="mt-6 flex flex-col gap-3">
+    <div className="mt-4 flex flex-col gap-3">
       {pending.map((p) => (
         <div
           key={p.id}
@@ -52,6 +53,50 @@ async function PendingList() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+async function ReadyToIssueList() {
+  const approved = await prisma.project.findMany({
+    where: { status: 'live', tokens: { some: { issuanceTxid: null } } },
+    include: { tokens: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  type ApprovedProject = (typeof approved)[number];
+  const rows: { p: ApprovedProject; token: ApprovedProject['tokens'][number] }[] = [];
+  for (const p of approved) {
+    const token = p.tokens.find((t) => !t.issuanceTxid);
+    if (token) rows.push({ p, token });
+  }
+
+  if (rows.length === 0) {
+    return <p className="mt-4 text-muted">Nothing awaiting issuance.</p>;
+  }
+
+  return (
+    <div className="mt-4 flex flex-col gap-3">
+      {rows.map(({ p, token }) => {
+        const supply = Number(token.totalSupply);
+        return (
+          <div
+            key={p.id}
+            className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-line bg-surface p-4"
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">{p.name}</h3>
+                <span className="font-mono text-sm text-faint">{token.ticker}</span>
+              </div>
+              <p className="text-sm text-muted">
+                Supply {supply.toLocaleString('en-US')} · locks {supply.toLocaleString('en-US')} sats
+              </p>
+            </div>
+            <IssueButton projectId={p.id} ticker={token.ticker} supply={supply} slug={p.slug} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -89,7 +134,16 @@ export default async function AdminPage() {
             </Button>
           </form>
         ) : (
-          <PendingList />
+          <div className="mt-8 flex flex-col gap-10">
+            <section>
+              <h2 className="text-xl font-semibold">Pending review</h2>
+              <PendingList />
+            </section>
+            <section>
+              <h2 className="text-xl font-semibold">Ready to issue</h2>
+              <ReadyToIssueList />
+            </section>
+          </div>
         )}
       </main>
       <SiteFooter />

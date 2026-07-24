@@ -29,6 +29,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@bsv/sdk':
+        specifier: ^2.1.9
+        version: 2.1.9
       '@launchpad/bsv':
         specifier: workspace:*
         version: link:../../packages/bsv

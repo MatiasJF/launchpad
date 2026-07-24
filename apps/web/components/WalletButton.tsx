@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { WalletIdentity } from '@launchpad/bsv';
+import type { WalletIdentity } from '@launchpad/bsv/wallet';
 import { Button } from './ui';
 import { Wallet } from './ui/icons';
 
@@ -29,7 +29,7 @@ export function WalletButton() {
     setError(null);
     try {
       // Lazy-load the BSV SDK so it stays out of the initial bundle.
-      const { connectWallet, getBalanceSats } = await import('@launchpad/bsv');
+      const { connectWallet, getBalanceSats } = await import('@launchpad/bsv/wallet');
       const identity = await connectWallet();
       setId(identity);
       setStatus('connected');
