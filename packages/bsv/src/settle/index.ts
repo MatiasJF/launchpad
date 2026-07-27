@@ -60,7 +60,9 @@ export interface StasTransferArgs {
   tokenId?: string;
 }
 
-export type StasTransferResult = { ok: true; txid: string; beef: number[] } | { ok: false; reason: string };
+export type StasTransferResult =
+  | { ok: true; txid: string; beef: number[]; rawTx: string }
+  | { ok: false; reason: string; rawTx?: string };
 
 export async function transferStas(
   wallet: WalletInterface,
@@ -258,23 +260,29 @@ export async function transferStas(
     return { ok: false, reason: `sign funding input: ${errMsg(err)}` };
   }
 
-  // 11. TX2 AtomicBEEF.
+  // 11. TX2 AtomicBEEF + raw hex.
+  const rawTx = tx.toString();
   let tx2Txid = '',
     tx2AtomicBeef: number[];
   try {
     const beef = Beef.fromBinary(tokenBeef);
     beef.mergeBeef(Beef.fromBinary(funding.beef));
-    const sdkTx2 = Transaction.fromHex(tx.toString());
+    const sdkTx2 = Transaction.fromHex(rawTx);
     beef.mergeTransaction(sdkTx2);
     tx2Txid = sdkTx2.id('hex');
     tx2AtomicBeef = beef.toBinaryAtomic(tx2Txid);
   } catch (err) {
-    return { ok: false, reason: `TX2 BEEF assembly: ${errMsg(err)}` };
+    return { ok: false, reason: `TX2 BEEF assembly: ${errMsg(err)}`, rawTx };
   }
 
-  // 12. Broadcast TX2 + internalize the sender's BSV change.
+  // 12. Internalize the sender's BSV change into the wallet (best-effort book-
+  //     keeping). NOTE: this does NOT reliably broadcast TX2 to miners — some
+  //     wallets accept/internalize without propagating. The caller MUST treat an
+  //     explicit network broadcast of `rawTx` as the source of truth for landing
+  //     the transfer on-chain. We therefore never fail here; we return rawTx and
+  //     let the caller broadcast + confirm.
   try {
-    const r = await broadcastAndInternalizeChange({
+    await broadcastAndInternalizeChange({
       wallet,
       atomicBeef: tx2AtomicBeef,
       changeVout,
@@ -284,12 +292,11 @@ export async function transferStas(
       description: 'STAS transfer',
       labels: ['launchpad', 'settle'],
     });
-    if (!r.accepted) return { ok: false, reason: 'TX2 broadcast/internalize not accepted by the wallet' };
-  } catch (err) {
-    return { ok: false, reason: `TX2 broadcast: ${errMsg(err)}` };
+  } catch {
+    // ignore — explicit broadcast below is authoritative
   }
 
-  return { ok: true, txid: tx2Txid, beef: tx2AtomicBeef };
+  return { ok: true, txid: tx2Txid, beef: tx2AtomicBeef, rawTx };
 }
 
 function errMsg(err: unknown): string {

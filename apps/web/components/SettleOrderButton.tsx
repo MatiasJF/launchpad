@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from './ui';
-import { getOutputInfo, getSourceBeef } from '../lib/settle-actions';
+import { getOutputInfo, getSourceBeef, broadcastRawTx } from '../lib/settle-actions';
 import { markOrderSettled } from '../lib/order-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
@@ -75,11 +75,19 @@ export function SettleOrderButton({
       // eslint-disable-next-line no-console
       console.log('[settle] transferStas result:', res);
       if (!res.ok) throw new Error(res.reason || 'transfer failed with no reason given');
-      if (!res.txid) throw new Error('transfer reported success but returned no txid — did NOT broadcast');
+      if (!res.rawTx) throw new Error('transfer built no raw tx to broadcast');
+
+      // Authoritative broadcast to the network (the wallet does not reliably
+      // propagate). WoC returns the txid on success or the exact miner error.
+      setPhase('broadcasting to network');
+      const bc = await broadcastRawTx(res.rawTx);
+      // eslint-disable-next-line no-console
+      console.log('[settle] broadcast result:', bc);
+      if (!bc.ok) throw new Error(`broadcast rejected: ${bc.error}`);
 
       setPhase('recording');
-      await markOrderSettled(orderId, res.txid);
-      setTxid(res.txid);
+      await markOrderSettled(orderId, bc.txid);
+      setTxid(bc.txid);
       setStatus('done');
     } catch (e) {
       // eslint-disable-next-line no-console

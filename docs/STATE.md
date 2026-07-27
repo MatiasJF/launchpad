@@ -67,6 +67,15 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
   `getSourceBeef` and pass it as `StasSource.beef` (storage-agnostic; works for
   any confirmed pool UTXO). Basket path kept as fallback. Verified: nothing had
   broadcast (pool `1506cf…:1` still unspent), so no on-chain cleanup needed.
+  **Fixed 2026-07-27 — silent non-broadcast:** after the BEEF fix the settle ran
+  with no error but no on-chain tx — two orders were marked settled with txids
+  (`830e8e…`, `6bbb76…`) that WoC reports as *unknown*. Root cause: the wallet's
+  `internalizeAction` accepts/internalizes TX2 but does NOT reliably broadcast it
+  to miners. Fix: `transferStas` now returns the signed `rawTx`; the button
+  broadcasts it explicitly via `broadcastRawTx` (WoC `POST /tx/raw`, server-side)
+  and only marks the order settled on a real network txid (or surfaces the exact
+  miner rejection). `internalizeAction` kept as best-effort change bookkeeping.
+  The two bogus "settled" orders were reset to pending (they never landed).
 
 ## Known issues / blockers
 

@@ -38,6 +38,37 @@ export async function getOutputInfo(
 }
 
 /**
+ * Broadcast a raw signed tx to the network via WhatsOnChain (server-side, no
+ * CORS) and return the miner's verdict. This is the authoritative "did it land"
+ * check — the wallet's internalizeAction does not reliably propagate. On success
+ * WoC echoes the txid; on rejection it returns the exact policy/script error,
+ * which we surface verbatim for diagnosis.
+ */
+export async function broadcastRawTx(
+  txHex: string,
+): Promise<{ ok: true; txid: string } | { ok: false; error: string }> {
+  if (typeof txHex !== 'string' || !/^[0-9a-fA-F]+$/.test(txHex) || txHex.length % 2 !== 0) {
+    return { ok: false, error: 'invalid raw tx hex' };
+  }
+  try {
+    const res = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ txhex: txHex }),
+      cache: 'no-store',
+    });
+    const body = (await res.text()).trim();
+    if (!res.ok) return { ok: false, error: `WoC ${res.status}: ${body}` };
+    // Success body is the txid, usually JSON-quoted.
+    const txid = body.replace(/^"|"$/g, '');
+    if (/^[0-9a-fA-F]{64}$/.test(txid)) return { ok: true, txid };
+    return { ok: false, error: `unexpected broadcast response: ${body}` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
  * Fetch the source tx's ancestry BEEF from WhatsOnChain (server-side, no CORS).
  * For a CONFIRMED tx this bundles a merkle proof (BUMP) — a self-sufficient SPV
  * anchor for the STAS token input. This is what makes settlement storage-agnostic:
