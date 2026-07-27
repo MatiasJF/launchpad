@@ -1,21 +1,35 @@
 import type { WalletInterface } from '@bsv/sdk';
 
 /**
- * buildChainedAtomicBeef — walk the token tx's ancestry into a BEEF whose every
- * leaf input carries a merkle proof (so unconfirmed/mempool parents are
- * included). See stas-knowledge-mcp `beef-assembly`.
+ * buildChainedAtomicBeef — SPV ancestry BEEF for the token input.
  *
- * NOT IMPLEMENTED: this is the one piece the knowledge base leaves as
- * "you provide". It needs the wallet's ancestry/BEEF APIs (or WhatsOnChain) to
- * fetch each ancestor tx + proof. Implement + verify against a live wallet
- * holding an issued STAS UTXO before enabling settlement.
+ * First-pass: the token was internalized into the 'stas-tokens' basket at
+ * issuance, so we ask the wallet for that basket's outputs *with their entire
+ * transactions* — the returned BEEF carries the token tx + ancestry.
+ *
+ * NEEDS LIVE-WALLET VERIFICATION: the exact BEEF field name/shape from
+ * listOutputs may vary; run a transfer and iterate on the real result (same
+ * loop that got issuance working). See stas-knowledge-mcp `beef-assembly`.
  */
-export async function buildChainedAtomicBeef(_args: {
+export async function buildChainedAtomicBeef(args: {
   wallet: WalletInterface;
   txid: string;
 }): Promise<{ beef: number[]; atomicBeef: number[] }> {
-  throw new Error(
-    'buildChainedAtomicBeef not implemented — SPV ancestry assembly for the token input ' +
-      'needs the wallet BEEF APIs (see stas-knowledge-mcp beef-assembly). Required before settlement can run.',
+  const w = args.wallet as unknown as {
+    listOutputs: (a: unknown, o?: string) => Promise<{ BEEF?: number[]; outputs?: unknown[] }>;
+  };
+
+  const res = await w.listOutputs(
+    { basket: 'stas-tokens', include: 'entire transactions', limit: 1000 },
+    'launchpad.settle',
   );
+
+  const beef = res?.BEEF;
+  if (!Array.isArray(beef) || beef.length === 0) {
+    throw new Error(
+      `wallet returned no BEEF for the stas-tokens basket (token ${args.txid.slice(0, 12)}…). ` +
+        'The token may not be tracked in the basket, or listOutputs BEEF has a different shape — needs live verification.',
+    );
+  }
+  return { beef, atomicBeef: beef };
 }

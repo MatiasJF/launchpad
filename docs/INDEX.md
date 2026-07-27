@@ -39,7 +39,10 @@ present, not implemented.
 - Mint plan + record (server actions) → `apps/web/lib/mint.ts` (`buildMintPlan`, `recordIssuance`)
 - Issue-token UI (client, wallet createAction) → `apps/web/components/IssueButton.tsx`
 - STAS libs kept server-external → `apps/web/next.config.mjs`
-- STAS transfer (settlement) → `packages/bsv/src/settle` (`transferStas` + `twoTx/` primitives, ported; `beef.ts` stub — BSV-003)
+- STAS transfer (settlement) → `packages/bsv/src/settle` (`transferStas` + `twoTx/` primitives + `beef.ts` first-pass — BSV-003)
+- Settle-token UI (client, wallet transfer) → `apps/web/components/SettleButton.tsx`
+- Fetch on-chain output script → `apps/web/lib/settle-actions.ts`
+- Browser polyfills for bsv-js → `apps/web/next.config.mjs` (webpack fallbacks)
 - STAS knowledge (external) → `stas-knowledge-mcp` MCP (local) + `../stas-knowledge-mcp/knowledge`
 
 ## App

@@ -49,15 +49,16 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 
 **P3 · L0 instant swap (MVP)** _(backlog)_
 
-- `◐` BSV-003  Settlement engine PORTED (two-tx STAS transfer + twoTx primitives, typechecked). Pending: `buildChainedAtomicBeef`, buy/settle UI, browser bsv-js bundling, live test
+- `◐` BSV-003  Settlement wired end-to-end: engine ported, browser bsv-js bundling ✅, SettleButton on /admin, first-pass buildChainedAtomicBeef. Runnable — needs a live transfer to verify (like the mint)
 - `○` WEB-003  Buy UI; ARC broadcast + SPV verify; record Order + Event
 
 ## Known issues / blockers
 
-- BSV-003 settlement is **ported but not runnable yet**: `buildChainedAtomicBeef`
-  is a stub (needs wallet BEEF APIs), the transfer must run client-side with
-  `bsv-js` bundled for the browser (webpack polyfills), and it needs live testing
-  against a funded wallet holding an issued STAS UTXO.
+- BSV-003 settlement is **wired + runnable but not yet verified on-chain**:
+  browser `bsv-js` bundling done (webpack fallbacks in next.config), SettleButton
+  on `/admin`. `buildChainedAtomicBeef` is a first-pass (fetches the token BEEF
+  from the wallet's `stas-tokens` basket) — run a live transfer of the "Sar"
+  token to verify/iterate (same loop that got the mint working).
 - The admin login form's server-action submit didn't fire under headless
   automation (works in a real browser; cookie set directly for testing).
 
