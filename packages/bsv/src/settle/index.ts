@@ -61,7 +61,7 @@ export interface StasTransferArgs {
 }
 
 export type StasTransferResult =
-  | { ok: true; txid: string; beef: number[]; rawTx: string }
+  | { ok: true; txid: string; beef: number[]; rawTx: string; fundingRawTx: string; fundingTxid: string }
   | { ok: false; reason: string; rawTx?: string };
 
 export async function transferStas(
@@ -178,6 +178,18 @@ export async function transferStas(
   }
   const changeValue = funding.satoshis - tx2Fee;
   if (changeValue < 1) return { ok: false, reason: `funding ${funding.satoshis} below fee ${tx2Fee}` };
+
+  // Extract TX1's raw hex from its BEEF so the caller can broadcast it to the
+  // network FIRST — the wallet's createAction does not reliably propagate it to
+  // the node we then submit TX2 to (otherwise TX2 fails with "Missing inputs").
+  let fundingRawTx = '';
+  try {
+    const fb = Beef.fromBinary(funding.beef);
+    const fbt = fb.findTxid(funding.txid);
+    fundingRawTx = fbt?.tx ? fbt.tx.toHex() : '';
+  } catch {
+    fundingRawTx = '';
+  }
 
   // 8. Assemble TX2: [token(0), funding(1)] → [recipient(0), (token-change), change].
   let tx: any;
@@ -296,7 +308,7 @@ export async function transferStas(
     // ignore — explicit broadcast below is authoritative
   }
 
-  return { ok: true, txid: tx2Txid, beef: tx2AtomicBeef, rawTx };
+  return { ok: true, txid: tx2Txid, beef: tx2AtomicBeef, rawTx, fundingRawTx, fundingTxid: funding.txid };
 }
 
 function errMsg(err: unknown): string {

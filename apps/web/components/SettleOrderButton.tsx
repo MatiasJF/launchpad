@@ -77,17 +77,29 @@ export function SettleOrderButton({
       if (!res.ok) throw new Error(res.reason || 'transfer failed with no reason given');
       if (!res.rawTx) throw new Error('transfer built no raw tx to broadcast');
 
-      // Authoritative broadcast to the network (the wallet does not reliably
-      // propagate). WoC returns the txid on success or the exact miner error.
-      setPhase('broadcasting to network');
-      const bc = await broadcastRawTx(res.rawTx);
+      // Broadcast TX1 (funding) FIRST so the node has the funding output in its
+      // mempool — otherwise TX2 fails with "Missing inputs". The wallet's
+      // createAction does not reliably propagate it to WoC's node.
+      if (res.fundingRawTx) {
+        setPhase('broadcasting funding tx (TX1)');
+        const bcFund = await broadcastRawTx(res.fundingRawTx, res.fundingTxid);
+        // eslint-disable-next-line no-console
+        console.log('[settle] funding broadcast result:', bcFund);
+        if (!bcFund.ok) throw new Error(`funding (TX1) broadcast rejected: ${bcFund.error}`);
+      }
+
+      // Then broadcast TX2 (the token transfer). Authoritative — WoC returns the
+      // txid on success or the exact miner error.
+      setPhase('broadcasting transfer (TX2)');
+      const bc = await broadcastRawTx(res.rawTx, res.txid);
       // eslint-disable-next-line no-console
       console.log('[settle] broadcast result:', bc);
       if (!bc.ok) throw new Error(`broadcast rejected: ${bc.error}`);
 
+      const finalTxid = bc.txid || res.txid;
       setPhase('recording');
-      await markOrderSettled(orderId, bc.txid);
-      setTxid(bc.txid);
+      await markOrderSettled(orderId, finalTxid);
+      setTxid(finalTxid);
       setStatus('done');
     } catch (e) {
       // eslint-disable-next-line no-console

@@ -46,6 +46,7 @@ export async function getOutputInfo(
  */
 export async function broadcastRawTx(
   txHex: string,
+  expectedTxid?: string,
 ): Promise<{ ok: true; txid: string } | { ok: false; error: string }> {
   if (typeof txHex !== 'string' || !/^[0-9a-fA-F]+$/.test(txHex) || txHex.length % 2 !== 0) {
     return { ok: false, error: 'invalid raw tx hex' };
@@ -58,6 +59,11 @@ export async function broadcastRawTx(
       cache: 'no-store',
     });
     const body = (await res.text()).trim();
+    // Already-in-mempool / already-known is a success for our purposes: the node
+    // has the tx. (WoC surfaces the node's policy string.)
+    if (/already known|already in|txn-already|257/i.test(body)) {
+      return { ok: true, txid: expectedTxid ?? '' };
+    }
     if (!res.ok) return { ok: false, error: `WoC ${res.status}: ${body}` };
     // Success body is the txid, usually JSON-quoted.
     const txid = body.replace(/^"|"$/g, '');

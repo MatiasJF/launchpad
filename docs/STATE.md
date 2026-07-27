@@ -76,6 +76,12 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
   and only marks the order settled on a real network txid (or surfaces the exact
   miner rejection). `internalizeAction` kept as best-effort change bookkeeping.
   The two bogus "settled" orders were reset to pending (they never landed).
+  **Fixed 2026-07-27 — "Missing inputs" (TX1 not propagated):** with explicit
+  broadcast the miner returned `Missing inputs` — TX2's funding input (TX1, built
+  by `createAction`) was never propagated to WoC's node either. Fix: `transferStas`
+  now also returns `fundingRawTx`; the button broadcasts **TX1 first, then TX2**
+  to the same node (`broadcastRawTx` tolerates already-known). Awaiting the live
+  re-run to confirm the transfer finally lands on-chain.
 
 ## Known issues / blockers
 
