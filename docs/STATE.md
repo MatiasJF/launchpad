@@ -15,7 +15,15 @@ construction (`planMint`, tested) → server plan (`lib/mint.ts`) → **wallet
 `97859e490fd29f2b6af14f5eb14c0d661a82cc3203b11af97d5b4ab499d563f1` vout 0 is a
 WhatsOnChain-STAS-tagged **1,000-token "Sar"**, owner pkh `8f00c357…d3ee`, token
 id `07871ba5…370f`; DB recorded. Confirms non-custodial `createAction` issuance
-is **indexer-recognized STAS**. **This UTXO is the BSV-003 settlement test target.**
+is **indexer-recognized STAS**.
+
+**🎉 SETTLEMENT VERIFIED ON-CHAIN (BSV-003, 2026-07-27):** tx
+`1506cffe0e0f07264e0d650fe0475cf6c68b4f98633a8ed49289d454e94811e3` moved
+**100 Sar to a recipient** (`a7dbb874…`) + **900 Sar change to sender**, one BSV
+change, **covenant satisfied, non-custodial**. The ported two-tx engine, the
+`twoTx` primitives, `buildChainedAtomicBeef` (wallet `stas-tokens` basket BEEF),
+and browser `bsv-js` bundling are ALL confirmed working — first live try.
+**The full MVP loop (create → issue → settle) is now proven on BSV mainnet.**
 
 _P0 — Foundation & Knowledge Base: ✅ Complete (commit `d28a719`). Scaffold built,
 migration applied, verified by `prisma validate`, `core`/`bsv`/`db` typecheck,
@@ -49,16 +57,15 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 
 **P3 · L0 instant swap (MVP)** _(backlog)_
 
-- `◐` BSV-003  Settlement wired end-to-end: engine ported, browser bsv-js bundling ✅, SettleButton on /admin, first-pass buildChainedAtomicBeef. Runnable — needs a live transfer to verify (like the mint)
+- `●` BSV-003  STAS settlement ✅ VERIFIED ON-CHAIN (tx 1506cf…11e3: 100 Sar → recipient, 900 change, covenant satisfied, non-custodial). Two-tx engine + browser bundling + buildChainedAtomicBeef all confirmed
 - `○` WEB-003  Buy UI; ARC broadcast + SPV verify; record Order + Event
 
 ## Known issues / blockers
 
-- BSV-003 settlement is **wired + runnable but not yet verified on-chain**:
-  browser `bsv-js` bundling done (webpack fallbacks in next.config), SettleButton
-  on `/admin`. `buildChainedAtomicBeef` is a first-pass (fetches the token BEEF
-  from the wallet's `stas-tokens` basket) — run a live transfer of the "Sar"
-  token to verify/iterate (same loop that got the mint working).
+- BSV-003 settlement is **VERIFIED ON-CHAIN** (tx 1506cf…11e3). `buildChainedAtomicBeef`'s
+  first-pass (wallet `stas-tokens` basket BEEF) is confirmed working. Remaining is
+  product, not protocol: the buyer-facing buy flow (WEB-003) that pays sats and
+  triggers a settle — plus partial-send bookkeeping (the 900-Sar change UTXO).
 - The admin login form's server-action submit didn't fire under headless
   automation (works in a real browser; cookie set directly for testing).
 
