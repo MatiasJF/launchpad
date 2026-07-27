@@ -29,11 +29,16 @@ export function SettleOrderButton({
   const [status, setStatus] = useState<'idle' | 'working' | 'done'>('idle');
   const [txid, setTxid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<string>('');
 
   async function settle() {
     setStatus('working');
     setError(null);
+    setPhase('starting');
+    // Nothing here can now finish silently: every exit sets either a txid or a
+    // human-readable error that names the phase it stopped at (see console too).
     try {
+      setPhase('fetching pool UTXO');
       const info = await getOutputInfo(srcTxid, srcVout);
       if (!info) throw new Error('could not fetch the pool UTXO (script + balance) — is it confirmed & unspent?');
       if (tokens > info.satoshis) throw new Error(`pool holds ${info.satoshis} tokens; order needs ${tokens}`);
@@ -41,15 +46,18 @@ export function SettleOrderButton({
       // Ancestry BEEF for the pool UTXO, fetched from-chain (with merkle proof).
       // Required so we can spend a pool UTXO that isn't in the wallet basket
       // (e.g. token change from an earlier transfer).
+      setPhase('fetching source BEEF');
       const sourceBeef = await getSourceBeef(srcTxid);
       if (!sourceBeef) throw new Error('could not fetch source BEEF — the pool tx must be confirmed (mined) to settle');
 
+      setPhase('connecting wallet');
       const { WalletClient } = await import('@bsv/sdk');
       const { transferStas } = await import('@launchpad/bsv/settle');
       const wallet = new WalletClient('auto', ORIGINATOR);
       await wallet.waitForAuthentication({});
       const { publicKey: identityKey } = await wallet.getPublicKey({ identityKey: true });
 
+      setPhase('building + broadcasting transfer (approve in wallet)');
       const res = await transferStas(wallet as never, identityKey, 'main', {
         source: {
           txid: srcTxid,
@@ -64,12 +72,20 @@ export function SettleOrderButton({
         amount: Math.max(1, Math.floor(tokens)),
         senderChangeHash160: info.scriptHex.substring(6, 46),
       });
-      if (!res.ok) throw new Error(res.reason);
+      // eslint-disable-next-line no-console
+      console.log('[settle] transferStas result:', res);
+      if (!res.ok) throw new Error(res.reason || 'transfer failed with no reason given');
+      if (!res.txid) throw new Error('transfer reported success but returned no txid — did NOT broadcast');
+
+      setPhase('recording');
       await markOrderSettled(orderId, res.txid);
       setTxid(res.txid);
       setStatus('done');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // eslint-disable-next-line no-console
+      console.error('[settle] failed at phase:', phase, e);
+      const raw = e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+      setError(`[${phase}] ${raw || '(empty error — see browser console)'}`);
       setStatus('idle');
     }
   }
@@ -101,7 +117,10 @@ export function SettleOrderButton({
           {status === 'working' ? 'Settling…' : `Settle ${tokens}`}
         </Button>
       </div>
-      {error && <p className="break-words text-xs text-danger">{error}</p>}
+      {status === 'working' && phase && (
+        <p className="break-words font-mono text-xs text-muted">⏳ {phase}…</p>
+      )}
+      {error && <p className="break-words text-xs text-danger">⚠ {error}</p>}
     </div>
   );
 }
