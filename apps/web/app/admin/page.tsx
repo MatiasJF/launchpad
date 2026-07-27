@@ -5,6 +5,7 @@ import { SiteFooter } from '../../components/SiteFooter';
 import { Button } from '../../components/ui';
 import { IssueButton } from '../../components/IssueButton';
 import { SettleButton } from '../../components/SettleButton';
+import { SettleOrderButton } from '../../components/SettleOrderButton';
 import { isAdmin } from '../../lib/auth';
 import { adminLogin, adminLogout, setProjectStatus } from '../../lib/actions';
 
@@ -150,6 +151,61 @@ async function IssuedList() {
   );
 }
 
+async function PendingOrdersList() {
+  const orders = await prisma.order.findMany({
+    where: { state: 'pending' },
+    include: { sale: { include: { token: { include: { project: true } } } } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (orders.length === 0) return <p className="mt-4 text-muted">No pending orders.</p>;
+
+  return (
+    <div className="mt-4 flex flex-col gap-3">
+      {orders.map((o) => {
+        const token = o.sale.token;
+        const project = token.project;
+        return (
+          <div key={o.id} className="rounded-lg border border-line bg-surface p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold">{project.name}</h3>
+              <span className="font-mono text-sm text-faint">{token.ticker}</span>
+              <span className="font-mono text-xs text-muted">
+                · {Number(o.tokens).toLocaleString('en-US')} → {o.receiveAddress?.slice(0, 12)}…
+              </span>
+              {o.paymentTxid && (
+                <a
+                  href={`https://whatsonchain.com/tx/${o.paymentTxid}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-xs text-teal underline underline-offset-2"
+                >
+                  paid ↗
+                </a>
+              )}
+            </div>
+            <p className="mb-3 font-mono text-xs text-faint">
+              buyer {o.buyerIdentity.slice(0, 16)}… · {Number(o.satsPaid).toLocaleString('en-US')} sats
+            </p>
+            {token.issuanceTxid && o.receiveAddress ? (
+              <SettleOrderButton
+                orderId={o.id}
+                slug={project.slug}
+                receiveAddress={o.receiveAddress}
+                tokens={Number(o.tokens)}
+                defaultTxid={token.issuanceTxid}
+                defaultSats={Number(token.totalSupply)}
+              />
+            ) : (
+              <p className="text-xs text-warning">token not issued yet — issue it first</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default async function AdminPage() {
   const admin = await isAdmin();
 
@@ -195,6 +251,10 @@ export default async function AdminPage() {
             <section>
               <h2 className="text-xl font-semibold">Issued — transfer (BSV-003 test)</h2>
               <IssuedList />
+            </section>
+            <section>
+              <h2 className="text-xl font-semibold">Pending orders — settle (deliver tokens)</h2>
+              <PendingOrdersList />
             </section>
           </div>
         )}

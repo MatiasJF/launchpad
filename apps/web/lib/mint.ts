@@ -29,6 +29,8 @@ export async function recordIssuance(projectId: string, txid: string, tokenId: s
     where: { id: token.id },
     data: { issuanceTxid: txid, stasTokenId: tokenId },
   });
+  // An issued token's sale opens for buyers.
+  await prisma.sale.updateMany({ where: { tokenId: token.id }, data: { status: 'live' } });
   await prisma.event.create({
     data: { entity: 'Token', entityId: token.id, type: 'issued', payloadHash: txid },
   });

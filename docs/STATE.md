@@ -58,7 +58,7 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 **P3 · L0 instant swap (MVP)** _(backlog)_
 
 - `●` BSV-003  STAS settlement ✅ VERIFIED ON-CHAIN (tx 1506cf…11e3: 100 Sar → recipient, 900 change, covenant satisfied, non-custodial). Two-tx engine + browser bundling + buildChainedAtomicBeef all confirmed
-- `○` WEB-003  Buy UI; ARC broadcast + SPV verify; record Order + Event
+- `◐` WEB-003  Buyer buy flow (BuyCard → place Order + optional sats payment) + admin settle-order (reuses the proven transfer) — wired & rendering. Live buy→settle test pending; partial-send pool tracking is manual for now
 
 ## Known issues / blockers
 

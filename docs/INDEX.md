@@ -49,7 +49,9 @@ present, not implemented.
 
 - Landing + explore → `apps/web/app/page.tsx` · `apps/web/components/ExploreSection.tsx`
 - Project / sale detail → `apps/web/app/sale/[slug]/page.tsx`
-- Buy card (UI) → `apps/web/components/BuyCard.tsx`
+- Buy card (buyer flow: derive receive addr, pay, place order) → `apps/web/components/BuyCard.tsx`
+- Order server actions (place / settle) → `apps/web/lib/order-actions.ts`
+- Settle-order UI (admin, delivers tokens) → `apps/web/components/SettleOrderButton.tsx`
 - Submit a project → `apps/web/app/submit/page.tsx`
 - Admin approval → `apps/web/app/admin/page.tsx`
 - Backend API (sequence/settle) → `apps/web/app/api` _(planned)_

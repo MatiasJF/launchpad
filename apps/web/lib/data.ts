@@ -38,6 +38,8 @@ function mapSale(s: SaleWithRels): SaleCardVM {
     .filter((o) => o.state === 'settled')
     .reduce((sum, o) => sum + Number(o.tokens), 0);
   return {
+    projectId: s.token.project.id,
+    payoutAddress: s.token.project.payoutAddress,
     slug: s.token.project.slug,
     name: s.token.project.name,
     ticker: s.token.ticker,

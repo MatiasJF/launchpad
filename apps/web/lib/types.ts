@@ -7,6 +7,8 @@ export interface Allocation {
 
 /** View model for a sale card / detail page (mapped from the DB). */
 export interface SaleCardVM {
+  projectId: string;
+  payoutAddress?: string | null;
   slug: string;
   name: string;
   ticker: string;

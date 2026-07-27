@@ -35,11 +35,12 @@ model Project {
   tagline     String?
   description  String?
   logoUrl     String?
-  media       String? // JSON array of media URLs
-  links       String? // JSON object of links
-  team        String? // JSON array of team members
-  docs        String? // JSON array of doc links
-  status      String   @default("draft") // draft | pending | approved | live | closed
+  media        String? // JSON array of media URLs
+  links        String? // JSON object of links
+  team         String? // JSON array of team members
+  docs         String? // JSON array of doc links
+  payoutAddress String? // BSV address the seller receives sale proceeds at
+  status       String   @default("draft") // draft | pending | approved | live | closed
   tokens      Token[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -91,13 +92,15 @@ model Order {
   id            String   @id @default(cuid())
   saleId        String
   sale          Sale     @relation(fields: [saleId], references: [id])
-  buyerIdentity String // BRC-100 pubkey
-  kind          String   @default("instant_buy") // instant_buy | escrow_contribution
-  tokens        BigInt
-  satsPaid      BigInt
-  state         String   @default("pending") // pending | settled | refunded | withdrawn | failed
-  txid          String?
-  refundTxid    String?
+  buyerIdentity  String // BRC-100 pubkey
+  receiveAddress String? // buyer's STAS owner address (where tokens are delivered)
+  kind           String   @default("instant_buy") // instant_buy | escrow_contribution
+  tokens         BigInt
+  satsPaid       BigInt
+  state          String   @default("pending") // pending | settled | refunded | withdrawn | failed
+  paymentTxid    String? // buyer's sats payment
+  txid           String? // settlement (token delivery) tx
+  refundTxid     String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
