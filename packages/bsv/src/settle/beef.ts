@@ -1,15 +1,20 @@
 import type { WalletInterface } from '@bsv/sdk';
 
 /**
- * buildChainedAtomicBeef — SPV ancestry BEEF for the token input.
+ * buildChainedAtomicBeef — SPV ancestry BEEF for the token input, from the
+ * wallet's 'stas-tokens' basket.
  *
- * First-pass: the token was internalized into the 'stas-tokens' basket at
- * issuance, so we ask the wallet for that basket's outputs *with their entire
- * transactions* — the returned BEEF carries the token tx + ancestry.
+ * NOTE (2026-07-27): this is now the FALLBACK path. It only works when the
+ * source UTXO is tracked in the basket — true for a fresh mint, but NOT for a
+ * token-change UTXO from a prior transfer (the settle flow never re-baskets the
+ * token change, only the BSV change). Spending such a UTXO with this BEEF omits
+ * the source tx and internalizeAction rejects it as "not valid AtomicBEEF".
  *
- * NEEDS LIVE-WALLET VERIFICATION: the exact BEEF field name/shape from
- * listOutputs may vary; run a transfer and iterate on the real result (same
- * loop that got issuance working). See stas-knowledge-mcp `beef-assembly`.
+ * The PRIMARY path is now `StasSource.beef` — an ancestry BEEF fetched
+ * from-chain (WoC `/tx/{txid}/beef`, incl. merkle proof) by
+ * `apps/web/lib/settle-actions.ts:getSourceBeef`. That is storage-agnostic and
+ * works for any confirmed pool UTXO. This basket path remains for the mint-based
+ * BSV-003 test harness (SettleButton) and as a fallback.
  */
 export async function buildChainedAtomicBeef(args: {
   wallet: WalletInterface;

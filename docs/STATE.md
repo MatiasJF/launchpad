@@ -58,7 +58,15 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 **P3 · L0 instant swap (MVP)** _(backlog)_
 
 - `●` BSV-003  STAS settlement ✅ VERIFIED ON-CHAIN (tx 1506cf…11e3: 100 Sar → recipient, 900 change, covenant satisfied, non-custodial). Two-tx engine + browser bundling + buildChainedAtomicBeef all confirmed
-- `◐` WEB-003  Buyer buy flow (BuyCard → place Order + optional sats payment) + admin settle-order (reuses the proven transfer) — wired & rendering. Live buy→settle test pending; partial-send pool tracking is manual for now
+- `◐` WEB-003  Buyer buy flow (BuyCard → place Order + optional sats payment) + admin settle-order (reuses the proven transfer) — wired & rendering. Live buy→settle test pending; partial-send pool tracking is manual for now.
+  **Fixed 2026-07-27 — chained-transfer BEEF bug:** settling from a pool UTXO that
+  is a *prior transfer's token change* (not the mint) failed with "must be valid
+  AtomicBEEF" — `buildChainedAtomicBeef`'s basket only holds the mint, so the
+  source tx was missing from the BEEF. Fix: fetch the source ancestry BEEF
+  from-chain (WoC `/tx/{txid}/beef`, incl. merkle proof) via
+  `getSourceBeef` and pass it as `StasSource.beef` (storage-agnostic; works for
+  any confirmed pool UTXO). Basket path kept as fallback. Verified: nothing had
+  broadcast (pool `1506cf…:1` still unspent), so no on-chain cleanup needed.
 
 ## Known issues / blockers
 

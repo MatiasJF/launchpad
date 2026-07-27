@@ -41,7 +41,8 @@ present, not implemented.
 - STAS libs kept server-external → `apps/web/next.config.mjs`
 - STAS transfer (settlement) → `packages/bsv/src/settle` (`transferStas` + `twoTx/` primitives + `beef.ts` first-pass — BSV-003)
 - Settle-token UI (client, wallet transfer) → `apps/web/components/SettleButton.tsx`
-- Fetch on-chain output script → `apps/web/lib/settle-actions.ts`
+- Fetch on-chain output script / balance / ancestry BEEF → `apps/web/lib/settle-actions.ts` (`getOutputScriptHex`, `getOutputInfo`, `getSourceBeef`)
+- Chained-transfer BEEF (spend a prior transfer's token change) → `StasSource.beef` from-chain; basket path in `settle/beef.ts` is fallback only
 - Browser polyfills for bsv-js → `apps/web/next.config.mjs` (webpack fallbacks)
 - STAS knowledge (external) → `stas-knowledge-mcp` MCP (local) + `../stas-knowledge-mcp/knowledge`
 

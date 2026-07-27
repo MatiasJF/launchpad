@@ -36,3 +36,26 @@ export async function getOutputInfo(
     return null;
   }
 }
+
+/**
+ * Fetch the source tx's ancestry BEEF from WhatsOnChain (server-side, no CORS).
+ * For a CONFIRMED tx this bundles a merkle proof (BUMP) — a self-sufficient SPV
+ * anchor for the STAS token input. This is what makes settlement storage-agnostic:
+ * we can spend ANY pool UTXO (mint output OR a prior transfer's token change),
+ * not only outputs the wallet happens to track in its `stas-tokens` basket.
+ * Returns the BEEF as a byte array, or null if unavailable (e.g. still in mempool).
+ */
+export async function getSourceBeef(txid: string): Promise<number[] | null> {
+  if (!/^[0-9a-fA-F]{64}$/.test(txid)) return null;
+  try {
+    const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/beef`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const hex = (await res.text()).trim();
+    if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) return null;
+    const bytes: number[] = [];
+    for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.substring(i, i + 2), 16));
+    return bytes;
+  } catch {
+    return null;
+  }
+}

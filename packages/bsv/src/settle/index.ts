@@ -41,6 +41,14 @@ export interface StasSource {
   satoshis: number;
   brc42KeyId: string;
   owner?: { protocolID?: any; keyID?: string; counterparty?: any; forSelf?: boolean };
+  /**
+   * Ancestry BEEF for this token input (bytes). When provided (e.g. fetched
+   * from-chain for a confirmed source, incl. its merkle proof), it is used as
+   * the SPV anchor instead of the wallet's `stas-tokens` basket. This is what
+   * lets us spend a pool UTXO that isn't tracked in the basket — e.g. the token
+   * change from a prior transfer. Falls back to the basket when omitted.
+   */
+  beef?: number[];
 }
 
 export interface StasTransferArgs {
@@ -123,10 +131,14 @@ export async function transferStas(
     return { ok: false, reason: `script build: ${errMsg(err)}` };
   }
 
-  // 5. Token input ancestry BEEF (SPV).
+  // 5. Token input ancestry BEEF (SPV). Prefer a caller-supplied from-chain BEEF
+  //    (works for any confirmed pool UTXO); fall back to the wallet basket.
   let tokenBeef: number[];
   try {
-    tokenBeef = (await buildChainedAtomicBeef({ wallet, txid: source.txid })).beef;
+    tokenBeef =
+      source.beef && source.beef.length > 0
+        ? source.beef
+        : (await buildChainedAtomicBeef({ wallet, txid: source.txid })).beef;
   } catch (err) {
     return { ok: false, reason: `inputBEEF assembly: ${errMsg(err)}` };
   }

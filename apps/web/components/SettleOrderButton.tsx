@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from './ui';
-import { getOutputInfo } from '../lib/settle-actions';
+import { getOutputInfo, getSourceBeef } from '../lib/settle-actions';
 import { markOrderSettled } from '../lib/order-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
@@ -38,6 +38,12 @@ export function SettleOrderButton({
       if (!info) throw new Error('could not fetch the pool UTXO (script + balance) — is it confirmed & unspent?');
       if (tokens > info.satoshis) throw new Error(`pool holds ${info.satoshis} tokens; order needs ${tokens}`);
 
+      // Ancestry BEEF for the pool UTXO, fetched from-chain (with merkle proof).
+      // Required so we can spend a pool UTXO that isn't in the wallet basket
+      // (e.g. token change from an earlier transfer).
+      const sourceBeef = await getSourceBeef(srcTxid);
+      if (!sourceBeef) throw new Error('could not fetch source BEEF — the pool tx must be confirmed (mined) to settle');
+
       const { WalletClient } = await import('@bsv/sdk');
       const { transferStas } = await import('@launchpad/bsv/settle');
       const wallet = new WalletClient('auto', ORIGINATOR);
@@ -50,6 +56,7 @@ export function SettleOrderButton({
           vout: srcVout,
           scriptHex: info.scriptHex,
           satoshis: info.satoshis,
+          beef: sourceBeef,
           brc42KeyId: `${slug}-owner`,
           owner: { protocolID: STAS_PROTOCOL, keyID: `${slug}-owner`, counterparty: 'self', forSelf: false },
         },
