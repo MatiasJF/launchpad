@@ -194,7 +194,6 @@ async function PendingOrdersList() {
                 receiveAddress={o.receiveAddress}
                 tokens={Number(o.tokens)}
                 defaultTxid={token.issuanceTxid}
-                defaultSats={Number(token.totalSupply)}
               />
             ) : (
               <p className="text-xs text-warning">token not issued yet — issue it first</p>

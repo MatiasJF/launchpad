@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from './ui';
-import { getOutputScriptHex } from '../lib/settle-actions';
+import { getOutputInfo } from '../lib/settle-actions';
 import { markOrderSettled } from '../lib/order-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
@@ -14,20 +14,18 @@ export function SettleOrderButton({
   receiveAddress,
   tokens,
   defaultTxid,
-  defaultSats,
 }: {
   orderId: string;
   slug: string;
   receiveAddress: string;
   tokens: number;
   defaultTxid: string;
-  defaultSats: number;
 }) {
-  // The pool UTXO to spend from (moves after each partial send — set it manually
-  // for now; auto-tracking is a follow-up).
+  // The pool UTXO to spend from. It moves after each partial send, so the
+  // operator points this at the CURRENT pool UTXO (auto-tracking is a follow-up).
+  // The balance is fetched from-chain so it always matches.
   const [srcTxid, setSrcTxid] = useState(defaultTxid);
   const [srcVout, setSrcVout] = useState(0);
-  const [srcSats, setSrcSats] = useState(defaultSats);
   const [status, setStatus] = useState<'idle' | 'working' | 'done'>('idle');
   const [txid, setTxid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +34,9 @@ export function SettleOrderButton({
     setStatus('working');
     setError(null);
     try {
-      const scriptHex = await getOutputScriptHex(srcTxid, srcVout);
-      if (!scriptHex) throw new Error('could not fetch the pool UTXO script from WhatsOnChain');
+      const info = await getOutputInfo(srcTxid, srcVout);
+      if (!info) throw new Error('could not fetch the pool UTXO (script + balance) — is it confirmed & unspent?');
+      if (tokens > info.satoshis) throw new Error(`pool holds ${info.satoshis} tokens; order needs ${tokens}`);
 
       const { WalletClient } = await import('@bsv/sdk');
       const { transferStas } = await import('@launchpad/bsv/settle');
@@ -49,14 +48,14 @@ export function SettleOrderButton({
         source: {
           txid: srcTxid,
           vout: srcVout,
-          scriptHex,
-          satoshis: srcSats,
+          scriptHex: info.scriptHex,
+          satoshis: info.satoshis,
           brc42KeyId: `${slug}-owner`,
           owner: { protocolID: STAS_PROTOCOL, keyID: `${slug}-owner`, counterparty: 'self', forSelf: false },
         },
         recipientAddress: receiveAddress,
         amount: Math.max(1, Math.floor(tokens)),
-        senderChangeHash160: scriptHex.substring(6, 46),
+        senderChangeHash160: info.scriptHex.substring(6, 46),
       });
       if (!res.ok) throw new Error(res.reason);
       await markOrderSettled(orderId, res.txid);
@@ -85,12 +84,14 @@ export function SettleOrderButton({
 
   return (
     <div className="flex flex-col gap-2">
+      <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-faint">
+        current pool UTXO (txid · vout) — balance auto-fetched
+      </span>
       <div className="flex flex-wrap items-center gap-2">
         <input value={srcTxid} onChange={(e) => setSrcTxid(e.target.value)} placeholder="pool txid" className={`w-64 ${inp}`} />
         <input type="number" value={srcVout} onChange={(e) => setSrcVout(Number(e.target.value))} className={`w-16 ${inp}`} title="vout" />
-        <input type="number" value={srcSats} onChange={(e) => setSrcSats(Number(e.target.value))} className={`w-24 ${inp}`} title="pool token balance" />
         <Button variant="primary" onClick={settle} disabled={status === 'working'}>
-          {status === 'working' ? 'Settling…' : 'Settle'}
+          {status === 'working' ? 'Settling…' : `Settle ${tokens}`}
         </Button>
       </div>
       {error && <p className="break-words text-xs text-danger">{error}</p>}
