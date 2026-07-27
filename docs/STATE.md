@@ -10,9 +10,12 @@ verified in-browser). Admin-gated project **submit + approval** flow is live
 STAS issuance (BSV-002 ✅ — classic STAS, non-custodial, ADR-021): mint
 construction (`planMint`, tested) → server plan (`lib/mint.ts`) → **wallet
 `createAction`** signs + broadcasts (non-custodial, keys stay in wallet) →
-`recordIssuance`. Issue-token UI + confirm gate on `/admin`. Verified: typecheck,
-build, admin render. **The live broadcast needs a funded BSV Desktop** — use a
-tiny-supply project (e.g. "Sat", 1,000) to mint on ~1,000 sats.
+`recordIssuance`. Issue-token UI + confirm gate on `/admin`.
+**🎉 VERIFIED ON-CHAIN (2026-07-27):** first real mint broadcast — tx
+`97859e490fd29f2b6af14f5eb14c0d661a82cc3203b11af97d5b4ab499d563f1` vout 0 is a
+WhatsOnChain-STAS-tagged **1,000-token "Sar"**, owner pkh `8f00c357…d3ee`, token
+id `07871ba5…370f`; DB recorded. Confirms non-custodial `createAction` issuance
+is **indexer-recognized STAS**. **This UTXO is the BSV-003 settlement test target.**
 
 _P0 — Foundation & Knowledge Base: ✅ Complete (commit `d28a719`). Scaffold built,
 migration applied, verified by `prisma validate`, `core`/`bsv`/`db` typecheck,
@@ -42,7 +45,7 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 **P2 · Admin-gated issuance** _(backlog)_
 
 - `●` ADMIN-001  Submit form → pending project; admin-secret gate; approve/reject (ADR-020)
-- `●` BSV-002    STAS issuance: non-custodial mint via wallet createAction; Issue-token UI + confirm gate (broadcast needs funded wallet)
+- `●` BSV-002    STAS issuance ✅ VERIFIED ON-CHAIN (tx 97859e…563f1, WoC-tagged STAS, "Sar" 1000). Non-custodial mint via wallet createAction; Issue-token UI
 
 **P3 · L0 instant swap (MVP)** _(backlog)_
 
