@@ -9,6 +9,7 @@ present, not implemented.
 - Project overview & rules → `CLAUDE.md`
 - Current status → `docs/STATE.md`
 - Why a thing is the way it is → `docs/DECISIONS.md`
+- External references & candidate directions → `docs/REFERENCES.md`
 - Terminology → `docs/GLOSSARY.md`
 - How it's built → `docs/ARCHITECTURE.md`
 - Data model → `docs/SCHEMA.md`
