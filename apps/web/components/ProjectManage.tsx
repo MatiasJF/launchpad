@@ -1,0 +1,159 @@
+'use client';
+
+import { useState } from 'react';
+import { Button } from './ui';
+import { IssueButton } from './IssueButton';
+import { SettleOrderButton } from './SettleOrderButton';
+
+const ORIGINATOR = 'launchpad.local';
+
+export type ManageVM = {
+  projectId: string;
+  slug: string;
+  name: string;
+  status: string;
+  payoutAddress: string | null;
+  ownerIdentity: string;
+  token: { ticker: string; supply: number; issuanceTxid: string | null; tokenId: string | null } | null;
+  orders: {
+    id: string;
+    tokens: number;
+    receiveAddress: string | null;
+    state: string;
+    txid: string | null;
+    satsPaid: number;
+    buyerIdentity: string;
+  }[];
+};
+
+/**
+ * Project owner's self-service dashboard. Gated by connecting the OWNER's wallet
+ * (identity must match the project owner). From here the issuer — not the platform
+ * admin — issues their own token and settles their own sales; their wallet signs
+ * and pays. Non-custodial throughout.
+ */
+export function ProjectManage({ p }: { p: ManageVM }) {
+  const [identity, setIdentity] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function connect() {
+    setConnecting(true);
+    setError(null);
+    try {
+      const { WalletClient } = await import('@bsv/sdk');
+      const wallet = new WalletClient('auto', ORIGINATOR);
+      await wallet.waitForAuthentication({});
+      const { publicKey } = await wallet.getPublicKey({ identityKey: true });
+      setIdentity(publicKey);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  const isOwner = !!identity && identity === p.ownerIdentity;
+  const pending = p.orders.filter((o) => o.state === 'pending');
+  const settled = p.orders.filter((o) => o.state === 'settled');
+
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-[2rem] font-semibold">{p.name}</h1>
+        {p.token && <span className="font-mono text-sm text-faint">{p.token.ticker}</span>}
+        <span className="pill" style={{ ['--tone' as string]: 'var(--c-teal)' }}>
+          {p.status}
+        </span>
+      </div>
+      <p className="mt-1 font-mono text-xs text-faint">owner {p.ownerIdentity.slice(0, 24)}…</p>
+
+      {!identity ? (
+        <div className="mt-6 rounded-lg border border-line bg-surface p-5">
+          <p className="text-sm text-muted">Connect the project owner wallet to manage issuance and settlement.</p>
+          {error && <p className="mt-3 break-words text-xs text-danger">⚠ {error}</p>}
+          <div className="mt-4">
+            <Button variant="primary" onClick={connect} disabled={connecting}>
+              {connecting ? 'Connecting…' : 'Connect owner wallet'}
+            </Button>
+          </div>
+        </div>
+      ) : !isOwner ? (
+        <div className="mt-6 rounded-lg border border-danger/40 bg-danger/10 p-5 text-sm text-danger">
+          This dashboard is for the project owner. The connected wallet ({identity.slice(0, 16)}…) is not the owner
+          of this project.
+        </div>
+      ) : (
+        <div className="mt-8 flex flex-col gap-10">
+          {/* Payout */}
+          <section>
+            <h2 className="text-xl font-semibold">Payout address</h2>
+            <p className="mt-2 break-all rounded-md border border-line bg-elevated p-3 font-mono text-sm text-fg">
+              {p.payoutAddress ?? '— not set —'}
+            </p>
+            <p className="mt-1 text-xs text-muted">Buyers pay here; sale proceeds go straight to your wallet.</p>
+          </section>
+
+          {/* Issuance */}
+          <section>
+            <h2 className="text-xl font-semibold">Token issuance</h2>
+            {!p.token ? (
+              <p className="mt-2 text-muted">No token configured.</p>
+            ) : p.token.issuanceTxid ? (
+              <p className="mt-2 text-sm text-muted">
+                Issued ·{' '}
+                <a
+                  href={`https://whatsonchain.com/tx/${p.token.issuanceTxid}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-xs text-teal underline underline-offset-2"
+                >
+                  {p.token.issuanceTxid.slice(0, 12)}… ↗
+                </a>
+              </p>
+            ) : p.status === 'live' || p.status === 'approved' ? (
+              <div className="mt-3">
+                <IssueButton projectId={p.projectId} ticker={p.token.ticker} supply={p.token.supply} slug={p.slug} />
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-warning">Awaiting admin approval before you can issue.</p>
+            )}
+          </section>
+
+          {/* Settlement */}
+          <section>
+            <h2 className="text-xl font-semibold">Orders to settle ({pending.length})</h2>
+            {!p.token?.issuanceTxid ? (
+              <p className="mt-2 text-sm text-muted">Issue the token first, then paid orders appear here.</p>
+            ) : pending.length === 0 ? (
+              <p className="mt-2 text-muted">No paid orders waiting.</p>
+            ) : (
+              <div className="mt-4 flex flex-col gap-3">
+                {pending.map((o) => (
+                  <div key={o.id} className="rounded-lg border border-line bg-surface p-4">
+                    <p className="mb-3 font-mono text-xs text-faint">
+                      {o.tokens.toLocaleString('en-US')} {p.token?.ticker} → {o.receiveAddress?.slice(0, 14)}… · buyer{' '}
+                      {o.buyerIdentity.slice(0, 12)}… · {o.satsPaid.toLocaleString('en-US')} sats
+                    </p>
+                    {o.receiveAddress && p.token?.issuanceTxid && (
+                      <SettleOrderButton
+                        orderId={o.id}
+                        slug={p.slug}
+                        receiveAddress={o.receiveAddress}
+                        tokens={o.tokens}
+                        defaultTxid={p.token.issuanceTxid}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {settled.length > 0 && (
+              <p className="mt-3 text-xs text-muted">{settled.length} settled · delivered on-chain.</p>
+            )}
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}

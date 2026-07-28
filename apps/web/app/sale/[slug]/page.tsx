@@ -89,6 +89,12 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           <aside>
             <BuyCard s={s} />
             <ClaimTokens slug={s.slug} />
+            <Link
+              href={`/project/${s.slug}/manage`}
+              className="mt-4 block text-center font-mono text-xs text-faint underline underline-offset-2 hover:text-muted"
+            >
+              Project owner? Manage →
+            </Link>
           </aside>
         </div>
       </main>
