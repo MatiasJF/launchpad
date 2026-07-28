@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from './ui';
-import { getBuyerClaimableOrders } from '../lib/order-actions';
+import { getBuyerClaimableOrders, markOrderRegistered } from '../lib/order-actions';
 import { getSourceBeef } from '../lib/settle-actions';
 import { useWallet } from './WalletProvider';
 
@@ -94,8 +94,10 @@ export function ClaimTokens({ slug }: { slug: string }) {
       console.log('[claim] receiveStasToken result:', res);
 
       if (res.registered) {
+        await markOrderRegistered(o.orderId); // won't re-appear on reload
         setRows((r) => ({ ...r, [o.orderId]: { phase: '', result: 'registered' } }));
       } else if (res.reason === 'already registered') {
+        await markOrderRegistered(o.orderId);
         setRows((r) => ({ ...r, [o.orderId]: { phase: '', result: 'already' } }));
       } else {
         setRows((r) => ({ ...r, [o.orderId]: { phase: '', result: 'error', message: res.reason ?? 'registration failed' } }));

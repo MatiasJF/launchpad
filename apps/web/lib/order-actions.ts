@@ -211,7 +211,17 @@ export async function getBuyerClaimableOrders(buyerIdentity: string): Promise<
     include: { sale: { include: { token: { include: { project: true } } } } },
     orderBy: { updatedAt: 'desc' },
   });
-  return orders.map((o) => ({
+  // Exclude orders the buyer already registered into their wallet, so a claimed
+  // token stops re-appearing on every reload (the wallet-side receive is already
+  // idempotent; this hides it from the list too).
+  const registered = await prisma.event.findMany({
+    where: { entity: 'Order', type: 'registered', entityId: { in: orders.map((o) => o.id) } },
+    select: { entityId: true },
+  });
+  const regSet = new Set(registered.map((e) => e.entityId));
+  return orders
+    .filter((o) => !regSet.has(o.id))
+    .map((o) => ({
     orderId: o.id,
     txid: o.txid as string,
     tokens: o.tokens.toString(),
@@ -219,6 +229,20 @@ export async function getBuyerClaimableOrders(buyerIdentity: string): Promise<
     ticker: o.sale.token.ticker,
     projectName: o.sale.token.project.name,
   }));
+}
+
+/**
+ * Record that a buyer registered an order's tokens into their wallet, so it drops
+ * off the claimable list. Idempotent — a repeat call is a no-op. Bookkeeping only;
+ * the wallet-side receive is the real (idempotent) action.
+ */
+export async function markOrderRegistered(orderId: string): Promise<void> {
+  if (!orderId) return;
+  const existing = await prisma.event.findFirst({
+    where: { entity: 'Order', entityId: orderId, type: 'registered' },
+  });
+  if (existing) return;
+  await prisma.event.create({ data: { entity: 'Order', entityId: orderId, type: 'registered', payloadHash: orderId } });
 }
 
 /** Mark an order settled after the operator delivered the tokens on-chain. */
