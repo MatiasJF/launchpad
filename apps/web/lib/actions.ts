@@ -99,13 +99,18 @@ export async function updateProjectMeta(input: {
     return { ok: false, error: 'not the project owner' };
   }
   const isHttps = (u: string) => /^https:\/\/\S+$/i.test(u);
+  // A logo may be an https URL OR an uploaded image embedded as a data URI
+  // (png / ico / jpeg / webp / svg). Cap the data URI so the DB row stays sane.
+  const isLogo = (u: string) =>
+    isHttps(u) ||
+    (/^data:image\/(png|x-icon|vnd\.microsoft\.icon|jpeg|jpg|webp|svg\+xml);base64,/i.test(u) && u.length <= 300_000);
   const logoUrl = input.logoUrl.trim();
   const website = input.website.trim();
   try {
     await prisma.project.update({
       where: { id: input.projectId },
       data: {
-        logoUrl: logoUrl === '' ? null : isHttps(logoUrl) ? logoUrl : undefined,
+        logoUrl: logoUrl === '' ? null : isLogo(logoUrl) ? logoUrl : undefined,
         links: website === '' ? null : isHttps(website) ? JSON.stringify({ website }) : undefined,
         description: input.description.trim() || null,
       },

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import { Button } from './ui';
 import { IssueButton } from './IssueButton';
 import { SettleOrderButton } from './SettleOrderButton';
@@ -40,6 +40,28 @@ export function ProjectManage({ p }: { p: ManageVM }) {
   const [meta, setMeta] = useState({ logoUrl: p.logoUrl ?? '', website: p.website ?? '', description: p.description ?? '' });
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  function onLogoFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!/^image\/(png|x-icon|vnd\.microsoft\.icon|jpeg|webp|svg\+xml)$/.test(file.type) && !/\.(png|ico)$/i.test(file.name)) {
+      setSaveState('error');
+      setSaveErr('use a PNG or ICO image');
+      return;
+    }
+    if (file.size > 200 * 1024) {
+      setSaveState('error');
+      setSaveErr('image too large (max 200KB) — use a small square logo');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setMeta((m) => ({ ...m, logoUrl: String(reader.result) }));
+      setSaveState('idle');
+      setSaveErr(null);
+    };
+    reader.readAsDataURL(file);
+  }
 
   async function saveMeta() {
     if (!identity) return;
@@ -103,15 +125,24 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               token’s on-chain metadata too.
             </p>
             <div className="mt-4 flex flex-col gap-3">
-              <label className="flex flex-col gap-1.5">
-                <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Logo URL (https, square)</span>
+              <div className="flex flex-col gap-1.5">
+                <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">
+                  Logo — upload PNG/ICO, or paste an https URL
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="btn btn-secondary cursor-pointer">
+                    Upload PNG/ICO
+                    <input type="file" accept="image/png,image/x-icon,.ico,.png,image/*" onChange={onLogoFile} className="hidden" />
+                  </label>
+                  {meta.logoUrl?.startsWith('data:') && <span className="font-mono text-xs text-teal">✓ image loaded</span>}
+                </div>
                 <input
-                  value={meta.logoUrl}
+                  value={meta.logoUrl?.startsWith('data:') ? '' : meta.logoUrl}
                   onChange={(e) => setMeta((m) => ({ ...m, logoUrl: e.target.value }))}
-                  placeholder="https://…/logo.png"
+                  placeholder="…or https://…/logo.png"
                   className={`${metaInput} font-mono`}
                 />
-              </label>
+              </div>
               <label className="flex flex-col gap-1.5">
                 <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Website (https)</span>
                 <input

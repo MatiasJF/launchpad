@@ -116,7 +116,8 @@ export async function issueStasGenesis(
     decimals: 0,
   };
   if (args.description) schema.description = args.description.slice(0, 200);
-  if (args.image) schema.image = args.image.slice(0, 256);
+  // Only embed a URL image on-chain — a data-URI upload would bloat the OP_RETURN.
+  if (args.image && /^https?:\/\//i.test(args.image)) schema.image = args.image.slice(0, 256);
   if (args.website) schema.website = args.website.slice(0, 256);
   let contractScriptHex: string, stasScriptHex: string;
   try {
