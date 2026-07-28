@@ -4,10 +4,13 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 
 ## Current phase
 
-**⚠️ COUNTERFEIT FIX — genesis issuance reworked (2026-07-28, ADR-024) — LIVE-TEST PENDING.**
-First live token read `counterfeit` in BSV Desktop: WoC back-to-genesis returned
-`no-genesis` at the mint because our single-output issuance had no contract
-ancestor. Fixed with the classic **contract → issue** genesis (`issueStasGenesis`,
+**✅ COUNTERFEIT FIX — genesis issuance reworked (2026-07-28, ADR-024) — VERIFIED ON-CHAIN.**
+Reissued token `bd7e084371493136a36236dbd927ed8b0aef3835e662f6900e8ae9bd62eda87f:0`
+returns WoC back-to-genesis **`result: authentic`** (genesisDepth 0, conservationOk,
+tokenId `65ef81c6…`) — contract+funding `501d08…` → issue `bd7e08…` (STAS vout0 +
+300 change vout1). The contract→issue genesis works; new mints are genuine STAS.
+(First live token read `counterfeit`: WoC returned `no-genesis` at the mint because
+our single-output issuance had no contract ancestor.) Fixed with the classic **contract → issue** genesis (`issueStasGenesis`,
 `packages/bsv/src/issue/genesis.ts`; wired into `IssueButton`): contract locks the
 supply to the redeem pkh (= tokenId anchor) with an OP_RETURN schema, issue spends
 it to mint genesis-valid STAS. Non-custodial (wallet signs both). `recordIssuance`
