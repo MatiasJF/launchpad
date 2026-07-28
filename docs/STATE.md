@@ -122,7 +122,13 @@ Buyer UI = `ClaimTokens` on the sale page: "Check my orders" → lists settled
 purchases → "Register in wallet" per order (customInstructions stamp the STAS
 derivation `protocolID/keyID=slug/counterparty=self` for portable render + spend).
 Server action `getBuyerClaimableOrders(identity)` lists a buyer's settled orders.
-Recipient token output is always TX2:0. **Not yet live-tested against a wallet.**
+Recipient token output is always TX2:0. **✅ VERIFIED against BSV Desktop
+(2026-07-28):** buyer registered both settled 100-Sar purchases; tokens now
+tracked + spendable in-wallet. Fix that made it work: the from-chain WoC BEEF is
+a *plain* BEEF, but `internalizeAction` needs **AtomicBEEF** — `receiveStasToken`
+now converts via `Beef.fromBinary(beef).toBinaryAtomic(txid)` (pre-validated:
+subject tx present, `01010101` atomic prefix). The full buyer journey
+create→issue→buy→settle→**receive** is now proven end-to-end on mainnet.
 
 **Multi-hop settlement proven (2026-07-28).** Two live buyer orders settled back-
 to-back off the same moving pool: settle #1 `73d34b30…` (100→buyer + 800 change),
