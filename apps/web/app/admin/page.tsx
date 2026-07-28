@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { prisma } from '@launchpad/db';
 import { SiteHeader } from '../../components/SiteHeader';
 import { SiteFooter } from '../../components/SiteFooter';
-import { Button } from '../../components/ui';
+import { Button, Tabs } from '../../components/ui';
 import { isAdmin } from '../../lib/auth';
 import { adminLogin, adminLogout, setProjectStatus, deleteProjectForm } from '../../lib/actions';
 
@@ -128,19 +128,35 @@ export default async function AdminPage() {
           </form>
         ) : (
           <div className="mt-8 flex flex-col gap-6">
-            <section>
-              <h2 className="text-xl font-semibold">Listing requests</h2>
-              <p className="mt-1 text-sm text-muted">
-                Approve to make the project live (its owner then issues and sells it), or reject. That is the platform&apos;s
-                only role — projects manage everything else from their own dashboard.
-              </p>
-              <PendingList />
-            </section>
-            <section>
-              <h2 className="text-xl font-semibold">All listings</h2>
-              <p className="mt-1 text-sm text-muted">Delete any project (removes its token, sale and orders — on-chain tokens are unaffected).</p>
-              <AllListings />
-            </section>
+            <Tabs
+              tabs={[
+                {
+                  id: 'requests',
+                  label: 'Listing requests',
+                  content: (
+                    <section>
+                      <p className="mb-1 text-sm text-muted">
+                        Approve to make the project live (its owner then issues and sells it), or reject. That is the
+                        platform&apos;s only role — projects manage everything else from their own dashboard.
+                      </p>
+                      <PendingList />
+                    </section>
+                  ),
+                },
+                {
+                  id: 'all',
+                  label: 'All listings',
+                  content: (
+                    <section>
+                      <p className="mb-1 text-sm text-muted">
+                        Delete any project (removes its token, sale and orders — on-chain tokens are unaffected).
+                      </p>
+                      <AllListings />
+                    </section>
+                  ),
+                },
+              ]}
+            />
             <p className="text-xs text-faint">
               Approved projects self-serve at{' '}
               <Link href="/explore" className="underline underline-offset-2 hover:text-muted">

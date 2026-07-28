@@ -116,6 +116,7 @@ export function ProjectManage({ p }: { p: ManageVM }) {
     }
   }
 
+  const [tab, setTab] = useState<'details' | 'schedule' | 'issuance' | 'orders' | 'danger'>('details');
   const [deleting, setDeleting] = useState(false);
   async function doDelete() {
     if (!identity) return;
@@ -183,7 +184,31 @@ export function ProjectManage({ p }: { p: ManageVM }) {
           of this project.
         </div>
       ) : (
-        <div className="mt-8 flex flex-col gap-10">
+        <div className="mt-8">
+          <div className="flex gap-1 overflow-x-auto border-b border-line">
+            {(
+              [
+                ['details', 'Details'],
+                ['schedule', 'Schedule'],
+                ['issuance', 'Issuance'],
+                ['orders', `Orders${pending.length ? ` (${pending.length})` : ''}`],
+                ['danger', 'Danger'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${
+                  tab === id ? 'border-gold text-fg' : 'border-transparent text-muted hover:text-fg'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-6 flex flex-col gap-8" hidden={tab !== 'details'}>
           {/* Payout */}
           <section>
             <h2 className="text-xl font-semibold">Payout address</h2>
@@ -283,7 +308,9 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               )}
             </div>
           </section>
+          </div>
 
+          <div hidden={tab !== 'schedule'}>
           {/* Sale schedule */}
           <section>
             <h2 className="text-xl font-semibold">Sale schedule</h2>
@@ -343,7 +370,9 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               </div>
             </div>
           </section>
+          </div>
 
+          <div hidden={tab !== 'issuance'}>
           {/* Issuance */}
           <section>
             <h2 className="text-xl font-semibold">Token issuance</h2>
@@ -378,7 +407,9 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               <p className="mt-2 text-sm text-warning">Awaiting admin approval before you can issue.</p>
             )}
           </section>
+          </div>
 
+          <div hidden={tab !== 'orders'}>
           {/* Settlement */}
           <section>
             <h2 className="text-xl font-semibold">Orders to settle ({pending.length})</h2>
@@ -411,7 +442,9 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               <p className="mt-3 text-xs text-muted">{settled.length} settled · delivered on-chain.</p>
             )}
           </section>
+          </div>
 
+          <div hidden={tab !== 'danger'}>
           {/* Danger zone */}
           <section className="rounded-lg border border-danger/40 bg-danger/5 p-4">
             <h2 className="text-xl font-semibold text-danger">Delete project</h2>
@@ -428,6 +461,7 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               {deleting ? 'Deleting…' : 'Delete this project'}
             </button>
           </section>
+          </div>
         </div>
       )}
     </div>

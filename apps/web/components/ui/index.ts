@@ -5,3 +5,4 @@ export type { CardProps } from './Card';
 export { StatTile } from './StatTile';
 export { StatusPill } from './StatusPill';
 export { NumberField } from './NumberField';
+export { Tabs } from './Tabs';
