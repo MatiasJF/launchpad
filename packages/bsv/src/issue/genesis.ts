@@ -40,6 +40,11 @@ export interface GenesisArgs {
   supply: number;
   splittable?: boolean;
   metadata?: string;
+  /** Display metadata embedded in the contract OP_RETURN (bounded lengths). */
+  name?: string;
+  description?: string;
+  image?: string;
+  website?: string;
 }
 
 export type GenesisResult =
@@ -99,14 +104,20 @@ export async function issueStasGenesis(
   const tokenId = redeemPkh; // classic STAS tokenId = hash160(redemption pubkey)
 
   // 2. Contract output: P2PKH(redeem) + bare OP_RETURN(schema). Anchor = redeemPkh.
-  const schema = {
-    name: args.symbol,
+  // Contract OP_RETURN schema. tokenId MUST equal hash160(redemption) (the
+  // genesis anchor); the rest is free-form display metadata read by wallets /
+  // explorers. Lengths are bounded to keep the OP_RETURN small.
+  const schema: Record<string, unknown> = {
+    name: (args.name || args.symbol).slice(0, 64),
     symbol: args.symbol,
     tokenId,
     totalSupply: args.supply,
     satsPerToken: 1,
     decimals: 0,
   };
+  if (args.description) schema.description = args.description.slice(0, 200);
+  if (args.image) schema.image = args.image.slice(0, 256);
+  if (args.website) schema.website = args.website.slice(0, 256);
   let contractScriptHex: string, stasScriptHex: string;
   try {
     const cs = bsv.Script.fromASM(`OP_DUP OP_HASH160 ${redeemPkh} OP_EQUALVERIFY OP_CHECKSIG`);

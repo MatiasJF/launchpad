@@ -29,6 +29,13 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
       buyerIdentity: o.buyerIdentity,
     }));
 
+  let website: string | null = null;
+  try {
+    website = project.links ? ((JSON.parse(project.links) as { website?: string }).website ?? null) : null;
+  } catch {
+    website = null;
+  }
+
   const vm: ManageVM = {
     projectId: project.id,
     slug: project.slug,
@@ -36,6 +43,9 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
     status: project.status,
     payoutAddress: project.payoutAddress,
     ownerIdentity: project.owner.identityPubkey,
+    description: project.description,
+    logoUrl: project.logoUrl,
+    website,
     token: token
       ? {
           ticker: token.ticker,

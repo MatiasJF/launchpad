@@ -210,3 +210,14 @@ live button mid-flow; fixed by removing revalidate from claim/release.)
 ## Open questions
 
 - _(resolved)_ Admin auth → dev-grade admin-secret cookie (ADR-020); revisit for production.
+
+**Added 2026-07-28 — token metadata polish.** Tokens now carry real identity.
+Submit captures a logo URL + website (`createProject` stores `Project.logoUrl` +
+`links` JSON, https-validated). Genesis OP_RETURN schema enriched with
+name/description/image/website (bounded lengths; tokenId anchor unchanged) —
+`GenesisArgs` + `issueStasGenesis`, passed through `IssueButton` ← `ProjectManage`
+← manage page. UI surfaces it: `SaleCardVM` gains `logoUrl`/`website`; `ProjectCard`
++ sale hero render the logo (letter fallback); sale page shows the website link.
+Wallets/explorers that read the STAS schema now see the project name/logo, not a
+generic tag. **Re-issue to get the richer on-chain metadata (existing tokens keep
+the old minimal schema).**

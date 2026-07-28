@@ -54,8 +54,12 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 } as CSSProperties
               }
             >
-              <span className="absolute bottom-4 left-5 grid h-16 w-16 place-items-center rounded-2xl border border-line-strong bg-surface font-display text-2xl font-bold text-fg shadow-[var(--shadow-1)]">
-                {s.name.charAt(0)}
+              <span className="absolute bottom-4 left-5 grid h-16 w-16 place-items-center overflow-hidden rounded-2xl border border-line-strong bg-surface font-display text-2xl font-bold text-fg shadow-[var(--shadow-1)]">
+                {s.logoUrl ? (
+                  <img src={s.logoUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  s.name.charAt(0)
+                )}
               </span>
             </div>
 
@@ -65,6 +69,16 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               <StatusPill status={s.status} />
             </div>
             <p className="mt-2 max-w-[60ch] text-lg text-muted">{s.blurb}</p>
+            {s.website && (
+              <a
+                href={s.website}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex items-center gap-1.5 font-mono text-xs text-teal underline underline-offset-2 hover:opacity-80"
+              >
+                {s.website.replace(/^https?:\/\//, '').replace(/\/$/, '')} ↗
+              </a>
+            )}
 
             <Section title="About">
               <p className="max-w-[68ch] leading-relaxed text-muted">{s.about}</p>

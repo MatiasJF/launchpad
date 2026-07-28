@@ -86,6 +86,10 @@ export function SubmitForm() {
         <span className={labelCls}>About</span>
         <textarea name="about" rows={3} className={inputCls} />
       </label>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field name="logoUrl" label="Logo URL (https, square)" type="url" />
+        <Field name="website" label="Website" type="url" />
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field name="totalSupply" label="Total supply" type="number" />
         <Field name="publicAllocation" label="Public allocation" type="number" />

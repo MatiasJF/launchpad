@@ -22,11 +22,19 @@ export function IssueButton({
   ticker,
   supply,
   slug,
+  name,
+  description,
+  logoUrl,
+  website,
 }: {
   projectId: string;
   ticker: string;
   supply: number;
   slug: string;
+  name?: string;
+  description?: string | null;
+  logoUrl?: string | null;
+  website?: string | null;
 }) {
   const [status, setStatus] = useState<Status>('idle');
   const [plan, setPlan] = useState<MintPlan | null>(null);
@@ -65,7 +73,16 @@ export function IssueButton({
       // Genesis mint = CONTRACT → ISSUE (so WoC back-to-genesis reads it as
       // authentic, not counterfeit). Non-custodial: the wallet signs both txs.
       const { issueStasGenesis } = await import('@launchpad/bsv/genesis');
-      const res = await issueStasGenesis(wallet, '', 'main', { slug, symbol, supply, splittable: true });
+      const res = await issueStasGenesis(wallet, '', 'main', {
+        slug,
+        symbol,
+        supply,
+        splittable: true,
+        name,
+        description: description ?? undefined,
+        image: logoUrl ?? undefined,
+        website: website ?? undefined,
+      });
       if (!res.ok) throw new Error(res.reason);
 
       // Broadcast CONTRACT first (the issue tx spends it), then ISSUE — to the

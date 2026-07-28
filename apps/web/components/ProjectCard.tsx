@@ -23,8 +23,12 @@ export function ProjectCard({ s, index = 0 }: { s: SaleCardVM; index?: number })
         <span className="absolute right-2.5 top-2.5 rounded-full bg-black/45 px-2.5 py-1 font-mono text-xs font-bold tracking-wide text-white backdrop-blur-sm">
           {s.ticker}
         </span>
-        <span className="absolute -bottom-5 left-4 grid h-11 w-11 place-items-center rounded-xl border border-line-strong bg-surface font-display font-bold text-fg shadow-[var(--shadow-1)] transition-transform duration-200 group-hover:-translate-y-0.5">
-          {s.name.charAt(0)}
+        <span className="absolute -bottom-5 left-4 grid h-11 w-11 place-items-center overflow-hidden rounded-xl border border-line-strong bg-surface font-display font-bold text-fg shadow-[var(--shadow-1)] transition-transform duration-200 group-hover:-translate-y-0.5">
+          {s.logoUrl ? (
+            <img src={s.logoUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            s.name.charAt(0)
+          )}
         </span>
       </div>
       <div className="flex flex-1 flex-col gap-3 px-4 pb-4 pt-7">

@@ -23,6 +23,16 @@ function countdownFrom(endsAt: Date | null): { d: number; h: number; m: number }
   };
 }
 
+function parseWebsite(json: string | null): string | null {
+  if (!json) return null;
+  try {
+    const w = (JSON.parse(json) as { website?: string }).website;
+    return typeof w === 'string' && w ? w : null;
+  } catch {
+    return null;
+  }
+}
+
 function parseAlloc(json: string | null): Allocation[] {
   if (!json) return [];
   try {
@@ -48,6 +58,8 @@ function mapSale(s: SaleWithRels): SaleCardVM {
     slug: s.token.project.slug,
     name: s.token.project.name,
     ticker: s.token.ticker,
+    logoUrl: s.token.project.logoUrl,
+    website: parseWebsite(s.token.project.links),
     blurb: s.token.project.tagline ?? '',
     status: s.status as SaleStatus,
     priceSats: Number(s.priceSats),

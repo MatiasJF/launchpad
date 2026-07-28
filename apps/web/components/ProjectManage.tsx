@@ -12,6 +12,9 @@ export type ManageVM = {
   status: string;
   payoutAddress: string | null;
   ownerIdentity: string;
+  description: string | null;
+  logoUrl: string | null;
+  website: string | null;
   token: { ticker: string; supply: number; issuanceTxid: string | null; tokenId: string | null } | null;
   orders: {
     id: string;
@@ -93,7 +96,16 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               </p>
             ) : p.status === 'live' || p.status === 'approved' ? (
               <div className="mt-3">
-                <IssueButton projectId={p.projectId} ticker={p.token.ticker} supply={p.token.supply} slug={p.slug} />
+                <IssueButton
+                  projectId={p.projectId}
+                  ticker={p.token.ticker}
+                  supply={p.token.supply}
+                  slug={p.slug}
+                  name={p.name}
+                  description={p.description}
+                  logoUrl={p.logoUrl}
+                  website={p.website}
+                />
               </div>
             ) : (
               <p className="mt-2 text-sm text-warning">Awaiting admin approval before you can issue.</p>

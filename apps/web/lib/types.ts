@@ -12,6 +12,8 @@ export interface SaleCardVM {
   slug: string;
   name: string;
   ticker: string;
+  logoUrl?: string | null;
+  website?: string | null;
   blurb: string;
   status: SaleStatus;
   priceSats: number;
