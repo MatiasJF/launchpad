@@ -4,6 +4,26 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 
 ## Current phase
 
+**🏗️ THREE-ROLE MARKETPLACE RESHAPE (2026-07-28, ADR-023) — built, live-test pending.**
+The app was a single-operator demo (admin's wallet did everything; buyers didn't
+really pay). Restructured into platform / project / buyer, non-custodial throughout:
+· **Phase A** — projects owned by the submitter's **BRC-100 identity** (killed the
+  `seed-issuer` hardcode); `SubmitForm` connects the wallet and captures a payout
+  address. Files: `lib/actions.ts`, `lib/account-actions.ts`, `lib/identity.ts`,
+  `components/SubmitForm.tsx`.
+· **Phase B** — project **self-service dashboard** `/project/[slug]/manage`
+  (owner-gated): the issuer's OWN wallet issues the token and settles its sales.
+  Files: `components/ProjectManage.tsx`, `app/project/[slug]/manage/page.tsx`.
+· **Phase C** — buyer payment is now **required + verified on-chain**
+  (`verifyPaymentToAddress`) against the project payout before the order becomes
+  settle-eligible; 100% to the project. Files: `components/BuyCard.tsx`,
+  `lib/order-actions.ts`, `lib/settle-actions.ts`.
+· **Phase D** — `/admin` slimmed to **listing approve/reject only**; issuance/
+  settlement removed from it (now on project dashboards). File: `app/admin/page.tsx`.
+The platform holds no keys and does nothing per-project except approve/reject.
+**Live-test note:** legacy `seed-issuer` projects (incl. the Sar test) aren't
+owner-manageable — submit a fresh project with your wallet to exercise the new flow.
+
 **🎉 FULL MVP LOOP VERIFIED ON MAINNET (2026-07-28).** create → issue → buy →
 settle is proven end-to-end: a buyer placed an order and the operator settled it,
 tx `73d34b30b8bccdeacd9d720b53e2053748160744c50132e745564b3ced81edb9` delivering

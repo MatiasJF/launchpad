@@ -50,8 +50,13 @@ present, not implemented.
 
 - Landing + explore → `apps/web/app/page.tsx` · `apps/web/components/ExploreSection.tsx`
 - Project / sale detail → `apps/web/app/sale/[slug]/page.tsx`
-- Buy card (buyer flow: derive receive addr, pay, place order) → `apps/web/components/BuyCard.tsx`
-- Order server actions (place / claim-settle / release / mark-settled / buyer-claimables) → `apps/web/lib/order-actions.ts`
+- Roles / identity model (platform · project · buyer) → `docs/DECISIONS.md` ADR-023
+- Project submission (wallet-connected, sets owner + payout) → `apps/web/components/SubmitForm.tsx` + `createProject` in `apps/web/lib/actions.ts`
+- Identity helpers (pubkey check · Account upsert · owner gate) → `apps/web/lib/identity.ts`, `apps/web/lib/account-actions.ts`
+- Project owner dashboard (issue + settle, owner-gated) → `apps/web/app/project/[slug]/manage/page.tsx` + `apps/web/components/ProjectManage.tsx`
+- On-chain payment verification (buyer paid the payout) → `apps/web/lib/settle-actions.ts` (`verifyPaymentToAddress`)
+- Buy card (buyer flow: derive receive addr, reserve → pay → confirm) → `apps/web/components/BuyCard.tsx`
+- Order server actions (reserve / confirm-payment / claim-settle / release / mark-settled / buyer-claimables) → `apps/web/lib/order-actions.ts`
 - Settle-order UI (admin, delivers tokens; auto-resolves pool) → `apps/web/components/SettleOrderButton.tsx`
 - Pool auto-resolution + spent-guard + broadcast → `apps/web/lib/settle-actions.ts` (`resolveCurrentPool`, `isOutputUnspent`, `broadcastRawTx`)
 - STAS receive-register (buyer internalizes delivered tokens) → `packages/bsv/src/receive` (`receiveStasToken`)
