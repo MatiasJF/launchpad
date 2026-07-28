@@ -94,6 +94,15 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
   "pool UTXO … is already SPENT — enter the CURRENT pool UTXO" before building.
   **Current pool = `1506cf…:1` (900 Sar, pkh `8f00c357…`, unspent).** Next settle
   spends that → 100 Sar to buyer + 800 change.
+  **Added 2026-07-28 — pool auto-resolution (kills the stale-txid trap):**
+  `resolveCurrentPool(mintTxid)` walks the token change chain on-chain — from the
+  mint output it follows each "STAS change back to owner pkh" hop (owner pkh
+  derived from the mint's `76a914<pkh>88ac69…` script; recipient/BSV-change
+  outputs carry other pkhs) until it reaches an unspent output = the live pool.
+  The settle button now auto-fills this on mount (`resolving → resolved`,
+  editable override kept). Verified against chain: mint → `1506cf…:1` in one hop,
+  correctly skipping the recipient (`a7dbb874…`) and BSV-change outputs. The
+  operator no longer hand-tracks the moving UTXO.
 
 ## Known issues / blockers
 

@@ -1,8 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from './ui';
-import { getOutputInfo, getSourceBeef, broadcastRawTx, isOutputUnspent } from '../lib/settle-actions';
+import {
+  getOutputInfo,
+  getSourceBeef,
+  broadcastRawTx,
+  isOutputUnspent,
+  resolveCurrentPool,
+} from '../lib/settle-actions';
 import { markOrderSettled } from '../lib/order-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
@@ -30,6 +36,29 @@ export function SettleOrderButton({
   const [txid, setTxid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<string>('');
+  // 'resolving' while we walk the change chain to find the live pool UTXO.
+  const [pool, setPool] = useState<'resolving' | 'resolved' | 'manual'>('resolving');
+
+  // Auto-resolve the CURRENT pool UTXO on mount so the operator never hand-tracks
+  // the moving outpoint (the mint default goes stale after the first settle).
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const res = await resolveCurrentPool(defaultTxid);
+      if (!live) return;
+      if ('error' in res) {
+        setPool('manual');
+        setError(`could not auto-resolve pool: ${res.error}`);
+      } else {
+        setSrcTxid(res.txid);
+        setSrcVout(res.vout);
+        setPool('resolved');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [defaultTxid]);
 
   async function settle() {
     setStatus('working');
@@ -141,13 +170,17 @@ export function SettleOrderButton({
   return (
     <div className="flex flex-col gap-2">
       <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-faint">
-        current pool UTXO (txid · vout) — balance auto-fetched
+        {pool === 'resolving'
+          ? 'resolving current pool UTXO from-chain…'
+          : pool === 'resolved'
+            ? 'current pool UTXO (auto-resolved · editable) — balance auto-fetched'
+            : 'current pool UTXO (txid · vout) — auto-resolve failed, enter manually'}
       </span>
       <div className="flex flex-wrap items-center gap-2">
         <input value={srcTxid} onChange={(e) => setSrcTxid(e.target.value)} placeholder="pool txid" className={`w-64 ${inp}`} />
         <input type="number" value={srcVout} onChange={(e) => setSrcVout(Number(e.target.value))} className={`w-16 ${inp}`} title="vout" />
-        <Button variant="primary" onClick={settle} disabled={status === 'working'}>
-          {status === 'working' ? 'Settling…' : `Settle ${tokens}`}
+        <Button variant="primary" onClick={settle} disabled={status === 'working' || pool === 'resolving'}>
+          {status === 'working' ? 'Settling…' : pool === 'resolving' ? 'Resolving…' : `Settle ${tokens}`}
         </Button>
       </div>
       {status === 'working' && phase && (

@@ -74,6 +74,53 @@ export async function isOutputUnspent(
 }
 
 /**
+ * Resolve the CURRENT pool UTXO for a token by walking its change chain on-chain.
+ *
+ * The pool moves after every partial send: each settle spends the pool STAS
+ * output and returns a smaller token-change output back to the same owner pkh.
+ * Starting from the mint (`mintTxid:0`), we follow that chain of "change back to
+ * owner" outputs until we hit one that is still unspent — that's the live pool.
+ *
+ * This kills the recurring "stale default txid" trap: the operator no longer
+ * hand-tracks the moving UTXO. Owner pkh is derived from the mint's STAS script
+ * (`76a914<pkh>88ac69…`); the change output at each hop is the one whose script
+ * carries that same owner pkh + STAS marker (the recipient/BSV-change outputs
+ * carry different pkhs).
+ */
+export async function resolveCurrentPool(
+  mintTxid: string,
+): Promise<{ txid: string; vout: number } | { error: string }> {
+  if (!/^[0-9a-fA-F]{64}$/.test(mintTxid)) return { error: 'invalid mint txid' };
+  const mintScript = await getOutputScriptHex(mintTxid, 0);
+  if (!mintScript) return { error: 'could not fetch mint output script' };
+  const ownerPkh = mintScript.substring(6, 46).toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(ownerPkh)) return { error: 'could not derive owner pkh from mint' };
+  const stasPrefix = `76a914${ownerPkh}88ac69`; // STAS token output locked to owner
+
+  let txid = mintTxid;
+  let vout = 0;
+  for (let hop = 0; hop < 100; hop++) {
+    const spent = await isOutputUnspent(txid, vout);
+    if (spent.unspent === true) return { txid, vout };
+    if (spent.unspent === null) return { error: `could not check spent status of ${txid.slice(0, 10)}…:${vout}` };
+    const spendingTxid = spent.spentBy;
+    if (!spendingTxid) return { error: `${txid.slice(0, 10)}…:${vout} is spent but the spender is unknown` };
+    try {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${spendingTxid}`, { cache: 'no-store' });
+      if (!res.ok) return { error: `could not fetch spending tx ${spendingTxid.slice(0, 10)}…` };
+      const tx = (await res.json()) as { vout?: { n: number; scriptPubKey?: { hex?: string } }[] };
+      const change = tx.vout?.find((o) => (o.scriptPubKey?.hex ?? '').toLowerCase().startsWith(stasPrefix));
+      if (!change) return { error: `no token change back to owner in ${spendingTxid.slice(0, 10)}… — chain ends (pool may be fully sold)` };
+      txid = spendingTxid;
+      vout = change.n;
+    } catch {
+      return { error: `network error walking the pool chain at ${spendingTxid.slice(0, 10)}…` };
+    }
+  }
+  return { error: 'pool chain too long (100+ hops) — enter the UTXO manually' };
+}
+
+/**
  * Broadcast a raw signed tx to the network via WhatsOnChain (server-side, no
  * CORS) and return the miner's verdict. This is the authoritative "did it land"
  * check — the wallet's internalizeAction does not reliably propagate. On success
