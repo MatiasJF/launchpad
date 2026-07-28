@@ -1,23 +1,130 @@
 'use server';
 
 import { prisma } from '@launchpad/db';
+import type { Prisma } from '@launchpad/db';
 import { revalidatePath } from 'next/cache';
 import { isAdmin } from './auth';
 
 /**
- * A buyer places an order against a project's sale (state = pending).
- *
- * CONCURRENCY (buy layer — pure DB, no on-chain contention): the whole thing
- * runs in a transaction with an atomic oversell guard. If many buyers order at
- * once, each transaction re-reads the tokens already reserved (pending/settling/
- * settled) and refuses to cross `allocationForSale`. SQLite serializes writers,
- * so two concurrent buys can't both slip past the cap. (Postgres upgrade path:
- * a `sold` counter with `UPDATE … WHERE sold+n<=cap`, or SERIALIZABLE isolation
- * — see ADR-022.)
- *
- * NOTE: today BuyCard pays sats BEFORE calling this, so a rejected (oversold)
- * order means the buyer already paid and must be refunded. The correct fix is
- * reserve-then-pay (see ADR-022); tracked as a follow-up.
+ * How long a reservation holds its slice of the allocation before it lazily
+ * expires. The buyer reserves → pays → confirms inside this window; abandoned
+ * reservations (buyer never paid) stop counting against the cap after it, so
+ * the tokens free up automatically with no sweep job needed.
+ */
+const RESERVATION_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Atomic oversell check used by both reserve and payment-confirm. Sums tokens
+ * that currently hold allocation — settled/settling/pending, plus *fresh*
+ * reservations (within TTL) — optionally excluding one order (so confirm can
+ * re-check without counting itself). Runs inside the caller's transaction.
+ */
+async function remainingForSale(
+  tx: Prisma.TransactionClient,
+  saleId: string,
+  allocationForSale: bigint,
+  excludeOrderId?: string,
+): Promise<bigint> {
+  const ttlCutoff = new Date(Date.now() - RESERVATION_TTL_MS);
+  const agg = await tx.order.aggregate({
+    where: {
+      saleId,
+      id: excludeOrderId ? { not: excludeOrderId } : undefined,
+      OR: [
+        { state: { in: ['pending', 'settling', 'settled'] } },
+        { state: 'reserved', createdAt: { gt: ttlCutoff } },
+      ],
+    },
+    _sum: { tokens: true },
+  });
+  return allocationForSale - (agg._sum.tokens ?? 0n);
+}
+
+/**
+ * Reserve a slice of the sale allocation BEFORE the buyer pays (reserve-then-pay,
+ * ADR-022). Atomic oversell guard inside a transaction — concurrent buyers can't
+ * both reserve the same last tokens. Creates the order in `reserved` (unpaid);
+ * the buyer then pays and calls `confirmOrderPayment`. If they abandon it, the
+ * reservation lazily expires (TTL) and the tokens free up.
+ */
+export async function reserveOrder(input: {
+  projectId: string;
+  buyerIdentity: string;
+  receiveAddress: string;
+  tokens: number;
+}): Promise<{ ok: boolean; orderId?: string; error?: string }> {
+  if (!input.receiveAddress || input.tokens <= 0) return { ok: false, error: 'invalid order' };
+  const want = BigInt(Math.floor(input.tokens));
+
+  try {
+    const orderId = await prisma.$transaction(async (tx) => {
+      const project = await tx.project.findUnique({
+        where: { id: input.projectId },
+        include: { tokens: { include: { sales: true } } },
+      });
+      const sale = project?.tokens.flatMap((t) => t.sales)[0];
+      if (!sale) throw new Error('no sale found for this project');
+
+      const remaining = await remainingForSale(tx, sale.id, sale.allocationForSale);
+      if (want > remaining) throw new Error(`only ${remaining} tokens left in this sale (you asked for ${want})`);
+
+      const order = await tx.order.create({
+        data: {
+          saleId: sale.id,
+          buyerIdentity: input.buyerIdentity,
+          receiveAddress: input.receiveAddress,
+          kind: 'instant_buy',
+          tokens: want,
+          satsPaid: 0n,
+          state: 'reserved',
+        },
+      });
+      return order.id;
+    });
+    return { ok: true, orderId };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'reservation failed' };
+  }
+}
+
+/**
+ * Confirm a reservation after the buyer paid (reserved → pending). Re-checks the
+ * allocation (excluding this order) in case the reservation sat past its TTL and
+ * the tokens were taken meanwhile — so a slow buyer can't oversell on confirm.
+ * Once pending, the order is settle-eligible.
+ */
+export async function confirmOrderPayment(
+  orderId: string,
+  satsPaid: number,
+  paymentTxid?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: orderId }, include: { sale: true } });
+      if (!order) throw new Error('reservation not found');
+      if (order.state === 'pending' || order.state === 'settling' || order.state === 'settled') return; // already confirmed
+      if (order.state !== 'reserved') throw new Error(`order is ${order.state}, not reservable`);
+
+      const remaining = await remainingForSale(tx, order.saleId, order.sale.allocationForSale, orderId);
+      if (order.tokens > remaining) {
+        throw new Error('reservation expired and the tokens were taken — please try again');
+      }
+      await tx.order.update({
+        where: { id: orderId },
+        data: { state: 'pending', satsPaid: BigInt(Math.floor(satsPaid)), paymentTxid: paymentTxid ?? null },
+      });
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'payment confirmation failed' };
+  }
+  revalidatePath('/admin');
+  return { ok: true };
+}
+
+/**
+ * Back-compat one-shot place (reserve + confirm in one call). Retained for any
+ * caller that pays first; new buy flow uses reserve-then-pay so an oversold order
+ * is rejected BEFORE payment. Prefer reserveOrder + confirmOrderPayment.
  */
 export async function placeOrder(input: {
   projectId: string;
@@ -27,49 +134,9 @@ export async function placeOrder(input: {
   satsPaid: number;
   paymentTxid?: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  if (!input.receiveAddress || input.tokens <= 0) return { ok: false, error: 'invalid order' };
-  const want = BigInt(Math.floor(input.tokens));
-
-  try {
-    await prisma.$transaction(async (tx) => {
-      const project = await tx.project.findUnique({
-        where: { id: input.projectId },
-        include: { tokens: { include: { sales: true } } },
-      });
-      const sale = project?.tokens.flatMap((t) => t.sales)[0];
-      if (!sale) throw new Error('no sale found for this project');
-
-      // Atomic oversell guard: sum what's already reserved and reject anything
-      // that would exceed the allocation. Inside the transaction so concurrent
-      // buys can't both read the same "remaining" and both commit.
-      const agg = await tx.order.aggregate({
-        where: { saleId: sale.id, state: { in: ['pending', 'settling', 'settled'] } },
-        _sum: { tokens: true },
-      });
-      const reserved = agg._sum.tokens ?? 0n;
-      const remaining = sale.allocationForSale - reserved;
-      if (want > remaining) {
-        throw new Error(`only ${remaining} tokens left in this sale (you asked for ${want})`);
-      }
-
-      await tx.order.create({
-        data: {
-          saleId: sale.id,
-          buyerIdentity: input.buyerIdentity,
-          receiveAddress: input.receiveAddress,
-          kind: 'instant_buy',
-          tokens: want,
-          satsPaid: BigInt(Math.floor(input.satsPaid)),
-          state: 'pending',
-          paymentTxid: input.paymentTxid ?? null,
-        },
-      });
-    });
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'order failed' };
-  }
-  revalidatePath('/admin');
-  return { ok: true };
+  const r = await reserveOrder(input);
+  if (!r.ok || !r.orderId) return { ok: false, error: r.error };
+  return confirmOrderPayment(r.orderId, input.satsPaid, input.paymentTxid);
 }
 
 /**

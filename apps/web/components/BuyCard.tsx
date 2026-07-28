@@ -5,7 +5,7 @@ import type { SaleCardVM } from '../lib/types';
 import { Button, StatusPill } from './ui';
 import { Countdown } from './ui/Countdown';
 import { ShieldCheck } from './ui/icons';
-import { placeOrder } from '../lib/order-actions';
+import { reserveOrder, confirmOrderPayment } from '../lib/order-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
 const ORIGINATOR = 'launchpad.local';
@@ -38,6 +38,17 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
       });
       const receiveAddress = PublicKey.fromString(ownerPub).toAddress().toString();
 
+      // Reserve-then-pay (ADR-022): claim the allocation BEFORE paying, so an
+      // oversold order is rejected up front instead of leaving a paid buyer to
+      // be refunded. The reservation lazily expires if payment never confirms.
+      const reserved = await reserveOrder({
+        projectId: s.projectId,
+        buyerIdentity: identityKey,
+        receiveAddress,
+        tokens,
+      });
+      if (!reserved.ok || !reserved.orderId) throw new Error(reserved.error ?? 'could not reserve tokens');
+
       // Pay the seller, if a payout address is configured on the project.
       let paymentTxid: string | undefined;
       if (s.payoutAddress && cost > 0) {
@@ -49,14 +60,7 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
         paymentTxid = res?.txid;
       }
 
-      const r = await placeOrder({
-        projectId: s.projectId,
-        buyerIdentity: identityKey,
-        receiveAddress,
-        tokens,
-        satsPaid: cost,
-        paymentTxid,
-      });
+      const r = await confirmOrderPayment(reserved.orderId, cost, paymentTxid);
       if (!r.ok) throw new Error(r.error ?? 'order failed');
       setStatus('placed');
     } catch (e) {

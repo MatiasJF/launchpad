@@ -144,8 +144,14 @@ live button mid-flow; fixed by removing revalidate from claim/release.)
   finalized on success. Pool-level throughput at scale = **batch settlement**
   (one tx, N recipient outputs) + optional **UTXO sharding**; settlement stays
   operator-sequenced, pipelined against unconfirmed change. Order.state gained
-  `settling`. Follow-ups: reserve-then-pay (buyer pays before placeOrder today),
-  stale-`settling` sweep, Postgres atomic-counter guard.
+  `settling`.
+· **Reserve-then-pay (2026-07-28, ADR-022 follow-up done)** — buy flow now
+  `reserveOrder` (atomic, creates `reserved`) → buyer pays → `confirmOrderPayment`
+  (`reserved→pending`, re-checks allocation). Allocation is claimed BEFORE payment,
+  so an oversold buyer is rejected up front (no paid-but-refunded case). Abandoned
+  reservations lazily expire after a 10-min TTL (counted out of the oversell sum;
+  no sweep job). Order.state gained `reserved`. Remaining follow-ups: stale-
+  `settling` sweep, Postgres atomic-counter guard, batch settlement.
 
 ## Known issues / blockers
 

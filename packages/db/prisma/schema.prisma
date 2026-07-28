@@ -97,7 +97,7 @@ model Order {
   kind           String   @default("instant_buy") // instant_buy | escrow_contribution
   tokens         BigInt
   satsPaid       BigInt
-  state          String   @default("pending") // pending | settling | settled | refunded | withdrawn | failed
+  state          String   @default("pending") // reserved | pending | settling | settled | refunded | withdrawn | failed
   paymentTxid    String? // buyer's sats payment
   txid           String? // settlement (token delivery) tx
   refundTxid     String?
