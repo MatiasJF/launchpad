@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from './ui';
-import { getOutputInfo, getSourceBeef, broadcastRawTx } from '../lib/settle-actions';
+import { getOutputInfo, getSourceBeef, broadcastRawTx, isOutputUnspent } from '../lib/settle-actions';
 import { markOrderSettled } from '../lib/order-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
@@ -42,6 +42,19 @@ export function SettleOrderButton({
       const info = await getOutputInfo(srcTxid, srcVout);
       if (!info) throw new Error('could not fetch the pool UTXO (script + balance) — is it confirmed & unspent?');
       if (tokens > info.satoshis) throw new Error(`pool holds ${info.satoshis} tokens; order needs ${tokens}`);
+
+      // Guard: the pool UTXO moves after every partial send. If the operator
+      // left a stale txid (e.g. the mint, already consumed by an earlier
+      // settle) the miner would reject TX2 with a cryptic "Missing inputs".
+      // Catch it here with a precise message instead.
+      const spent = await isOutputUnspent(srcTxid, srcVout);
+      if (spent.unspent === false) {
+        throw new Error(
+          `pool UTXO ${srcTxid.slice(0, 10)}…:${srcVout} is already SPENT` +
+            (spent.spentBy ? ` (by ${spent.spentBy.slice(0, 10)}…)` : '') +
+            ' — enter the CURRENT pool UTXO. Its txid:vout changes after every settle.',
+        );
+      }
 
       // Ancestry BEEF for the pool UTXO, fetched from-chain (with merkle proof).
       // Required so we can spend a pool UTXO that isn't in the wallet basket

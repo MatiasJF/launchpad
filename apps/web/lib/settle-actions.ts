@@ -38,6 +38,42 @@ export async function getOutputInfo(
 }
 
 /**
+ * Is a given output still unspent? WhatsOnChain's `/tx/{txid}/{vout}/spent`
+ * returns 404 when the outpoint is unspent and a JSON body naming the spending
+ * tx when it's already spent. We MUST check this before settling: the pool UTXO
+ * moves after every partial send, and `getOutputInfo` (script + balance) will
+ * happily return data for a spent output — the miner only rejects at broadcast
+ * with a cryptic "Missing inputs". This turns that into a clear, early error.
+ * Returns `{ unspent: true }`, `{ unspent: false, spentBy }`, or `{ unspent: null }`
+ * (couldn't determine — treat as non-fatal, let broadcast be the backstop).
+ */
+export async function isOutputUnspent(
+  txid: string,
+  vout: number,
+): Promise<{ unspent: boolean | null; spentBy?: string }> {
+  if (!/^[0-9a-fA-F]{64}$/.test(txid) || !Number.isInteger(vout) || vout < 0) {
+    return { unspent: null };
+  }
+  try {
+    const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/${vout}/spent`, {
+      cache: 'no-store',
+    });
+    if (res.status === 404) return { unspent: true };
+    if (!res.ok) return { unspent: null };
+    const body = (await res.text()).trim();
+    let spentBy: string | undefined;
+    try {
+      spentBy = (JSON.parse(body) as { txid?: string }).txid;
+    } catch {
+      /* non-JSON body — leave spentBy undefined */
+    }
+    return { unspent: false, spentBy };
+  } catch {
+    return { unspent: null };
+  }
+}
+
+/**
  * Broadcast a raw signed tx to the network via WhatsOnChain (server-side, no
  * CORS) and return the miner's verdict. This is the authoritative "did it land"
  * check — the wallet's internalizeAction does not reliably propagate. On success

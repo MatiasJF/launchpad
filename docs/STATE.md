@@ -80,8 +80,20 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
   broadcast the miner returned `Missing inputs` — TX2's funding input (TX1, built
   by `createAction`) was never propagated to WoC's node either. Fix: `transferStas`
   now also returns `fundingRawTx`; the button broadcasts **TX1 first, then TX2**
-  to the same node (`broadcastRawTx` tolerates already-known). Awaiting the live
-  re-run to confirm the transfer finally lands on-chain.
+  to the same node (`broadcastRawTx` tolerates already-known).
+  **Diagnosed 2026-07-28 — "Missing inputs" was a SPENT source, not a broadcast
+  gap:** with TX1-first broadcast, TX1 (`32255892…`) landed fine but TX2 still
+  hit `Missing inputs`. Decoding TX2's inputs on-chain showed it was spending the
+  **mint** `97859e…:0` — which BSV-003 already consumed (confirmed spent). The
+  settle was pointed at the button's stale `defaultTxid` (the mint) instead of
+  the CURRENT pool UTXO. The broadcast path itself is now proven end-to-end.
+  Fix: `getOutputInfo` returned script+balance even for spent outputs (WoC's
+  `/out/hex` + `/tx` ignore spent-ness), so the operator got no warning until the
+  miner rejected. Added `isOutputUnspent` (WoC `/{txid}/{vout}/spent`, 404 =
+  unspent) and a guard in the settle button that fails fast with
+  "pool UTXO … is already SPENT — enter the CURRENT pool UTXO" before building.
+  **Current pool = `1506cf…:1` (900 Sar, pkh `8f00c357…`, unspent).** Next settle
+  spends that → 100 Sar to buyer + 800 change.
 
 ## Known issues / blockers
 
