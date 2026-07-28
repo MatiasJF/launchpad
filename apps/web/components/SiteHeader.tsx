@@ -1,4 +1,4 @@
-import { Bolt } from './ui/icons';
+import { Logo } from './ui/Logo';
 import { WalletButton } from './WalletButton';
 import { MobileMenu } from './MobileMenu';
 
@@ -6,13 +6,8 @@ export function SiteHeader() {
   return (
     <header className="glass sticky top-0 z-50 border-x-0 border-t-0">
       <div className="mx-auto flex h-16 max-w-[1120px] items-center gap-4 px-4 sm:gap-5 sm:px-6">
-        <a href="/" className="flex items-center gap-2.5 font-display text-[1.05rem] font-semibold">
-          <span
-            className="grid h-[30px] w-[30px] place-items-center rounded-[9px] text-[#0a0e15]"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--c-gold), var(--c-teal))' }}
-          >
-            <Bolt width={17} height={17} />
-          </span>
+        <a href="/" className="flex items-center gap-2.5 font-display text-[1.05rem] font-semibold transition-opacity hover:opacity-90">
+          <Logo size={30} />
           BSV Launchpad
         </a>
         <nav className="ml-2 hidden gap-1.5 sm:flex">

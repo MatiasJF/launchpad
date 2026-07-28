@@ -86,7 +86,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
             </Section>
           </div>
 
-          <aside className="reveal" style={{ ['--i' as string]: 2 } as CSSProperties}>
+          <aside>
             <BuyCard s={s} />
             <ClaimTokens slug={s.slug} />
             <Link

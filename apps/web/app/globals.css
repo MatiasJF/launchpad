@@ -129,7 +129,12 @@
 @layer base {
   body {
     min-height: 100vh;
-    overflow-x: hidden; /* contain decorative ambient glows on mobile */
+    /* flex column so <main> can grow and the footer locks to the bottom */
+    display: flex;
+    flex-direction: column;
+    /* `clip` contains the ambient glows WITHOUT breaking position:sticky
+       (which `overflow-x: hidden` does) */
+    overflow-x: clip;
     background:
       radial-gradient(52% 38% at 84% -6%, color-mix(in srgb, var(--c-gold) 13%, transparent), transparent 68%),
       radial-gradient(44% 36% at 6% 2%, color-mix(in srgb, var(--c-violet) 15%, transparent), transparent 70%),
@@ -149,6 +154,10 @@
     letter-spacing: -0.02em;
     line-height: 1.1;
     text-wrap: balance;
+  }
+  /* Sticky-footer spine: main grows to push the footer down on short pages. */
+  main {
+    flex: 1 0 auto;
   }
   ::selection {
     background: color-mix(in srgb, var(--c-gold) 35%, transparent);

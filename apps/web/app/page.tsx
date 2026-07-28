@@ -17,6 +17,7 @@ export default async function Home() {
     <>
       <SiteHeader />
 
+      <main>
       <section className="relative mx-auto max-w-[1120px] overflow-visible px-4 pb-10 pt-14 sm:px-6 sm:pt-[72px]">
         {/* decorative ambient glow */}
         <div
@@ -69,6 +70,7 @@ export default async function Home() {
       </section>
 
       <ExploreSection sales={sales} />
+      </main>
 
       <SiteFooter />
     </>
