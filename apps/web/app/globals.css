@@ -129,12 +129,12 @@
 @layer base {
   body {
     min-height: 100vh;
-    /* flex column so <main> can grow and the footer locks to the bottom */
+    /* flex column so <main> can grow and the footer locks to the bottom.
+       NB: do NOT set overflow-x here — any non-visible overflow on an ancestor
+       makes it the scroll container for position:sticky and breaks the buy card.
+       Decorative overflows are clipped locally on their own element instead. */
     display: flex;
     flex-direction: column;
-    /* `clip` contains the ambient glows WITHOUT breaking position:sticky
-       (which `overflow-x: hidden` does) */
-    overflow-x: clip;
     background:
       radial-gradient(52% 38% at 84% -6%, color-mix(in srgb, var(--c-gold) 13%, transparent), transparent 68%),
       radial-gradient(44% 36% at 6% 2%, color-mix(in srgb, var(--c-violet) 15%, transparent), transparent 70%),
