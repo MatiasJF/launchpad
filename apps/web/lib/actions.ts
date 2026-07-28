@@ -31,11 +31,15 @@ export async function createProject(form: FormData): Promise<void> {
   const identityPubkey = field(form, 'identityPubkey');
   const payoutAddress = field(form, 'payoutAddress');
   const logoUrl = field(form, 'logoUrl');
+  const banner = field(form, 'banner');
   const website = field(form, 'website');
   if (!name || !ticker) redirect('/submit?error=missing');
   if (!isIdentityPubkey(identityPubkey)) redirect('/submit?error=wallet');
   if (!payoutAddress) redirect('/submit?error=payout');
   const isHttps = (u: string) => /^https:\/\/\S+$/i.test(u);
+  const isImage = (u: string, max: number) =>
+    isHttps(u) ||
+    (/^data:image\/(png|x-icon|vnd\.microsoft\.icon|jpeg|jpg|webp|svg\+xml);base64,/i.test(u) && u.length <= max);
 
   const slug = slugify(name);
   const existing = await prisma.project.findUnique({ where: { slug } });
@@ -56,7 +60,8 @@ export async function createProject(form: FormData): Promise<void> {
       name,
       tagline: field(form, 'blurb'),
       description: field(form, 'about'),
-      logoUrl: isHttps(logoUrl) ? logoUrl : null,
+      logoUrl: isImage(logoUrl, 300_000) ? logoUrl : null,
+      media: isImage(banner, 1_200_000) ? JSON.stringify({ banner }) : null,
       links: isHttps(website) ? JSON.stringify({ website }) : null,
       status: 'pending',
       tokens: {

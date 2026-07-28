@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { Button } from './ui';
 import { createProject } from '../lib/actions';
 import { useWallet } from './WalletProvider';
+import { Markdown } from './Markdown';
 
 const PAYOUT_PROTOCOL: [1, string] = [1, 'launchpad-payout'];
 
@@ -31,6 +32,27 @@ function Field({ name, label, type = 'text', required }: { name: string; label: 
 export function SubmitForm() {
   const { identityKey, status, connect } = useWallet();
   const [payoutAddress, setPayoutAddress] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [bannerUrl, setBannerUrl] = useState('');
+  const [about, setAbout] = useState('');
+  const [fileErr, setFileErr] = useState<string | null>(null);
+
+  const onImageFile = (set: (v: string) => void, maxKB: number) => (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type) && !/\.(png|ico|jpe?g|webp|svg)$/i.test(file.name)) {
+      setFileErr('use a PNG, ICO, JPG or WEBP image');
+      return;
+    }
+    if (file.size > maxKB * 1024) {
+      setFileErr(`image too large (max ${maxKB}KB)`);
+      return;
+    }
+    setFileErr(null);
+    const reader = new FileReader();
+    reader.onload = () => set(String(reader.result));
+    reader.readAsDataURL(file);
+  };
 
   // Derive a payout address once connected (best-effort; editable; never blocks).
   useEffect(() => {
@@ -81,15 +103,66 @@ export function SubmitForm() {
 
       <Field name="name" label="Project name" required />
       <Field name="ticker" label="Ticker (e.g. $ABC)" required />
-      <Field name="blurb" label="Short description" />
-      <label className="flex flex-col gap-1.5">
-        <span className={labelCls}>About</span>
-        <textarea name="about" rows={3} className={inputCls} />
-      </label>
+      <Field name="blurb" label="Short description (one line)" />
+
+      {/* Logo + banner (upload or URL) */}
+      <input type="hidden" name="logoUrl" value={logoUrl} />
+      <input type="hidden" name="banner" value={bannerUrl} />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field name="logoUrl" label="Logo URL (https, square)" type="url" />
-        <Field name="website" label="Website" type="url" />
+        <div className="flex flex-col gap-1.5">
+          <span className={labelCls}>Logo — upload PNG/ICO or paste https URL</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="btn btn-secondary cursor-pointer">
+              Upload
+              <input type="file" accept="image/*,.ico" onChange={onImageFile(setLogoUrl, 200)} className="hidden" />
+            </label>
+            {logoUrl.startsWith('data:') && <span className="font-mono text-xs text-teal">✓ loaded</span>}
+          </div>
+          <input
+            value={logoUrl.startsWith('data:') ? '' : logoUrl}
+            onChange={(e) => setLogoUrl(e.target.value)}
+            placeholder="https://…/logo.png"
+            className={`${inputCls} font-mono text-sm`}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className={labelCls}>Banner — upload or paste https URL (wide)</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="btn btn-secondary cursor-pointer">
+              Upload
+              <input type="file" accept="image/*" onChange={onImageFile(setBannerUrl, 1000)} className="hidden" />
+            </label>
+            {bannerUrl.startsWith('data:') && <span className="font-mono text-xs text-teal">✓ loaded</span>}
+          </div>
+          <input
+            value={bannerUrl.startsWith('data:') ? '' : bannerUrl}
+            onChange={(e) => setBannerUrl(e.target.value)}
+            placeholder="https://…/banner.jpg"
+            className={`${inputCls} font-mono text-sm`}
+          />
+        </div>
       </div>
+      {fileErr && <p className="text-xs text-danger">⚠ {fileErr}</p>}
+      <Field name="website" label="Website (https)" type="url" />
+
+      <label className="flex flex-col gap-1.5">
+        <span className={labelCls}>
+          About — Markdown supported (**bold**, # heading, [link](https://…), ![img](https://…))
+        </span>
+        <textarea
+          name="about"
+          value={about}
+          onChange={(e) => setAbout(e.target.value)}
+          rows={6}
+          className={`${inputCls} font-mono`}
+        />
+      </label>
+      {about.trim() && (
+        <div className="rounded-md border border-line bg-elevated/40 p-3">
+          <span className="mb-2 block font-mono text-[0.65rem] uppercase tracking-[0.08em] text-faint">Preview</span>
+          <Markdown>{about}</Markdown>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field name="totalSupply" label="Total supply" type="number" />
         <Field name="publicAllocation" label="Public allocation" type="number" />

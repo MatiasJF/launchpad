@@ -9,6 +9,9 @@ const nextConfig = {
   // infer the home dir as the workspace root (breaks dev asset resolution).
   outputFileTracingRoot: path.join(import.meta.dirname, '..', '..'),
   reactStrictMode: true,
+  // Uploaded logo/banner images are submitted to server actions as base64 data
+  // URIs; the default 1MB body cap would reject them, so raise it.
+  experimental: { serverActions: { bodySizeLimit: '5mb' } },
   // Compile the workspace packages from source (they ship raw TS).
   transpilePackages: ['@launchpad/core', '@launchpad/bsv', '@launchpad/db'],
   // Keep the heavy Node-oriented STAS libs external on the SERVER (issuance path).
