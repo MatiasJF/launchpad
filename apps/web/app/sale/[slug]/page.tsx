@@ -6,6 +6,7 @@ import { SiteHeader } from '../../../components/SiteHeader';
 import { SiteFooter } from '../../../components/SiteFooter';
 import { BuyCard } from '../../../components/BuyCard';
 import { ClaimTokens } from '../../../components/ClaimTokens';
+import { Markdown } from '../../../components/Markdown';
 import { StatusPill } from '../../../components/ui';
 import { TokenomicsBar } from '../../../components/ui/TokenomicsBar';
 
@@ -83,7 +84,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
             )}
 
             <Section title="About">
-              <p className="max-w-[68ch] leading-relaxed text-muted">{s.about}</p>
+              <Markdown className="max-w-[68ch]">{s.about}</Markdown>
             </Section>
 
             <Section title="Tokenomics">

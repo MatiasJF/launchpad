@@ -62,6 +62,7 @@ present, not implemented.
 - Pool auto-resolution + spent-guard + broadcast → `apps/web/lib/settle-actions.ts` (`resolveCurrentPool`, `isOutputUnspent`, `broadcastRawTx`)
 - STAS receive-register (buyer internalizes delivered tokens) → `packages/bsv/src/receive` (`receiveStasToken`)
 - Buyer claim UI (register settled purchases into wallet) → `apps/web/components/ClaimTokens.tsx` (on sale page)
+- Safe markdown renderer (project descriptions) → `apps/web/components/Markdown.tsx` + `.md` styles in `globals.css`
 - Submit a project → `apps/web/app/submit/page.tsx`
 - Admin approval → `apps/web/app/admin/page.tsx`
 - Backend API (sequence/settle) → `apps/web/app/api` _(planned)_

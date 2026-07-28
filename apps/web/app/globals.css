@@ -274,6 +274,76 @@
     color: var(--c-faint);
   }
 
+  /* Rendered markdown (project descriptions). */
+  .md {
+    @apply leading-relaxed text-muted;
+  }
+  .md > :first-child {
+    margin-top: 0;
+  }
+  .md h1,
+  .md h2,
+  .md h3,
+  .md h4 {
+    @apply mb-2 mt-5 font-display font-semibold text-fg;
+  }
+  .md h1 {
+    font-size: 1.4rem;
+  }
+  .md h2 {
+    font-size: 1.2rem;
+  }
+  .md h3 {
+    font-size: 1.05rem;
+  }
+  .md p {
+    @apply my-3;
+  }
+  .md ul,
+  .md ol {
+    @apply my-3 pl-5;
+  }
+  .md ul {
+    list-style: disc;
+  }
+  .md ol {
+    list-style: decimal;
+  }
+  .md li {
+    @apply my-1;
+  }
+  .md a {
+    @apply text-teal underline underline-offset-2;
+  }
+  .md strong {
+    @apply font-semibold text-fg;
+  }
+  .md code {
+    @apply rounded bg-elevated px-1 py-0.5 font-mono text-sm;
+  }
+  .md pre {
+    @apply my-3 overflow-x-auto rounded-md border border-line bg-elevated p-3;
+  }
+  .md pre code {
+    @apply bg-transparent p-0;
+  }
+  .md blockquote {
+    @apply my-3 border-l-2 border-line-strong pl-3 text-faint;
+  }
+  .md img {
+    @apply my-3 max-h-80 max-w-full rounded-md border border-line;
+  }
+  .md hr {
+    @apply my-4 border-line;
+  }
+  .md table {
+    @apply my-3 w-full border-collapse text-sm;
+  }
+  .md th,
+  .md td {
+    @apply border border-line px-2 py-1 text-left;
+  }
+
   /* Frosted glass surface — cinematic dark nav/panels. */
   .glass {
     background: var(--glass-bg);

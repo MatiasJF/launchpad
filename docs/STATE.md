@@ -229,3 +229,9 @@ New **Sale schedule** section: owner sets status (scheduled/live/finalized) + st
 times (`updateSaleSchedule`, owner-gated). Buyers can only buy while `live`; scheduled
 sales show a "starts in" countdown (data.ts countdown uses `startsAt` when scheduled).
 Logo/banner accept PNG/ICO/JPG/WEBP uploads. On-chain schema still URL-only for images.
+
+**Added 2026-07-28 — markdown descriptions.** Project description is now **Markdown**
+(react-markdown + remark-gfm), rendered safely: React elements only (no raw-HTML
+injection), links restricted to http(s), images to https — headings, lists, links,
+tables and inline images with zero XSS surface. `components/Markdown.tsx`, `.md`
+styles in globals.css. Sale-page About renders it; dashboard has a live preview.

@@ -6,6 +6,7 @@ import { IssueButton } from './IssueButton';
 import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
 import { updateProjectMeta, updateSaleSchedule } from '../lib/actions';
+import { Markdown } from './Markdown';
 
 export type ManageVM = {
   projectId: string;
@@ -209,14 +210,22 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                 />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Description</span>
+                <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">
+                  Description — Markdown supported (**bold**, # heading, [link](https://…), ![img](https://…))
+                </span>
                 <textarea
                   value={meta.description}
                   onChange={(e) => setMeta((m) => ({ ...m, description: e.target.value }))}
-                  rows={3}
-                  className={metaInput}
+                  rows={6}
+                  className={`${metaInput} font-mono`}
                 />
               </label>
+              {meta.description.trim() && (
+                <div className="rounded-md border border-line bg-elevated/40 p-3">
+                  <span className="mb-2 block font-mono text-[0.65rem] uppercase tracking-[0.08em] text-faint">Preview</span>
+                  <Markdown>{meta.description}</Markdown>
+                </div>
+              )}
               <div className="flex items-center gap-3">
                 <Button variant="primary" onClick={saveMeta} disabled={saveState === 'saving'}>
                   {saveState === 'saving' ? 'Saving…' : 'Save details'}
