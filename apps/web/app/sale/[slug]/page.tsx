@@ -54,12 +54,12 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 } as CSSProperties
               }
             >
-              <span className="absolute -bottom-6 left-5 grid h-16 w-16 place-items-center rounded-2xl border border-line-strong bg-surface font-display text-2xl font-bold text-fg">
+              <span className="absolute bottom-4 left-5 grid h-16 w-16 place-items-center rounded-2xl border border-line-strong bg-surface font-display text-2xl font-bold text-fg shadow-[var(--shadow-1)]">
                 {s.name.charAt(0)}
               </span>
             </div>
 
-            <div className="mt-9 flex flex-wrap items-center gap-3">
+            <div className="mt-6 flex flex-wrap items-center gap-3">
               <h1 className="text-[2rem] font-semibold">{s.name}</h1>
               <span className="font-mono text-sm text-faint">{s.ticker}</span>
               <StatusPill status={s.status} />

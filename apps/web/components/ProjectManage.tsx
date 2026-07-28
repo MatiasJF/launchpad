@@ -1,11 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from './ui';
 import { IssueButton } from './IssueButton';
 import { SettleOrderButton } from './SettleOrderButton';
-
-const ORIGINATOR = 'launchpad.local';
+import { useWallet } from './WalletProvider';
 
 export type ManageVM = {
   projectId: string;
@@ -33,25 +31,7 @@ export type ManageVM = {
  * and pays. Non-custodial throughout.
  */
 export function ProjectManage({ p }: { p: ManageVM }) {
-  const [identity, setIdentity] = useState('');
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function connect() {
-    setConnecting(true);
-    setError(null);
-    try {
-      const { WalletClient } = await import('@bsv/sdk');
-      const wallet = new WalletClient('auto', ORIGINATOR);
-      await wallet.waitForAuthentication({});
-      const { publicKey } = await wallet.getPublicKey({ identityKey: true });
-      setIdentity(publicKey);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setConnecting(false);
-    }
-  }
+  const { identityKey: identity, status, error, connect } = useWallet();
 
   const isOwner = !!identity && identity === p.ownerIdentity;
   const pending = p.orders.filter((o) => o.state === 'pending');
@@ -73,8 +53,8 @@ export function ProjectManage({ p }: { p: ManageVM }) {
           <p className="text-sm text-muted">Connect the project owner wallet to manage issuance and settlement.</p>
           {error && <p className="mt-3 break-words text-xs text-danger">⚠ {error}</p>}
           <div className="mt-4">
-            <Button variant="primary" onClick={connect} disabled={connecting}>
-              {connecting ? 'Connecting…' : 'Connect owner wallet'}
+            <Button variant="primary" onClick={connect} disabled={status === 'connecting'}>
+              {status === 'connecting' ? 'Connecting…' : 'Connect owner wallet'}
             </Button>
           </div>
         </div>

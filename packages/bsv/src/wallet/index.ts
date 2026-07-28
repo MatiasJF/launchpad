@@ -20,6 +20,18 @@ export interface WalletIdentity {
   network: 'mainnet' | 'testnet';
 }
 
+/**
+ * The shared, authenticated WalletClient singleton — every component signs
+ * through this ONE connection, so the user connects once and never re-prompts
+ * (the substrate authorizes the app once, per originator). Returns it ready to
+ * use (awaits authentication, which is a no-op after the first connect).
+ */
+export async function getWalletClient(): Promise<WalletClient> {
+  const wallet = getClient();
+  await wallet.waitForAuthentication({});
+  return wallet;
+}
+
 /** Connect to the user's BRC-100 wallet and return their identity. */
 export async function connectWallet(): Promise<WalletIdentity> {
   const wallet = getClient();

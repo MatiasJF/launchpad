@@ -12,7 +12,6 @@ import {
 import { markOrderSettled, claimOrderForSettlement, releaseOrderClaim } from '../lib/order-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
-const ORIGINATOR = 'launchpad.local';
 
 export function SettleOrderButton({
   orderId,
@@ -115,10 +114,9 @@ export function SettleOrderButton({
       if (!sourceBeef) throw new Error('could not fetch source BEEF — the pool tx must be confirmed (mined) to settle');
 
       setPhase('connecting wallet');
-      const { WalletClient } = await import('@bsv/sdk');
+      const { getWalletClient } = await import('@launchpad/bsv/wallet');
       const { transferStas } = await import('@launchpad/bsv/settle');
-      const wallet = new WalletClient('auto', ORIGINATOR);
-      await wallet.waitForAuthentication({});
+      const wallet = await getWalletClient();
       const { publicKey: identityKey } = await wallet.getPublicKey({ identityKey: true });
 
       setPhase('building + broadcasting transfer (approve in wallet)');

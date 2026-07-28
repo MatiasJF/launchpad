@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from './ui';
 import { getBuyerClaimableOrders } from '../lib/order-actions';
 import { getSourceBeef } from '../lib/settle-actions';
+import { useWallet } from './WalletProvider';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
-const ORIGINATOR = 'launchpad.local';
 
 type Claimable = {
   orderId: string;
@@ -26,26 +26,34 @@ type RowState = { phase: string; result?: 'registered' | 'already' | 'error'; me
  * become spendable. Non-custodial: runs in the buyer's own wallet.
  */
 export function ClaimTokens({ slug }: { slug: string }) {
+  const { identityKey, connect } = useWallet();
   const [status, setStatus] = useState<'idle' | 'loading' | 'loaded'>('idle');
   const [orders, setOrders] = useState<Claimable[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Record<string, RowState>>({});
 
-  async function connectAndLoad() {
+  async function load(identity: string) {
     setStatus('loading');
     setError(null);
     try {
-      const { WalletClient } = await import('@bsv/sdk');
-      const wallet = new WalletClient('auto', ORIGINATOR);
-      await wallet.waitForAuthentication({});
-      const { publicKey: identityKey } = await wallet.getPublicKey({ identityKey: true });
-      const all = await getBuyerClaimableOrders(identityKey);
+      const all = await getBuyerClaimableOrders(identity);
       setOrders(all.filter((o) => o.slug === slug));
       setStatus('loaded');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStatus('idle');
     }
+  }
+
+  // Once the (shared) wallet is connected, load this buyer's claimable orders —
+  // no separate connect click needed here.
+  useEffect(() => {
+    if (identityKey && status === 'idle') void load(identityKey);
+  }, [identityKey]);
+
+  async function connectAndLoad() {
+    const id = identityKey ?? (await connect());
+    if (id) void load(id);
   }
 
   async function register(o: Claimable) {
@@ -63,10 +71,9 @@ export function ClaimTokens({ slug }: { slug: string }) {
       }
 
       setRows((r) => ({ ...r, [o.orderId]: { phase: 'registering in wallet (approve if prompted)' } }));
-      const { WalletClient } = await import('@bsv/sdk');
+      const { getWalletClient } = await import('@launchpad/bsv/wallet');
       const { receiveStasToken } = await import('@launchpad/bsv/receive');
-      const wallet = new WalletClient('auto', ORIGINATOR);
-      await wallet.waitForAuthentication({});
+      const wallet = await getWalletClient();
 
       const customInstructions = JSON.stringify({
         protocolID: STAS_PROTOCOL,

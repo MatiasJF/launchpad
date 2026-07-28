@@ -51,6 +51,7 @@ present, not implemented.
 - Landing + explore → `apps/web/app/page.tsx` · `apps/web/components/ExploreSection.tsx`
 - Project / sale detail → `apps/web/app/sale/[slug]/page.tsx`
 - Roles / identity model (platform · project · buyer) → `docs/DECISIONS.md` ADR-023
+- Shared wallet connection (connect once, app-wide) → `apps/web/components/WalletProvider.tsx` (`useWallet`) + `getWalletClient()` in `packages/bsv/src/wallet`
 - Project submission (wallet-connected, sets owner + payout) → `apps/web/components/SubmitForm.tsx` + `createProject` in `apps/web/lib/actions.ts`
 - Identity helpers (pubkey check · Account upsert · owner gate) → `apps/web/lib/identity.ts`, `apps/web/lib/account-actions.ts`
 - Project owner dashboard (issue + settle, owner-gated) → `apps/web/app/project/[slug]/manage/page.tsx` + `apps/web/components/ProjectManage.tsx`

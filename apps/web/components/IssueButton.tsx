@@ -10,7 +10,6 @@ import { broadcastRawTx } from '../lib/settle-actions';
 // Canonical STAS BRC-42 protocol id (ADR-021). Hardcoded here so the client
 // never imports @launchpad/bsv (which pulls the heavy bsv/stas-js libs).
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
-const ORIGINATOR = 'launchpad.local';
 
 type Status = 'idle' | 'planning' | 'confirming' | 'minting' | 'done';
 
@@ -42,10 +41,9 @@ export function IssueButton({
     setError(null);
     setStatus('planning');
     try {
-      const { WalletClient } = await import('@bsv/sdk');
-      const wallet = new WalletClient('auto', ORIGINATOR);
+      const { getWalletClient } = await import('@launchpad/bsv/wallet');
+      const wallet = await getWalletClient();
       walletRef.current = wallet;
-      await wallet.waitForAuthentication({});
       const owner = await wallet.getPublicKey({ protocolID: STAS_PROTOCOL, keyID: `${slug}-owner`, counterparty: 'self' });
       const redeem = await wallet.getPublicKey({ protocolID: STAS_PROTOCOL, keyID: `${slug}-redeem`, counterparty: 'self' });
       const p = await buildMintPlan({ symbol, supply }, owner.publicKey, redeem.publicKey);

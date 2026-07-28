@@ -6,11 +6,12 @@ import { Button, StatusPill } from './ui';
 import { Countdown } from './ui/Countdown';
 import { ShieldCheck } from './ui/icons';
 import { reserveOrder, confirmOrderPayment } from '../lib/order-actions';
+import { useWallet } from './WalletProvider';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
-const ORIGINATOR = 'launchpad.local';
 
 export function BuyCard({ s }: { s: SaleCardVM }) {
+  const { connect } = useWallet();
   const [amount, setAmount] = useState(1000);
   const [status, setStatus] = useState<'idle' | 'buying' | 'placed'>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -25,9 +26,11 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
     setError(null);
     try {
       if (tokens <= 0) throw new Error('enter an amount');
-      const { WalletClient, PublicKey, P2PKH } = await import('@bsv/sdk');
-      const wallet = new WalletClient('auto', ORIGINATOR);
-      await wallet.waitForAuthentication({});
+      // Ensure the shared wallet is connected (connects once, app-wide).
+      await connect();
+      const { PublicKey, P2PKH } = await import('@bsv/sdk');
+      const { getWalletClient } = await import('@launchpad/bsv/wallet');
+      const wallet = await getWalletClient();
 
       const { publicKey: identityKey } = await wallet.getPublicKey({ identityKey: true });
       // Buyer's token-receive address = their derived STAS owner key.
