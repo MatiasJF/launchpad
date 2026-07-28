@@ -111,3 +111,25 @@ Primitives built for the P1+ screens:
 - The planning-doc artifacts in `docs/artifacts/` use a separate print-ish
   identity; **this** system governs the product app.
 - One accent per view. Semantic status color is not the accent.
+
+## Cinematic-dark elevation (2026-07-28)
+
+Sourced via the `ui-ux-pro-max` skill (style: "Modern Dark / Cinematic") + Mobbin
+references (Kraken "Newly Listed Assets", Foundation cards, Product Hunt directory).
+Layered on the existing navy/gold/teal system — an elevation, not a repaint.
+
+- **New token:** `--c-violet` (#8b7bfb dark / #6d5cf0 light) — tech accent, used as a
+  SOLID accent (never AI purple/pink gradients). Plus `--glow-violet`, `--glass-bg`,
+  `--glass-border`.
+- **Utilities:** `.glass` (frosted blur nav/panels), `.card` + `.card-hover` (lift +
+  violet border-glow), `.reveal` (entrance, stagger via inline `--i`), `.ambient`
+  (slow drift). All motion gated by `prefers-reduced-motion`.
+- **Buttons:** press is now `scale(0.97)` with expo-out easing.
+- **Background:** three-blob ambient (gold + violet + teal), `background-attachment: fixed`.
+- **Header:** `.glass` sticky + mobile drawer (`MobileMenu`).
+- **Cards:** `ProjectCard` uses `.card-hover` + reveal + stat row + line-clamp.
+- **Checklist (skill):** SVG icons only, cursor-pointer, 150–300ms hovers, focus rings,
+  4.5:1 contrast, reduced-motion, breakpoints 375/768/1024/1440.
+
+Passes done: foundation, header/nav, explore cards. Pending: landing hero, sale detail
++ buy panel, dashboard/submit/admin, full responsive/a11y audit.

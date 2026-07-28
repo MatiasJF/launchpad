@@ -4,11 +4,12 @@ import type { SaleCardVM } from '../lib/types';
 import { StatusPill } from './ui';
 import { Countdown } from './ui/Countdown';
 
-export function ProjectCard({ s }: { s: SaleCardVM }) {
+export function ProjectCard({ s, index = 0 }: { s: SaleCardVM; index?: number }) {
   return (
     <Link
       href={`/sale/${s.slug}`}
-      className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-[var(--shadow-1)] transition hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[var(--shadow-2)]"
+      className="card card-hover reveal group flex flex-col overflow-hidden"
+      style={{ ['--i' as string]: index }}
     >
       <div
         className="relative h-32"
@@ -19,25 +20,25 @@ export function ProjectCard({ s }: { s: SaleCardVM }) {
           } as CSSProperties
         }
       >
-        <span className="absolute right-2.5 top-2.5 rounded-full bg-black/40 px-2.5 py-1 font-mono text-xs font-bold tracking-wide text-white backdrop-blur">
+        <span className="absolute right-2.5 top-2.5 rounded-full bg-black/45 px-2.5 py-1 font-mono text-xs font-bold tracking-wide text-white backdrop-blur-sm">
           {s.ticker}
         </span>
-        <span className="absolute -bottom-5 left-4 grid h-11 w-11 place-items-center rounded-xl border border-line-strong bg-surface font-display font-bold text-fg">
+        <span className="absolute -bottom-5 left-4 grid h-11 w-11 place-items-center rounded-xl border border-line-strong bg-surface font-display font-bold text-fg shadow-[var(--shadow-1)] transition-transform duration-200 group-hover:-translate-y-0.5">
           {s.name.charAt(0)}
         </span>
       </div>
       <div className="flex flex-1 flex-col gap-3 px-4 pb-4 pt-7">
         <div className="flex items-center justify-between gap-2.5">
-          <h3 className="text-[1.05rem] font-semibold">{s.name}</h3>
+          <h3 className="text-[1.05rem] font-semibold transition-colors group-hover:text-gold">{s.name}</h3>
           <StatusPill status={s.status} />
         </div>
-        <p className="m-0 text-sm leading-relaxed text-muted">{s.blurb}</p>
+        <p className="m-0 line-clamp-2 text-sm leading-relaxed text-muted">{s.blurb}</p>
 
         {s.status !== 'scheduled' && (
           <div>
-            <div className="mb-1.5 flex justify-between font-mono text-xs text-muted">
-              <span>Sold</span>
-              <span>{s.soldPct}%</span>
+            <div className="mb-1.5 flex justify-between font-mono text-xs">
+              <span className="text-muted">Sold</span>
+              <span className="tabular-nums text-fg">{s.soldPct}%</span>
             </div>
             <div className="progress">
               <i style={{ width: `${s.soldPct}%` }} />
@@ -45,9 +46,9 @@ export function ProjectCard({ s }: { s: SaleCardVM }) {
           </div>
         )}
 
-        <div className="mt-auto flex items-end justify-between pt-1.5">
+        <div className="mt-auto flex items-end justify-between border-t border-line pt-3">
           <div className="flex flex-col gap-1">
-            <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Price</span>
+            <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-faint">Price</span>
             <span className="font-mono text-base font-semibold tabular-nums text-fg">{s.priceSats} sats</span>
           </div>
           {s.countdown ? (

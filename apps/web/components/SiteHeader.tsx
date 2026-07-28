@@ -1,13 +1,11 @@
 import { Bolt } from './ui/icons';
 import { WalletButton } from './WalletButton';
+import { MobileMenu } from './MobileMenu';
 
 export function SiteHeader() {
   return (
-    <header
-      className="sticky top-0 z-50 border-b border-line backdrop-blur-md"
-      style={{ background: 'color-mix(in srgb, var(--c-ink) 72%, transparent)' }}
-    >
-      <div className="mx-auto flex h-16 max-w-[1120px] items-center gap-5 px-6">
+    <header className="glass sticky top-0 z-50 border-x-0 border-t-0">
+      <div className="mx-auto flex h-16 max-w-[1120px] items-center gap-4 px-4 sm:gap-5 sm:px-6">
         <a href="/" className="flex items-center gap-2.5 font-display text-[1.05rem] font-semibold">
           <span
             className="grid h-[30px] w-[30px] place-items-center rounded-[9px] text-[#0a0e15]"
@@ -34,6 +32,7 @@ export function SiteHeader() {
         </nav>
         <span className="flex-1" />
         <WalletButton />
+        <MobileMenu />
       </div>
     </header>
   );

@@ -17,7 +17,7 @@ export function ExploreSection({ sales }: { sales: SaleCardVM[] }) {
   const items = active === 'all' ? sales : sales.filter((s) => s.status === active);
 
   return (
-    <section id="explore" className="mx-auto max-w-[1120px] px-6 pb-20 pt-10">
+    <section id="explore" className="mx-auto max-w-[1120px] px-4 pb-20 pt-10 sm:px-6">
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
           <span className="font-mono text-xs uppercase tracking-[0.18em] text-gold">Explore</span>
@@ -34,9 +34,9 @@ export function ExploreSection({ sales }: { sales: SaleCardVM[] }) {
       {items.length === 0 ? (
         <p className="rounded-lg border border-line bg-surface p-8 text-center text-muted">No sales in this view yet.</p>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-[18px]">
-          {items.map((s) => (
-            <ProjectCard key={s.slug} s={s} />
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4 sm:gap-[18px]">
+          {items.map((s, i) => (
+            <ProjectCard key={s.slug} s={s} index={i} />
           ))}
         </div>
       )}

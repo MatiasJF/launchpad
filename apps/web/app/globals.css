@@ -20,6 +20,7 @@
   --color-gold2: var(--c-gold2);
   --color-gold-ink: var(--c-gold-ink);
   --color-teal: var(--c-teal);
+  --color-violet: var(--c-violet);
   --color-success: var(--c-success);
   --color-warning: var(--c-warning);
   --color-danger: var(--c-danger);
@@ -50,6 +51,7 @@
   --c-gold2: #e79b3c;
   --c-gold-ink: #1a1200;
   --c-teal: #4fd0c0;
+  --c-violet: #8b7bfb;
   --c-success: #4fce84;
   --c-warning: #e6bd57;
   --c-danger: #ef7a72;
@@ -59,6 +61,11 @@
   --shadow-2: 0 20px 60px rgba(0, 0, 0, 0.55);
   --glow-gold: 0 0 0 1px color-mix(in srgb, var(--c-gold) 30%, transparent),
     0 12px 40px color-mix(in srgb, var(--c-gold) 22%, transparent);
+  --glow-violet: 0 0 0 1px color-mix(in srgb, var(--c-violet) 34%, transparent),
+    0 14px 44px color-mix(in srgb, var(--c-violet) 24%, transparent);
+  /* Frosted-glass surface (cinematic dark). */
+  --glass-bg: color-mix(in srgb, var(--c-surface) 62%, transparent);
+  --glass-border: color-mix(in srgb, var(--c-fg) 10%, transparent);
 }
 
 :root[data-theme='light'],
@@ -79,6 +86,7 @@
     --c-gold2: #a06a10;
     --c-gold-ink: #ffffff;
     --c-teal: #158a7c;
+    --c-violet: #6d5cf0;
     --c-success: #1f9d57;
     --c-warning: #927016;
     --c-danger: #c0453d;
@@ -103,6 +111,7 @@
   --c-gold2: #a06a10;
   --c-gold-ink: #ffffff;
   --c-teal: #158a7c;
+  --c-violet: #6d5cf0;
   --c-success: #1f9d57;
   --c-warning: #927016;
   --c-danger: #c0453d;
@@ -111,15 +120,21 @@
   --shadow-2: 0 20px 60px rgba(20, 25, 35, 0.16);
   --glow-gold: 0 0 0 1px color-mix(in srgb, var(--c-gold) 22%, transparent),
     0 12px 40px color-mix(in srgb, var(--c-gold) 14%, transparent);
+  --glow-violet: 0 0 0 1px color-mix(in srgb, var(--c-violet) 26%, transparent),
+    0 14px 44px color-mix(in srgb, var(--c-violet) 16%, transparent);
+  --glass-bg: color-mix(in srgb, var(--c-surface) 70%, transparent);
+  --glass-border: color-mix(in srgb, var(--c-fg) 8%, transparent);
 }
 
 @layer base {
   body {
     min-height: 100vh;
     background:
-      radial-gradient(60% 40% at 82% -5%, color-mix(in srgb, var(--c-gold) 12%, transparent), transparent 70%),
-      radial-gradient(50% 40% at 8% 0%, color-mix(in srgb, var(--c-info) 13%, transparent), transparent 70%),
+      radial-gradient(52% 38% at 84% -6%, color-mix(in srgb, var(--c-gold) 13%, transparent), transparent 68%),
+      radial-gradient(44% 36% at 6% 2%, color-mix(in srgb, var(--c-violet) 15%, transparent), transparent 70%),
+      radial-gradient(60% 50% at 50% 118%, color-mix(in srgb, var(--c-teal) 9%, transparent), transparent 72%),
       var(--c-ink);
+    background-attachment: fixed;
     color: var(--c-fg);
     font-family: var(--font-sans);
     line-height: 1.6;
@@ -146,11 +161,17 @@
 
 @layer components {
   .btn {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border border-transparent text-sm font-semibold leading-none transition;
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border border-transparent text-sm font-semibold leading-none;
     padding: 11px 18px;
+    transition:
+      transform 0.12s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.2s ease,
+      border-color 0.2s ease,
+      background-color 0.2s ease,
+      color 0.2s ease;
   }
-  .btn:active {
-    transform: translateY(1px);
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
   }
   .btn:disabled {
     opacity: 0.5;
@@ -240,5 +261,76 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--c-faint);
+  }
+
+  /* Frosted glass surface — cinematic dark nav/panels. */
+  .glass {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid var(--glass-border);
+  }
+
+  /* Card with hover lift + accent border-glow. Pair with .reveal for entrance. */
+  .card {
+    @apply rounded-lg border bg-surface;
+    border-color: var(--c-line);
+    box-shadow: var(--shadow-1);
+    transition:
+      transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.22s ease,
+      box-shadow 0.22s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--c-violet) 55%, var(--c-line-strong));
+    box-shadow:
+      var(--shadow-2),
+      0 0 0 1px color-mix(in srgb, var(--c-violet) 22%, transparent);
+  }
+}
+
+@layer utilities {
+  /* Entrance reveal; stagger via inline --i (animation-delay). */
+  .reveal {
+    animation: reveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  /* Slow ambient drift for background accent blobs. */
+  .ambient {
+    animation: drift 18s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  @keyframes drift {
+    from {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    to {
+      transform: translate3d(3%, -4%, 0) scale(1.08);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
   }
 }
