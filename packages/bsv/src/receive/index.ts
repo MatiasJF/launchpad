@@ -15,7 +15,8 @@
  * Idempotency is basket-based (a `listOutputs` scan on the active store), never a
  * local side table — so re-registering an already-held token is a harmless no-op.
  */
-import type { AtomicBEEF, WalletInterface } from '@bsv/sdk';
+import type { WalletInterface } from '@bsv/sdk';
+import { Beef } from '@bsv/sdk';
 
 /** The wallet basket STAS token UTXOs are tracked in (matches settle/beef.ts). */
 export const STAS_BASKET = 'stas-tokens';
@@ -25,8 +26,12 @@ export interface ReceiveStasArgs {
   txid: string;
   /** Recipient token output index — always 0 for our settlement engine. */
   vout: number;
-  /** The settlement tx's AtomicBEEF, fetched from-chain by the caller. */
-  atomicBeef: AtomicBEEF;
+  /**
+   * The settlement tx's BEEF, fetched from-chain by the caller (WoC `/tx/{txid}/beef`).
+   * A plain (non-atomic) BEEF is fine — we convert it to AtomicBEEF for `txid`
+   * here, which is what `internalizeAction` requires.
+   */
+  atomicBeef: number[];
   /**
    * Token metadata + owner derivation, stamped so the output renders from
    * `listOutputs` alone and the spend path can re-derive the owner key. JSON
@@ -55,6 +60,21 @@ export async function receiveStasToken(
     return { registered: false, txid, vout, reason: 'no transfer BEEF to internalize (tx must be confirmed to fetch it)' };
   }
 
+  // internalizeAction requires AtomicBEEF (BEEF with `txid` marked as the subject).
+  // The from-chain BEEF is plain, so convert it here. toBinaryAtomic also validates
+  // that `txid` and its SPV proof are actually present in the BEEF.
+  let atomic: number[];
+  try {
+    atomic = Beef.fromBinary(atomicBeef).toBinaryAtomic(txid);
+  } catch (err) {
+    return {
+      registered: false,
+      txid,
+      vout,
+      reason: `could not build AtomicBEEF for ${txid.slice(0, 12)}…: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
   // Idempotency — storage-agnostic basket read. If we already hold the outpoint,
   // registering again would conflict; report a benign no-op instead.
   try {
@@ -71,7 +91,7 @@ export async function receiveStasToken(
   try {
     await wallet.internalizeAction(
       {
-        tx: atomicBeef,
+        tx: atomic,
         outputs: [
           {
             outputIndex: vout,
