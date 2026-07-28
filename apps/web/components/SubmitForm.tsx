@@ -18,7 +18,9 @@ function Field({ name, label, type = 'text', required }: { name: string; label: 
         {label}
         {required ? ' *' : ''}
       </span>
-      <input name={name} type={type} required={required} min={type === 'number' ? 0 : undefined} className={inputCls} />
+      {/* No HTML `required` — a required field inside a hidden tab can't be
+          focused for validation, so the server validates (redirects on missing). */}
+      <input name={name} type={type} min={type === 'number' ? 0 : undefined} className={inputCls} />
     </label>
   );
 }
@@ -36,6 +38,7 @@ export function SubmitForm() {
   const [bannerUrl, setBannerUrl] = useState('');
   const [about, setAbout] = useState('');
   const [fileErr, setFileErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<'basics' | 'media' | 'terms'>('basics');
 
   const onImageFile = (set: (v: string) => void, maxKB: number) => (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -101,10 +104,34 @@ export function SubmitForm() {
         owner {identityKey.slice(0, 20)}…
       </div>
 
-      <Field name="name" label="Project name" required />
-      <Field name="ticker" label="Ticker (e.g. $ABC)" required />
-      <Field name="blurb" label="Short description (one line)" />
+      <div className="flex gap-1 overflow-x-auto border-b border-line">
+        {(
+          [
+            ['basics', 'Basics'],
+            ['media', 'Media'],
+            ['terms', 'Sale terms'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${
+              tab === id ? 'border-gold text-fg' : 'border-transparent text-muted hover:text-fg'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
+      <div className="flex flex-col gap-4" hidden={tab !== 'basics'}>
+        <Field name="name" label="Project name" required />
+        <Field name="ticker" label="Ticker (e.g. $ABC)" required />
+        <Field name="blurb" label="Short description (one line)" />
+      </div>
+
+      <div className="flex flex-col gap-4" hidden={tab !== 'media'}>
       {/* Logo + banner (upload or URL) */}
       <input type="hidden" name="logoUrl" value={logoUrl} />
       <input type="hidden" name="banner" value={bannerUrl} />
@@ -163,6 +190,9 @@ export function SubmitForm() {
           <Markdown>{about}</Markdown>
         </div>
       )}
+      </div>
+
+      <div className="flex flex-col gap-4" hidden={tab !== 'terms'}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
           { name: 'totalSupply', label: 'Total supply' },
@@ -182,10 +212,10 @@ export function SubmitForm() {
           name="payoutAddress"
           value={payoutAddress}
           onChange={(e) => setPayoutAddress(e.target.value)}
-          required
           className={`${inputCls} font-mono text-sm`}
         />
       </label>
+      </div>
 
       <div className="mt-2">
         <Button variant="primary" type="submit">
