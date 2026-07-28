@@ -38,6 +38,15 @@ export type ManageVM = {
  * admin — issues their own token and settles their own sales; their wallet signs
  * and pays. Non-custodial throughout.
  */
+/** ISO (UTC) → a `datetime-local` value in the viewer's LOCAL time. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function ProjectManage({ p }: { p: ManageVM }) {
   const { identityKey: identity, status, error, connect } = useWallet();
   const [meta, setMeta] = useState({
@@ -51,9 +60,24 @@ export function ProjectManage({ p }: { p: ManageVM }) {
 
   const [sched, setSched] = useState({
     status: p.sale?.status ?? 'scheduled',
-    startsAt: p.sale?.startsAt ? p.sale.startsAt.slice(0, 16) : '',
-    endsAt: p.sale?.endsAt ? p.sale.endsAt.slice(0, 16) : '',
+    startsAt: toLocalInput(p.sale?.startsAt ?? null),
+    endsAt: toLocalInput(p.sale?.endsAt ?? null),
   });
+
+  // Live "will this be buyable?" readout from the current editor settings.
+  const effState = (() => {
+    if (sched.status !== 'live') {
+      return sched.status === 'finalized'
+        ? { open: false, label: 'Ended — status is Finalized' }
+        : { open: false, label: 'Upcoming — status is Scheduled' };
+    }
+    const now = Date.now();
+    const st = sched.startsAt ? new Date(sched.startsAt).getTime() : null;
+    const en = sched.endsAt ? new Date(sched.endsAt).getTime() : null;
+    if (st && st > now) return { open: false, label: 'Upcoming — start time is in the future' };
+    if (en && en <= now) return { open: false, label: 'Ended — end time is in the past' };
+    return { open: true, label: 'Open — buyable now' };
+  })();
   const [schedState, setSchedState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [schedErr, setSchedErr] = useState<string | null>(null);
 
@@ -264,9 +288,18 @@ export function ProjectManage({ p }: { p: ManageVM }) {
           <section>
             <h2 className="text-xl font-semibold">Sale schedule</h2>
             <p className="mt-1 text-sm text-muted">
-              Buyers can only buy while <strong>Live</strong>. Set it to Scheduled with a start time to show a
-              countdown, then flip to Live when it opens.
+              Buyers can only buy while <strong>Live</strong> and within the start/end window. To reopen a closed
+              sale: set <strong>Live</strong> and either clear the end time or set it to the future. Times are your
+              local time.
             </p>
+            <div
+              className={`mt-3 inline-flex items-center gap-2 rounded-md border px-3 py-1.5 font-mono text-xs ${
+                effState.open ? 'border-teal/40 bg-teal/10 text-teal' : 'border-warning/40 bg-warning/10 text-warning'
+              }`}
+            >
+              {effState.open ? '● ' : '○ '}
+              {effState.label}
+            </div>
             <div className="mt-4 flex flex-col gap-3">
               <div className="flex flex-wrap gap-2">
                 {(['scheduled', 'live', 'finalized'] as const).map((st) => (
