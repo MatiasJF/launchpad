@@ -45,13 +45,15 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px]">
           <div className="reveal">
             <div
-              className="relative h-44 overflow-hidden rounded-lg border border-line sm:h-48"
+              className="relative h-44 overflow-hidden rounded-lg border border-line sm:h-56"
               style={
-                {
-                  '--hue': s.hue,
-                  backgroundImage:
-                    'linear-gradient(135deg, hsl(var(--hue) 40% 26%), hsl(calc(var(--hue) + 40) 45% 14%))',
-                } as CSSProperties
+                s.bannerUrl
+                  ? { backgroundImage: `url("${s.bannerUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                  : ({
+                      '--hue': s.hue,
+                      backgroundImage:
+                        'linear-gradient(135deg, hsl(var(--hue) 40% 26%), hsl(calc(var(--hue) + 40) 45% 14%))',
+                    } as CSSProperties)
               }
             >
               <span className="absolute bottom-4 left-5 grid h-16 w-16 place-items-center overflow-hidden rounded-2xl border border-line-strong bg-surface font-display text-2xl font-bold text-fg shadow-[var(--shadow-1)]">

@@ -221,3 +221,11 @@ name/description/image/website (bounded lengths; tokenId anchor unchanged) —
 Wallets/explorers that read the STAS schema now see the project name/logo, not a
 generic tag. **Re-issue to get the richer on-chain metadata (existing tokens keep
 the old minimal schema).**
+
+**Added 2026-07-28 — banner + sale scheduling (owner dashboard).** Project details
+editor now also takes a **banner/cover image** (upload data-URI or https URL, stored
+in `Project.media` JSON) shown on the sale hero + explore card (gradient fallback).
+New **Sale schedule** section: owner sets status (scheduled/live/finalized) + start/end
+times (`updateSaleSchedule`, owner-gated). Buyers can only buy while `live`; scheduled
+sales show a "starts in" countdown (data.ts countdown uses `startsAt` when scheduled).
+Logo/banner accept PNG/ICO/JPG/WEBP uploads. On-chain schema still URL-only for images.

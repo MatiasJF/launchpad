@@ -5,7 +5,7 @@ import { Button } from './ui';
 import { IssueButton } from './IssueButton';
 import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
-import { updateProjectMeta } from '../lib/actions';
+import { updateProjectMeta, updateSaleSchedule } from '../lib/actions';
 
 export type ManageVM = {
   projectId: string;
@@ -16,7 +16,9 @@ export type ManageVM = {
   ownerIdentity: string;
   description: string | null;
   logoUrl: string | null;
+  bannerUrl: string | null;
   website: string | null;
+  sale: { status: string; startsAt: string | null; endsAt: string | null } | null;
   token: { ticker: string; supply: number; issuanceTxid: string | null; tokenId: string | null } | null;
   orders: {
     id: string;
@@ -37,31 +39,45 @@ export type ManageVM = {
  */
 export function ProjectManage({ p }: { p: ManageVM }) {
   const { identityKey: identity, status, error, connect } = useWallet();
-  const [meta, setMeta] = useState({ logoUrl: p.logoUrl ?? '', website: p.website ?? '', description: p.description ?? '' });
+  const [meta, setMeta] = useState({
+    logoUrl: p.logoUrl ?? '',
+    bannerUrl: p.bannerUrl ?? '',
+    website: p.website ?? '',
+    description: p.description ?? '',
+  });
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveErr, setSaveErr] = useState<string | null>(null);
 
-  function onLogoFile(e: ChangeEvent<HTMLInputElement>) {
+  const [sched, setSched] = useState({
+    status: p.sale?.status ?? 'scheduled',
+    startsAt: p.sale?.startsAt ? p.sale.startsAt.slice(0, 16) : '',
+    endsAt: p.sale?.endsAt ? p.sale.endsAt.slice(0, 16) : '',
+  });
+  const [schedState, setSchedState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [schedErr, setSchedErr] = useState<string | null>(null);
+
+  // Read an uploaded image into a data URI for a given meta field.
+  const onImageFile = (field: 'logoUrl' | 'bannerUrl', maxKB: number) => (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!/^image\/(png|x-icon|vnd\.microsoft\.icon|jpeg|webp|svg\+xml)$/.test(file.type) && !/\.(png|ico)$/i.test(file.name)) {
+    if (!/^image\//.test(file.type) && !/\.(png|ico|jpe?g|webp|svg)$/i.test(file.name)) {
       setSaveState('error');
-      setSaveErr('use a PNG or ICO image');
+      setSaveErr('use a PNG, ICO, JPG or WEBP image');
       return;
     }
-    if (file.size > 200 * 1024) {
+    if (file.size > maxKB * 1024) {
       setSaveState('error');
-      setSaveErr('image too large (max 200KB) — use a small square logo');
+      setSaveErr(`image too large (max ${maxKB}KB)`);
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
-      setMeta((m) => ({ ...m, logoUrl: String(reader.result) }));
+      setMeta((m) => ({ ...m, [field]: String(reader.result) }));
       setSaveState('idle');
       setSaveErr(null);
     };
     reader.readAsDataURL(file);
-  }
+  };
 
   async function saveMeta() {
     if (!identity) return;
@@ -72,6 +88,24 @@ export function ProjectManage({ p }: { p: ManageVM }) {
     else {
       setSaveState('error');
       setSaveErr(res.error ?? 'update failed');
+    }
+  }
+
+  async function saveSched() {
+    if (!identity) return;
+    setSchedState('saving');
+    setSchedErr(null);
+    const res = await updateSaleSchedule({
+      projectId: p.projectId,
+      identityPubkey: identity,
+      status: sched.status,
+      startsAt: sched.startsAt,
+      endsAt: sched.endsAt,
+    });
+    if (res.ok) setSchedState('saved');
+    else {
+      setSchedState('error');
+      setSchedErr(res.error ?? 'update failed');
     }
   }
 
@@ -132,7 +166,7 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="btn btn-secondary cursor-pointer">
                     Upload PNG/ICO
-                    <input type="file" accept="image/png,image/x-icon,.ico,.png,image/*" onChange={onLogoFile} className="hidden" />
+                    <input type="file" accept="image/png,image/x-icon,.ico,.png,image/*" onChange={onImageFile('logoUrl', 200)} className="hidden" />
                   </label>
                   {meta.logoUrl?.startsWith('data:') && <span className="font-mono text-xs text-teal">✓ image loaded</span>}
                 </div>
@@ -142,6 +176,28 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                   placeholder="…or https://…/logo.png"
                   className={`${metaInput} font-mono`}
                 />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">
+                  Banner / cover image — upload, or paste an https URL (wide)
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="btn btn-secondary cursor-pointer">
+                    Upload banner
+                    <input type="file" accept="image/*" onChange={onImageFile('bannerUrl', 1000)} className="hidden" />
+                  </label>
+                  {meta.bannerUrl?.startsWith('data:') && <span className="font-mono text-xs text-teal">✓ image loaded</span>}
+                </div>
+                <input
+                  value={meta.bannerUrl?.startsWith('data:') ? '' : meta.bannerUrl}
+                  onChange={(e) => setMeta((m) => ({ ...m, bannerUrl: e.target.value }))}
+                  placeholder="…or https://…/banner.jpg"
+                  className={`${metaInput} font-mono`}
+                />
+                {meta.bannerUrl && (
+                  <img src={meta.bannerUrl} alt="banner preview" className="h-24 w-full rounded-md border border-line object-cover" />
+                )}
               </div>
               <label className="flex flex-col gap-1.5">
                 <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Website (https)</span>
@@ -175,6 +231,57 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                   className="h-14 w-14 rounded-xl border border-line object-cover"
                 />
               )}
+            </div>
+          </section>
+
+          {/* Sale schedule */}
+          <section>
+            <h2 className="text-xl font-semibold">Sale schedule</h2>
+            <p className="mt-1 text-sm text-muted">
+              Buyers can only buy while <strong>Live</strong>. Set it to Scheduled with a start time to show a
+              countdown, then flip to Live when it opens.
+            </p>
+            <div className="mt-4 flex flex-col gap-3">
+              <div className="flex flex-wrap gap-2">
+                {(['scheduled', 'live', 'finalized'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setSched((s) => ({ ...s, status: st }))}
+                    className="chip capitalize"
+                    data-active={sched.status === st}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Starts at</span>
+                  <input
+                    type="datetime-local"
+                    value={sched.startsAt}
+                    onChange={(e) => setSched((s) => ({ ...s, startsAt: e.target.value }))}
+                    className={metaInput}
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Ends at</span>
+                  <input
+                    type="datetime-local"
+                    value={sched.endsAt}
+                    onChange={(e) => setSched((s) => ({ ...s, endsAt: e.target.value }))}
+                    className={metaInput}
+                  />
+                </label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button variant="primary" onClick={saveSched} disabled={schedState === 'saving'}>
+                  {schedState === 'saving' ? 'Saving…' : 'Save schedule'}
+                </Button>
+                {schedState === 'saved' && <span className="font-mono text-xs text-teal">✓ saved</span>}
+                {schedState === 'error' && <span className="font-mono text-xs text-danger">⚠ {schedErr}</span>}
+              </div>
             </div>
           </section>
 

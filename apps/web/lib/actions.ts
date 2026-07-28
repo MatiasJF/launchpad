@@ -92,6 +92,7 @@ export async function updateProjectMeta(input: {
   projectId: string;
   identityPubkey: string;
   logoUrl: string;
+  bannerUrl: string;
   website: string;
   description: string;
 }): Promise<{ ok: boolean; error?: string }> {
@@ -99,21 +100,66 @@ export async function updateProjectMeta(input: {
     return { ok: false, error: 'not the project owner' };
   }
   const isHttps = (u: string) => /^https:\/\/\S+$/i.test(u);
-  // A logo may be an https URL OR an uploaded image embedded as a data URI
-  // (png / ico / jpeg / webp / svg). Cap the data URI so the DB row stays sane.
-  const isLogo = (u: string) =>
+  // An image may be an https URL OR an uploaded data URI (png/ico/jpeg/webp/svg);
+  // cap the data URI so the DB row stays sane (banners allowed larger than logos).
+  const isImage = (u: string, max: number) =>
     isHttps(u) ||
-    (/^data:image\/(png|x-icon|vnd\.microsoft\.icon|jpeg|jpg|webp|svg\+xml);base64,/i.test(u) && u.length <= 300_000);
+    (/^data:image\/(png|x-icon|vnd\.microsoft\.icon|jpeg|jpg|webp|svg\+xml);base64,/i.test(u) && u.length <= max);
   const logoUrl = input.logoUrl.trim();
+  const bannerUrl = input.bannerUrl.trim();
   const website = input.website.trim();
   try {
     await prisma.project.update({
       where: { id: input.projectId },
       data: {
-        logoUrl: logoUrl === '' ? null : isLogo(logoUrl) ? logoUrl : undefined,
+        logoUrl: logoUrl === '' ? null : isImage(logoUrl, 300_000) ? logoUrl : undefined,
+        // Banner cover lives in the `media` JSON field.
+        media: bannerUrl === '' ? null : isImage(bannerUrl, 1_200_000) ? JSON.stringify({ banner: bannerUrl }) : undefined,
         links: website === '' ? null : isHttps(website) ? JSON.stringify({ website }) : undefined,
         description: input.description.trim() || null,
       },
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'update failed' };
+  }
+  revalidatePath('/');
+  revalidatePath(`/project/${input.projectId}/manage`);
+  return { ok: true };
+}
+
+/**
+ * Owner sets the sale schedule: status (scheduled | live | finalized) plus optional
+ * start/end times. Buyers can only buy while `live`; a scheduled sale shows a
+ * "starts in" countdown. Owner-gated.
+ */
+export async function updateSaleSchedule(input: {
+  projectId: string;
+  identityPubkey: string;
+  status: string;
+  startsAt: string; // ISO or ''
+  endsAt: string; // ISO or ''
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!(await isProjectOwner(input.projectId, input.identityPubkey))) {
+    return { ok: false, error: 'not the project owner' };
+  }
+  if (!['scheduled', 'live', 'finalized'].includes(input.status)) {
+    return { ok: false, error: 'invalid status' };
+  }
+  const toDate = (s: string) => {
+    if (!s) return null;
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  };
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: input.projectId },
+      include: { tokens: { include: { sales: true } } },
+    });
+    const sale = project?.tokens.flatMap((t) => t.sales)[0];
+    if (!sale) return { ok: false, error: 'no sale found' };
+    await prisma.sale.update({
+      where: { id: sale.id },
+      data: { status: input.status, startsAt: toDate(input.startsAt), endsAt: toDate(input.endsAt) },
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'update failed' };

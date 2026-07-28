@@ -35,6 +35,12 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
   } catch {
     website = null;
   }
+  let bannerUrl: string | null = null;
+  try {
+    bannerUrl = project.media ? ((JSON.parse(project.media) as { banner?: string }).banner ?? null) : null;
+  } catch {
+    bannerUrl = null;
+  }
 
   const vm: ManageVM = {
     projectId: project.id,
@@ -45,7 +51,15 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
     ownerIdentity: project.owner.identityPubkey,
     description: project.description,
     logoUrl: project.logoUrl,
+    bannerUrl,
     website,
+    sale: sale
+      ? {
+          status: sale.status,
+          startsAt: sale.startsAt ? sale.startsAt.toISOString() : null,
+          endsAt: sale.endsAt ? sale.endsAt.toISOString() : null,
+        }
+      : null,
     token: token
       ? {
           ticker: token.ticker,

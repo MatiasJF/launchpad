@@ -33,6 +33,16 @@ function parseWebsite(json: string | null): string | null {
   }
 }
 
+function parseBanner(json: string | null): string | null {
+  if (!json) return null;
+  try {
+    const b = (JSON.parse(json) as { banner?: string }).banner;
+    return typeof b === 'string' && b ? b : null;
+  } catch {
+    return null;
+  }
+}
+
 function parseAlloc(json: string | null): Allocation[] {
   if (!json) return [];
   try {
@@ -59,13 +69,14 @@ function mapSale(s: SaleWithRels): SaleCardVM {
     name: s.token.project.name,
     ticker: s.token.ticker,
     logoUrl: s.token.project.logoUrl,
+    bannerUrl: parseBanner(s.token.project.media),
     website: parseWebsite(s.token.project.links),
     blurb: s.token.project.tagline ?? '',
     status: s.status as SaleStatus,
     priceSats: Number(s.priceSats),
     soldPct: alloc > 0 ? Math.round((soldTokens / alloc) * 100) : 0,
     hue: hueFromSlug(s.token.project.slug),
-    countdown: countdownFrom(s.endsAt),
+    countdown: countdownFrom(s.status === 'scheduled' ? s.startsAt : s.endsAt),
     about: s.token.project.description ?? '',
     totalSupply: Number(s.token.totalSupply),
     publicAllocation: alloc,

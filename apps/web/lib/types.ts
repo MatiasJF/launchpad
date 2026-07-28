@@ -13,6 +13,7 @@ export interface SaleCardVM {
   name: string;
   ticker: string;
   logoUrl?: string | null;
+  bannerUrl?: string | null;
   website?: string | null;
   blurb: string;
   status: SaleStatus;
