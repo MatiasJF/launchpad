@@ -12,15 +12,17 @@ export function ProjectCard({ s, index = 0 }: { s: SaleCardVM; index?: number })
       style={{ ['--i' as string]: index }}
     >
       <div
-        className="relative h-32 bg-cover bg-center"
-        style={
-          s.bannerUrl
-            ? { backgroundImage: `url("${s.bannerUrl}")` }
-            : ({
-                '--hue': s.hue,
-                backgroundImage: 'linear-gradient(135deg, hsl(var(--hue) 40% 26%), hsl(calc(var(--hue) + 40) 45% 14%))',
-              } as CSSProperties)
-        }
+        className="relative h-32"
+        style={(() => {
+          const grad = `linear-gradient(135deg, hsl(${s.hue} 40% 26%), hsl(${s.hue + 40} 45% 14%))`;
+          // Layer the banner OVER the gradient so a broken/slow image degrades to
+          // the gradient instead of showing blank.
+          return {
+            backgroundImage: s.bannerUrl ? `url("${s.bannerUrl}"), ${grad}` : grad,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          } as CSSProperties;
+        })()}
       >
         <span className="absolute right-2.5 top-2.5 rounded-full bg-black/45 px-2.5 py-1 font-mono text-xs font-bold tracking-wide text-white backdrop-blur-sm">
           {s.ticker}

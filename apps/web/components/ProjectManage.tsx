@@ -198,7 +198,7 @@ export function ProjectManage({ p }: { p: ManageVM }) {
 
               <div className="flex flex-col gap-1.5">
                 <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">
-                  Banner / cover image — upload, or paste an https URL (wide)
+                  Banner / cover image — upload a file, or paste a DIRECT image link (…/photo.jpg — not a page link)
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="btn btn-secondary cursor-pointer">

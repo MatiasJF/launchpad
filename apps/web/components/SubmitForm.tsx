@@ -126,7 +126,7 @@ export function SubmitForm() {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className={labelCls}>Banner — upload or paste https URL (wide)</span>
+          <span className={labelCls}>Banner — upload, or paste a DIRECT image link (…/photo.jpg, not a page link)</span>
           <div className="flex flex-wrap items-center gap-2">
             <label className="btn btn-secondary cursor-pointer">
               Upload

@@ -48,13 +48,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
             <div
               className="relative h-44 overflow-hidden rounded-lg border border-line sm:h-56"
               style={
-                s.bannerUrl
-                  ? { backgroundImage: `url("${s.bannerUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                  : ({
-                      '--hue': s.hue,
-                      backgroundImage:
-                        'linear-gradient(135deg, hsl(var(--hue) 40% 26%), hsl(calc(var(--hue) + 40) 45% 14%))',
-                    } as CSSProperties)
+                {
+                  backgroundImage: s.bannerUrl
+                    ? `url("${s.bannerUrl}"), linear-gradient(135deg, hsl(${s.hue} 40% 26%), hsl(${s.hue + 40} 45% 14%))`
+                    : `linear-gradient(135deg, hsl(${s.hue} 40% 26%), hsl(${s.hue + 40} 45% 14%))`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                } as CSSProperties
               }
             >
               <span className="absolute bottom-4 left-5 grid h-16 w-16 place-items-center overflow-hidden rounded-2xl border border-line-strong bg-surface font-display text-2xl font-bold text-fg shadow-[var(--shadow-1)]">
