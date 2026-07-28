@@ -4,6 +4,13 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 
 ## Current phase
 
+**🎉 FULL MVP LOOP VERIFIED ON MAINNET (2026-07-28).** create → issue → buy →
+settle is proven end-to-end: a buyer placed an order and the operator settled it,
+tx `73d34b30b8bccdeacd9d720b53e2053748160744c50132e745564b3ced81edb9` delivering
+**100 Sar to the buyer** (`13HGL9BfmT1G…`) + **800 Sar change** to the pool. See
+WEB-003 below for the settlement hardening path (spent-guard, TX1→TX2 broadcast,
+pool auto-resolution).
+
 **P1 done; P2 started.** Explore + sale pages now read from **SQLite** (DB-002 ✅,
 verified in-browser). Admin-gated project **submit + approval** flow is live
 (ADMIN-001 ✅). Wallet connect done (BSV-001). Tailwind v4 + navy palette.
@@ -58,7 +65,7 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
 **P3 · L0 instant swap (MVP)** _(backlog)_
 
 - `●` BSV-003  STAS settlement ✅ VERIFIED ON-CHAIN (tx 1506cf…11e3: 100 Sar → recipient, 900 change, covenant satisfied, non-custodial). Two-tx engine + browser bundling + buildChainedAtomicBeef all confirmed
-- `◐` WEB-003  Buyer buy flow (BuyCard → place Order + optional sats payment) + admin settle-order (reuses the proven transfer) — wired & rendering. Live buy→settle test pending; partial-send pool tracking is manual for now.
+- `●` WEB-003  Buyer buy flow + admin settle-order — ✅ **VERIFIED ON-CHAIN (2026-07-28)**. Full create→issue→buy→settle loop closed on mainnet: tx `73d34b30…81edb9` moved **100 Sar → buyer `13HGL9BfmT1G…`** + **800 Sar change** to pool owner (`8f00c357…`), spending pool `1506cf…:1`. Pool auto-resolution + TX1→TX2 broadcast + spent-guard all confirmed working.
   **Fixed 2026-07-27 — chained-transfer BEEF bug:** settling from a pool UTXO that
   is a *prior transfer's token change* (not the mint) failed with "must be valid
   AtomicBEEF" — `buildChainedAtomicBeef`'s basket only holds the mint, so the
