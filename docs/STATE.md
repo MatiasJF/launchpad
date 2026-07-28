@@ -111,6 +111,16 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
   correctly skipping the recipient (`a7dbb874…`) and BSV-change outputs. The
   operator no longer hand-tracks the moving UTXO.
 
+**Multi-hop settlement proven (2026-07-28).** Two live buyer orders settled back-
+to-back off the same moving pool: settle #1 `73d34b30…` (100→buyer + 800 change),
+settle #2 `334b9213…` (100→buyer + 700 change). Settle #2 spent settle #1's change
+UTXO **and** its own still-unconfirmed funding TX1 (`e203488c…:0`) — chaining off
+unconfirmed parents without waiting for a block. `resolveCurrentPool` walked
+mint→`1506cf`→`73d34b30`→`334b9213` hands-free. Conservation: 1000 mint = 100
+(BSV-003) + 100 + 100 delivered + **700 live pool `334b9213…:1`**. (One earlier
+attempt aborted silently — the settlement claim's `revalidatePath` unmounted the
+live button mid-flow; fixed by removing revalidate from claim/release.)
+
 **Added 2026-07-28 — concurrency hardening (ADR-022).** Two layers:
 · **Buy layer** — `placeOrder` now reserves atomically inside a transaction
   (sums `pending|settling|settled` tokens, rejects crossing `allocationForSale`).
