@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getSaleVMBySlug } from '../../../lib/data';
@@ -7,19 +7,10 @@ import { SiteFooter } from '../../../components/SiteFooter';
 import { BuyCard } from '../../../components/BuyCard';
 import { ClaimTokens } from '../../../components/ClaimTokens';
 import { Markdown } from '../../../components/Markdown';
-import { StatusPill } from '../../../components/ui';
+import { StatusPill, Tabs } from '../../../components/ui';
 import { TokenomicsBar } from '../../../components/ui/TokenomicsBar';
 
 export const dynamic = 'force-dynamic';
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="mt-8 border-t border-line pt-6">
-      <h2 className="mb-3 text-xl font-semibold">{title}</h2>
-      {children}
-    </section>
-  );
-}
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
@@ -83,24 +74,40 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               </a>
             )}
 
-            <Section title="About">
-              <Markdown className="max-w-[68ch]">{s.about}</Markdown>
-            </Section>
-
-            <Section title="Tokenomics">
-              <TokenomicsBar allocations={s.allocations} />
-            </Section>
-
-            <Section title="Details">
-              <div className="grid grid-cols-2 gap-5 sm:grid-cols-3">
-                <Detail label="Total supply" value={s.totalSupply.toLocaleString('en-US')} />
-                <Detail label="Public allocation" value={s.publicAllocation.toLocaleString('en-US')} />
-                <Detail label="Price" value={`${s.priceSats} sats`} />
-                <Detail label="Ticker" value={s.ticker} />
-                <Detail label="Network" value="Mainnet" />
-                <Detail label="Settlement" value="On-chain · SPV" />
-              </div>
-            </Section>
+            <div className="mt-8 border-t border-line pt-6">
+              <Tabs
+                tabs={[
+                  {
+                    id: 'about',
+                    label: 'About',
+                    content: s.about ? (
+                      <Markdown className="max-w-[68ch]">{s.about}</Markdown>
+                    ) : (
+                      <p className="text-muted">No description yet.</p>
+                    ),
+                  },
+                  {
+                    id: 'tokenomics',
+                    label: 'Tokenomics',
+                    content: <TokenomicsBar allocations={s.allocations} />,
+                  },
+                  {
+                    id: 'details',
+                    label: 'Details',
+                    content: (
+                      <div className="grid grid-cols-2 gap-5 sm:grid-cols-3">
+                        <Detail label="Total supply" value={s.totalSupply.toLocaleString('en-US')} />
+                        <Detail label="Public allocation" value={s.publicAllocation.toLocaleString('en-US')} />
+                        <Detail label="Price" value={`${s.priceSats} sats`} />
+                        <Detail label="Ticker" value={s.ticker} />
+                        <Detail label="Network" value="Mainnet" />
+                        <Detail label="Settlement" value="On-chain · SPV" />
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+            </div>
           </div>
 
           <aside>
