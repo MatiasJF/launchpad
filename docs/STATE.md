@@ -8,7 +8,10 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 Reissued token `bd7e084371493136a36236dbd927ed8b0aef3835e662f6900e8ae9bd62eda87f:0`
 returns WoC back-to-genesis **`result: authentic`** (genesisDepth 0, conservationOk,
 tokenId `65ef81c6…`) — contract+funding `501d08…` → issue `bd7e08…` (STAS vout0 +
-300 change vout1). The contract→issue genesis works; new mints are genuine STAS.
+300 change vout1). The contract→issue genesis works; new mints are genuine STAS. **Full authentic
+loop confirmed in-wallet (2026-07-28):** `frl` token renders with its real ticker,
+B2G-verified, registered + spendable (1 UTXO) in BSV Desktop — no counterfeit flag.
+End-to-end submit→approve→issue→buy→settle→register proven on a genuine token.
 (First live token read `counterfeit`: WoC returned `no-genesis` at the mint because
 our single-output issuance had no contract ancestor.) Fixed with the classic **contract → issue** genesis (`issueStasGenesis`,
 `packages/bsv/src/issue/genesis.ts`; wired into `IssueButton`): contract locks the
