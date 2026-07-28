@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@launchpad/db';
 import { ADMIN_COOKIE, isAdmin } from './auth';
+import { isIdentityPubkey } from './identity';
 
 function field(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
@@ -17,25 +18,36 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, '');
 }
 
-/** Public submission — creates a pending project awaiting admin approval. */
+/**
+ * Public submission — creates a pending project owned by the SUBMITTER's wallet
+ * (BRC-100 identity), awaiting admin approval. The owner identity + payout
+ * address come from the connected wallet (see SubmitForm). This is what makes
+ * the project self-serviceable: only this wallet can later issue/settle it.
+ */
 export async function createProject(form: FormData): Promise<void> {
   const name = field(form, 'name');
   const ticker = field(form, 'ticker');
+  const identityPubkey = field(form, 'identityPubkey');
+  const payoutAddress = field(form, 'payoutAddress');
   if (!name || !ticker) redirect('/submit?error=missing');
+  if (!isIdentityPubkey(identityPubkey)) redirect('/submit?error=wallet');
+  if (!payoutAddress) redirect('/submit?error=payout');
 
   const slug = slugify(name);
   const existing = await prisma.project.findUnique({ where: { slug } });
   if (existing) redirect('/submit?error=slug');
 
-  const issuer = await prisma.account.upsert({
-    where: { identityPubkey: 'seed-issuer' },
-    update: {},
-    create: { identityPubkey: 'seed-issuer', role: 'issuer' },
+  // Owner = the connecting wallet. Owning a project makes them an issuer.
+  const owner = await prisma.account.upsert({
+    where: { identityPubkey },
+    update: { role: 'issuer' },
+    create: { identityPubkey, role: 'issuer' },
   });
 
   await prisma.project.create({
     data: {
-      ownerId: issuer.id,
+      ownerId: owner.id,
+      payoutAddress,
       slug,
       name,
       tagline: field(form, 'blurb'),
