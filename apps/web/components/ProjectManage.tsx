@@ -5,7 +5,7 @@ import { Button } from './ui';
 import { IssueButton } from './IssueButton';
 import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
-import { updateProjectMeta, updateSaleSchedule } from '../lib/actions';
+import { updateProjectMeta, updateSaleSchedule, deleteProject } from '../lib/actions';
 import { Markdown } from './Markdown';
 
 export type ManageVM = {
@@ -89,6 +89,23 @@ export function ProjectManage({ p }: { p: ManageVM }) {
     else {
       setSaveState('error');
       setSaveErr(res.error ?? 'update failed');
+    }
+  }
+
+  const [deleting, setDeleting] = useState(false);
+  async function doDelete() {
+    if (!identity) return;
+    const ok = window.confirm(
+      `Delete “${p.name}”? This removes the project, token, sale and all orders from the launchpad. ` +
+        `Tokens already issued on-chain are NOT affected. This cannot be undone.`,
+    );
+    if (!ok) return;
+    setDeleting(true);
+    const res = await deleteProject(p.projectId, identity);
+    if (res.ok) window.location.href = '/';
+    else {
+      setDeleting(false);
+      window.alert(`Delete failed: ${res.error ?? 'unknown error'}`);
     }
   }
 
@@ -360,6 +377,23 @@ export function ProjectManage({ p }: { p: ManageVM }) {
             {settled.length > 0 && (
               <p className="mt-3 text-xs text-muted">{settled.length} settled · delivered on-chain.</p>
             )}
+          </section>
+
+          {/* Danger zone */}
+          <section className="rounded-lg border border-danger/40 bg-danger/5 p-4">
+            <h2 className="text-xl font-semibold text-danger">Delete project</h2>
+            <p className="mt-1 text-sm text-muted">
+              Removes the project, token, sale and all orders from the launchpad. Tokens already issued on-chain are
+              not affected. This cannot be undone.
+            </p>
+            <button
+              type="button"
+              onClick={doDelete}
+              disabled={deleting}
+              className="btn mt-3 border-danger/50 bg-danger/15 text-danger hover:bg-danger/25"
+            >
+              {deleting ? 'Deleting…' : 'Delete this project'}
+            </button>
           </section>
         </div>
       )}

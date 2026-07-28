@@ -5,7 +5,7 @@ import { SiteHeader } from '../../components/SiteHeader';
 import { SiteFooter } from '../../components/SiteFooter';
 import { Button } from '../../components/ui';
 import { isAdmin } from '../../lib/auth';
-import { adminLogin, adminLogout, setProjectStatus } from '../../lib/actions';
+import { adminLogin, adminLogout, setProjectStatus, deleteProjectForm } from '../../lib/actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +68,32 @@ async function PendingList() {
   );
 }
 
+async function AllListings() {
+  const projects = await prisma.project.findMany({ orderBy: { createdAt: 'desc' } });
+  if (projects.length === 0) return <p className="mt-4 text-muted">No projects.</p>;
+  return (
+    <div className="mt-4 flex flex-col gap-2">
+      {projects.map((p) => (
+        <div
+          key={p.id}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3"
+        >
+          <div className="min-w-0">
+            <span className="font-semibold">{p.name}</span>{' '}
+            <span className="font-mono text-xs text-faint">· {p.status} · {p.slug}</span>
+          </div>
+          <form action={deleteProjectForm}>
+            <input type="hidden" name="id" value={p.id} />
+            <button className="btn border-danger/50 bg-danger/15 text-danger hover:bg-danger/25" type="submit">
+              Delete
+            </button>
+          </form>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default async function AdminPage() {
   const admin = await isAdmin();
 
@@ -109,6 +135,11 @@ export default async function AdminPage() {
                 only role — projects manage everything else from their own dashboard.
               </p>
               <PendingList />
+            </section>
+            <section>
+              <h2 className="text-xl font-semibold">All listings</h2>
+              <p className="mt-1 text-sm text-muted">Delete any project (removes its token, sale and orders — on-chain tokens are unaffected).</p>
+              <AllListings />
             </section>
             <p className="text-xs text-faint">
               Approved projects self-serve at{' '}

@@ -169,6 +169,53 @@ export async function updateSaleSchedule(input: {
   return { ok: true };
 }
 
+/**
+ * Delete a project and everything under it (token → sale → orders, plus events).
+ * Allowed for the project OWNER (pass identity) or the platform ADMIN. This only
+ * removes DB records — any tokens already issued on-chain still exist on mainnet.
+ */
+export async function deleteProject(
+  projectId: string,
+  identityPubkey?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const admin = await isAdmin();
+  const owner = identityPubkey ? await isProjectOwner(projectId, identityPubkey) : false;
+  if (!admin && !owner) return { ok: false, error: 'not authorized to delete this project' };
+
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: { tokens: { include: { sales: { include: { orders: true } } } } },
+    });
+    if (!project) return { ok: false, error: 'project not found' };
+
+    const tokenIds = project.tokens.map((t) => t.id);
+    const saleIds = project.tokens.flatMap((t) => t.sales.map((s) => s.id));
+    const orderIds = project.tokens.flatMap((t) => t.sales.flatMap((s) => s.orders.map((o) => o.id)));
+
+    await prisma.$transaction([
+      prisma.order.deleteMany({ where: { saleId: { in: saleIds } } }),
+      prisma.sale.deleteMany({ where: { tokenId: { in: tokenIds } } }),
+      prisma.token.deleteMany({ where: { projectId } }),
+      prisma.event.deleteMany({ where: { entityId: { in: [projectId, ...tokenIds, ...saleIds, ...orderIds] } } }),
+      prisma.project.delete({ where: { id: projectId } }),
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'delete failed' };
+  }
+  revalidatePath('/');
+  revalidatePath('/admin');
+  return { ok: true };
+}
+
+/** Admin form-action wrapper: delete a project by id from the admin page. */
+export async function deleteProjectForm(form: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const id = field(form, 'id');
+  if (id) await deleteProject(id);
+  revalidatePath('/admin');
+}
+
 export async function adminLogin(form: FormData): Promise<void> {
   const secret = field(form, 'secret');
   if (secret && secret === process.env.ADMIN_SECRET) {
