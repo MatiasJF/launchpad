@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ChangeEvent } from 'react';
-import { Button } from './ui';
+import { Button, NumberField } from './ui';
 import { createProject } from '../lib/actions';
 import { useWallet } from './WalletProvider';
 import { Markdown } from './Markdown';
@@ -164,9 +164,16 @@ export function SubmitForm() {
         </div>
       )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Field name="totalSupply" label="Total supply" type="number" />
-        <Field name="publicAllocation" label="Public allocation" type="number" />
-        <Field name="priceSats" label="Price (sats)" type="number" />
+        {[
+          { name: 'totalSupply', label: 'Total supply' },
+          { name: 'publicAllocation', label: 'Public allocation' },
+          { name: 'priceSats', label: 'Price (sats)' },
+        ].map((f) => (
+          <label key={f.name} className="flex flex-col gap-1.5">
+            <span className={labelCls}>{f.label}</span>
+            <NumberField name={f.name} min={0} />
+          </label>
+        ))}
       </div>
 
       <label className="flex flex-col gap-1.5">

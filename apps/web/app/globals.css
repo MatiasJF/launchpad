@@ -160,6 +160,17 @@
   main {
     min-height: calc(100dvh - 10rem);
   }
+  /* Hide the browser's generic number spinners everywhere — we render custom
+     chevron steppers (NumberField) styled to match the theme. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
   ::selection {
     background: color-mix(in srgb, var(--c-gold) 35%, transparent);
   }

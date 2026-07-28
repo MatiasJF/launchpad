@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { SaleCardVM } from '../lib/types';
-import { Button, StatusPill } from './ui';
+import { Button, StatusPill, NumberField } from './ui';
 import { Countdown } from './ui/Countdown';
 import { ShieldCheck } from './ui/icons';
 import { reserveOrder, confirmOrderPayment } from '../lib/order-actions';
@@ -125,14 +125,8 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
               {s.remaining.toLocaleString('en-US')} left · max
             </button>
           </div>
-          <input
-            type="number"
-            min={0}
-            max={s.remaining}
-            value={amount}
-            onChange={(e) => setAmount(Number(e.target.value))}
-            className="w-full rounded-md border border-line bg-elevated px-3 py-2.5 font-mono tabular-nums text-fg outline-none transition focus:border-gold"
-          />
+          <NumberField value={amount} onValueChange={setAmount} min={0} max={s.remaining} />
+
           <div className="mt-2 flex justify-between font-mono text-sm">
             <span className="text-muted">Total</span>
             <span className="tabular-nums text-fg">{cost.toLocaleString('en-US')} sats</span>
