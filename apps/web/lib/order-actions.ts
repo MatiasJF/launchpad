@@ -91,15 +91,18 @@ export async function claimOrderForSettlement(orderId: string): Promise<{ ok: bo
     data: { state: 'settling' },
   });
   if (res.count === 0) return { ok: false, error: 'order is not pending (already settling or settled)' };
-  revalidatePath('/admin');
+  // NB: deliberately NO revalidatePath here. This runs from inside the live
+  // SettleOrderButton; revalidating '/admin' re-renders the pending list, drops
+  // the now-'settling' order, and UNMOUNTS the component mid-settle (the flow
+  // then aborts silently). Only the terminal markOrderSettled revalidates.
   return { ok: true };
 }
 
 /** Release a settlement claim back to pending (settling → pending) after a failed attempt. */
 export async function releaseOrderClaim(orderId: string): Promise<void> {
   if (!(await isAdmin())) return;
+  // No revalidatePath — same unmount reason as claimOrderForSettlement.
   await prisma.order.updateMany({ where: { id: orderId, state: 'settling' }, data: { state: 'pending' } });
-  revalidatePath('/admin');
 }
 
 /** Mark an order settled after the operator delivered the tokens on-chain. */
