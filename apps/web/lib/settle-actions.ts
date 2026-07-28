@@ -131,8 +131,15 @@ export async function resolveCurrentPool(
   mintTxid: string,
 ): Promise<{ txid: string; vout: number } | { error: string }> {
   if (!/^[0-9a-fA-F]{64}$/.test(mintTxid)) return { error: 'invalid mint txid' };
-  const mintScript = await getOutputScriptHex(mintTxid, 0);
-  if (!mintScript) return { error: 'could not fetch mint output script' };
+  // Retry the mint fetch: right after issuance the mint may not be indexed by WoC
+  // yet, which used to make auto-resolve give up on mount. A few spaced retries
+  // ride out that propagation lag.
+  let mintScript: string | null = null;
+  for (let i = 0; i < 5 && !mintScript; i++) {
+    mintScript = await getOutputScriptHex(mintTxid, 0);
+    if (!mintScript && i < 4) await new Promise((r) => setTimeout(r, 2500));
+  }
+  if (!mintScript) return { error: 'could not fetch mint output script — the mint may still be confirming; retry shortly' };
   const ownerPkh = mintScript.substring(6, 46).toLowerCase();
   if (!/^[0-9a-f]{40}$/.test(ownerPkh)) return { error: 'could not derive owner pkh from mint' };
   const stasPrefix = `76a914${ownerPkh}88ac69`; // STAS token output locked to owner

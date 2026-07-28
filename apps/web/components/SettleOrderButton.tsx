@@ -39,8 +39,22 @@ export function SettleOrderButton({
   // 'resolving' while we walk the change chain to find the live pool UTXO.
   const [pool, setPool] = useState<'resolving' | 'resolved' | 'manual'>('resolving');
 
-  // Auto-resolve the CURRENT pool UTXO on mount so the operator never hand-tracks
-  // the moving outpoint (the mint default goes stale after the first settle).
+  // Auto-resolve the CURRENT pool UTXO so the operator never hand-tracks the
+  // moving outpoint (the mint default goes stale after the first settle).
+  async function resolvePool() {
+    setPool('resolving');
+    setError(null);
+    const res = await resolveCurrentPool(defaultTxid);
+    if ('error' in res) {
+      setPool('manual');
+      setError(`could not auto-resolve pool: ${res.error}`);
+    } else {
+      setSrcTxid(res.txid);
+      setSrcVout(res.vout);
+      setPool('resolved');
+    }
+  }
+
   useEffect(() => {
     let live = true;
     (async () => {
@@ -200,6 +214,15 @@ export function SettleOrderButton({
         <Button variant="primary" onClick={settle} disabled={status === 'working' || pool === 'resolving'}>
           {status === 'working' ? 'Settling…' : pool === 'resolving' ? 'Resolving…' : `Settle ${tokens}`}
         </Button>
+        {pool === 'manual' && (
+          <button
+            type="button"
+            onClick={resolvePool}
+            className="font-mono text-xs text-teal underline underline-offset-2 hover:opacity-80"
+          >
+            ↻ retry auto-resolve
+          </button>
+        )}
       </div>
       {status === 'working' && phase && (
         <p className="break-words font-mono text-xs text-muted">⏳ {phase}…</p>

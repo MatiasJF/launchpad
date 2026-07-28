@@ -154,15 +154,20 @@ export async function transferStas(
   }
 
   // 7. TX1: funding output sized to TX2's fee.
-  const FEE_RATE = 1;
+  //    FEE_RATE is sat/BYTE. BSV's standard is ~1 sat/KB (0.001 sat/byte); we use
+  //    0.05 sat/byte (= 50 sat/KB) — comfortably above miner min-relay yet ~20×
+  //    cheaper than the old 1 sat/byte, which overpaid by ~1000× (the ~9k charge).
+  //    A miner floor keeps a tiny tx from dropping below relay minimum.
+  const FEE_RATE = 0.05;
+  const MIN_FEE = 40; // sats — floor so a small tx still relays
   const estTx2Size =
-    5500 +
+    1600 + // STAS input unlocking (preimage + sig + pubkey) is large
     120 +
     200 +
     Math.ceil(newStasScriptHex.length / 2) +
     (changeStasScriptHex ? Math.ceil(changeStasScriptHex.length / 2) : 0) +
     34;
-  const tx2Fee = Math.ceil(estTx2Size * FEE_RATE);
+  const tx2Fee = Math.max(MIN_FEE, Math.ceil(estTx2Size * FEE_RATE));
   const fundingSats = tx2Fee + 500;
   let funding;
   try {

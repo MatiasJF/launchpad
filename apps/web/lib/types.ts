@@ -21,5 +21,7 @@ export interface SaleCardVM {
   about: string;
   totalSupply: number;
   publicAllocation: number;
+  /** Tokens still available to buy (allocation minus committed orders). */
+  remaining: number;
   allocations: Allocation[];
 }

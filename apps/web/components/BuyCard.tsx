@@ -107,12 +107,20 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
 
       {live && status !== 'placed' && (
         <div className="mt-4">
-          <label className="mb-1.5 block font-mono text-xs uppercase tracking-[0.08em] text-faint">
-            Amount ({s.ticker})
-          </label>
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <label className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Amount ({s.ticker})</label>
+            <button
+              type="button"
+              onClick={() => setAmount(s.remaining)}
+              className="font-mono text-xs text-teal underline underline-offset-2 hover:opacity-80"
+            >
+              {s.remaining.toLocaleString('en-US')} left · max
+            </button>
+          </div>
           <input
             type="number"
             min={0}
+            max={s.remaining}
             value={amount}
             onChange={(e) => setAmount(Number(e.target.value))}
             className="w-full rounded-md border border-line bg-elevated px-3 py-2.5 font-mono tabular-nums text-fg outline-none transition focus:border-gold"
@@ -121,6 +129,11 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
             <span className="text-muted">Total</span>
             <span className="tabular-nums text-fg">{cost.toLocaleString('en-US')} sats</span>
           </div>
+          {tokens > s.remaining && (
+            <p className="mt-1 font-mono text-xs text-danger">
+              only {s.remaining.toLocaleString('en-US')} {s.ticker} left — someone may buy first (final amount confirmed on-chain)
+            </p>
+          )}
         </div>
       )}
 

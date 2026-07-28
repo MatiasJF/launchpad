@@ -37,6 +37,11 @@ function mapSale(s: SaleWithRels): SaleCardVM {
   const soldTokens = s.orders
     .filter((o) => o.state === 'settled')
     .reduce((sum, o) => sum + Number(o.tokens), 0);
+  // Committed = anything holding allocation (paid or in delivery). This is what
+  // "remaining" reflects, matching the oversell guard's accounting.
+  const committed = s.orders
+    .filter((o) => o.state === 'pending' || o.state === 'settling' || o.state === 'settled')
+    .reduce((sum, o) => sum + Number(o.tokens), 0);
   return {
     projectId: s.token.project.id,
     payoutAddress: s.token.project.payoutAddress,
@@ -52,6 +57,7 @@ function mapSale(s: SaleWithRels): SaleCardVM {
     about: s.token.project.description ?? '',
     totalSupply: Number(s.token.totalSupply),
     publicAllocation: alloc,
+    remaining: Math.max(0, alloc - committed),
     allocations: parseAlloc(s.token.allocations),
   };
 }
