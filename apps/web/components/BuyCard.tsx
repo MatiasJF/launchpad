@@ -18,8 +18,8 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
 
   const tokens = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
   const cost = tokens * s.priceSats;
-  const live = s.status === 'live';
-  const scheduled = s.status === 'scheduled';
+  const open = s.saleState === 'open';
+  const scheduled = s.saleState === 'upcoming';
 
   async function buy() {
     setStatus('buying');
@@ -113,7 +113,7 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
         </div>
       )}
 
-      {live && status !== 'placed' && (
+      {open && status !== 'placed' && (
         <div className="mt-4">
           <div className="mb-1.5 flex items-baseline justify-between">
             <label className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Amount ({s.ticker})</label>
@@ -140,17 +140,17 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
       )}
 
       <div className="mt-5">
-        {live && status === 'placed' ? (
+        {open && status === 'placed' ? (
           <div className="rounded-md border border-teal/40 bg-teal/10 px-4 py-3 text-sm text-teal">
             ✓ Order placed — pending settlement. Tokens are delivered to your wallet once the operator settles.
           </div>
-        ) : live ? (
+        ) : open ? (
           <Button variant="primary" block onClick={buy} disabled={status === 'buying'}>
             {status === 'buying' ? 'Placing order…' : 'Buy on mainnet'}
           </Button>
         ) : scheduled ? (
           <Button variant="secondary" block disabled>
-            Not yet open
+            Not open yet
           </Button>
         ) : (
           <Button variant="secondary" block disabled>

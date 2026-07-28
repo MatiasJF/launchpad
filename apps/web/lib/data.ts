@@ -62,12 +62,21 @@ function mapSale(s: SaleWithRels): SaleCardVM {
   const committed = s.orders
     .filter((o) => o.state === 'pending' || o.state === 'settling' || o.state === 'settled')
     .reduce((sum, o) => sum + Number(o.tokens), 0);
+  // Effective buyability: live AND within [startsAt, endsAt). A future start or
+  // a passed end (or a non-live status) means it can't be bought.
+  const now = Date.now();
+  const started = !s.startsAt || s.startsAt.getTime() <= now;
+  const ended = !!s.endsAt && s.endsAt.getTime() <= now;
+  const saleState: 'open' | 'upcoming' | 'ended' =
+    s.status === 'live' && started && !ended ? 'open' : s.status === 'finalized' || ended ? 'ended' : 'upcoming';
+
   return {
     projectId: s.token.project.id,
     payoutAddress: s.token.project.payoutAddress,
     slug: s.token.project.slug,
     name: s.token.project.name,
     ticker: s.token.ticker,
+    saleState,
     logoUrl: s.token.project.logoUrl,
     bannerUrl: parseBanner(s.token.project.media),
     website: parseWebsite(s.token.project.links),

@@ -17,6 +17,8 @@ export interface SaleCardVM {
   website?: string | null;
   blurb: string;
   status: SaleStatus;
+  /** Effective buyability: open only if live AND within the start/end window. */
+  saleState: 'open' | 'upcoming' | 'ended';
   priceSats: number;
   soldPct: number;
   hue: number;

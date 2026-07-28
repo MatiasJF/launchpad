@@ -66,6 +66,13 @@ export async function reserveOrder(input: {
       const sale = project?.tokens.flatMap((t) => t.sales)[0];
       if (!sale) throw new Error('no sale found for this project');
 
+      // Sale must be OPEN: live and within its start/end window. This is the real
+      // gate (the UI hides the button, but the action must enforce it too).
+      const now = new Date();
+      if (sale.status !== 'live') throw new Error('this sale is not open for buying');
+      if (sale.startsAt && sale.startsAt > now) throw new Error('this sale has not started yet');
+      if (sale.endsAt && sale.endsAt <= now) throw new Error('this sale has ended');
+
       const remaining = await remainingForSale(tx, sale.id, sale.allocationForSale);
       if (want > remaining) throw new Error(`only ${remaining} tokens left in this sale (you asked for ${want})`);
 
