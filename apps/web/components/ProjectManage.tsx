@@ -38,7 +38,7 @@ export function ProjectManage({ p }: { p: ManageVM }) {
   const settled = p.orders.filter((o) => o.state === 'settled');
 
   return (
-    <div className="mx-auto max-w-[760px]">
+    <div className="reveal mx-auto max-w-[760px]">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-[2rem] font-semibold">{p.name}</h1>
         {p.token && <span className="font-mono text-sm text-faint">{p.token.ticker}</span>}

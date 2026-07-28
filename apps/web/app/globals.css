@@ -129,6 +129,7 @@
 @layer base {
   body {
     min-height: 100vh;
+    overflow-x: hidden; /* contain decorative ambient glows on mobile */
     background:
       radial-gradient(52% 38% at 84% -6%, color-mix(in srgb, var(--c-gold) 13%, transparent), transparent 68%),
       radial-gradient(44% 36% at 6% 2%, color-mix(in srgb, var(--c-violet) 15%, transparent), transparent 70%),

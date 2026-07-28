@@ -28,10 +28,11 @@ async function PendingList() {
 
   return (
     <div className="mt-4 flex flex-col gap-3">
-      {pending.map((p) => (
+      {pending.map((p, i) => (
         <div
           key={p.id}
-          className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-line bg-surface p-4"
+          className="card reveal flex flex-wrap items-center justify-between gap-4 p-4"
+          style={{ ['--i' as string]: i } as CSSProperties}
         >
           <div>
             <div className="flex items-center gap-2">
@@ -73,7 +74,7 @@ export default async function AdminPage() {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-[760px] px-6 py-10">
+      <main className="mx-auto max-w-[760px] px-4 py-8 sm:px-6 sm:py-10">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-[2rem] font-semibold">Admin</h1>
           {admin && (

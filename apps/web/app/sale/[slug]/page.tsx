@@ -22,8 +22,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">{label}</span>
+    <div className="flex flex-col gap-1 rounded-md border border-line bg-elevated/40 px-3 py-2.5">
+      <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-faint">{label}</span>
       <span className="font-mono text-base font-semibold tabular-nums text-fg">{value}</span>
     </div>
   );
@@ -37,15 +37,15 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-[1120px] px-6 py-10">
+      <main className="mx-auto max-w-[1120px] px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/#explore" className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted transition hover:text-fg">
           ← Back to explore
         </Link>
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px]">
-          <div>
+          <div className="reveal">
             <div
-              className="relative h-48 overflow-hidden rounded-lg border border-line"
+              className="relative h-44 overflow-hidden rounded-lg border border-line sm:h-48"
               style={
                 {
                   '--hue': s.hue,
@@ -86,7 +86,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
             </Section>
           </div>
 
-          <aside>
+          <aside className="reveal" style={{ ['--i' as string]: 2 } as CSSProperties}>
             <BuyCard s={s} />
             <ClaimTokens slug={s.slug} />
             <Link
