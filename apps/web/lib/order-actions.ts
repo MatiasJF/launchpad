@@ -105,6 +105,33 @@ export async function releaseOrderClaim(orderId: string): Promise<void> {
   await prisma.order.updateMany({ where: { id: orderId, state: 'settling' }, data: { state: 'pending' } });
 }
 
+/**
+ * A buyer's settled orders that are ready to register into their wallet — i.e.
+ * the operator delivered the tokens on-chain (state=settled, has a settlement
+ * txid). Keyed by the buyer's BRC-100 identity. Returns everything the client
+ * needs to internalize TX2:0 as a STAS basket insertion (txid + slug for the
+ * derivation keyID). Idempotency lives wallet-side (basket-based), so re-listing
+ * an already-registered order is harmless.
+ */
+export async function getBuyerClaimableOrders(buyerIdentity: string): Promise<
+  { orderId: string; txid: string; tokens: string; slug: string; ticker: string; projectName: string }[]
+> {
+  if (!buyerIdentity) return [];
+  const orders = await prisma.order.findMany({
+    where: { buyerIdentity, state: 'settled', txid: { not: null } },
+    include: { sale: { include: { token: { include: { project: true } } } } },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return orders.map((o) => ({
+    orderId: o.id,
+    txid: o.txid as string,
+    tokens: o.tokens.toString(),
+    slug: o.sale.token.project.slug,
+    ticker: o.sale.token.ticker,
+    projectName: o.sale.token.project.name,
+  }));
+}
+
 /** Mark an order settled after the operator delivered the tokens on-chain. */
 export async function markOrderSettled(orderId: string, transferTxid: string): Promise<void> {
   if (!(await isAdmin())) return;

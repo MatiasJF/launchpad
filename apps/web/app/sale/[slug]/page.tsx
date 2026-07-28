@@ -5,6 +5,7 @@ import { getSaleVMBySlug } from '../../../lib/data';
 import { SiteHeader } from '../../../components/SiteHeader';
 import { SiteFooter } from '../../../components/SiteFooter';
 import { BuyCard } from '../../../components/BuyCard';
+import { ClaimTokens } from '../../../components/ClaimTokens';
 import { StatusPill } from '../../../components/ui';
 import { TokenomicsBar } from '../../../components/ui/TokenomicsBar';
 
@@ -87,6 +88,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
 
           <aside>
             <BuyCard s={s} />
+            <ClaimTokens slug={s.slug} />
           </aside>
         </div>
       </main>

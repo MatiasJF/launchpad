@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./wallet": "./src/wallet/index.ts",
     "./issue": "./src/issue/index.ts",
-    "./settle": "./src/settle/index.ts"
+    "./settle": "./src/settle/index.ts",
+    "./receive": "./src/receive/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

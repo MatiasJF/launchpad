@@ -51,8 +51,11 @@ present, not implemented.
 - Landing + explore → `apps/web/app/page.tsx` · `apps/web/components/ExploreSection.tsx`
 - Project / sale detail → `apps/web/app/sale/[slug]/page.tsx`
 - Buy card (buyer flow: derive receive addr, pay, place order) → `apps/web/components/BuyCard.tsx`
-- Order server actions (place / settle) → `apps/web/lib/order-actions.ts`
-- Settle-order UI (admin, delivers tokens) → `apps/web/components/SettleOrderButton.tsx`
+- Order server actions (place / claim-settle / release / mark-settled / buyer-claimables) → `apps/web/lib/order-actions.ts`
+- Settle-order UI (admin, delivers tokens; auto-resolves pool) → `apps/web/components/SettleOrderButton.tsx`
+- Pool auto-resolution + spent-guard + broadcast → `apps/web/lib/settle-actions.ts` (`resolveCurrentPool`, `isOutputUnspent`, `broadcastRawTx`)
+- STAS receive-register (buyer internalizes delivered tokens) → `packages/bsv/src/receive` (`receiveStasToken`)
+- Buyer claim UI (register settled purchases into wallet) → `apps/web/components/ClaimTokens.tsx` (on sale page)
 - Submit a project → `apps/web/app/submit/page.tsx`
 - Admin approval → `apps/web/app/admin/page.tsx`
 - Backend API (sequence/settle) → `apps/web/app/api` _(planned)_

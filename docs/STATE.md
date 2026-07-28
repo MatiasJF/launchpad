@@ -111,6 +111,19 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
   correctly skipping the recipient (`a7dbb874…`) and BSV-change outputs. The
   operator no longer hand-tracks the moving UTXO.
 
+**Added 2026-07-28 — buyer receive-register (WEB-003 follow-up #2).** Delivered
+tokens land on-chain but the buyer's wallet doesn't track them until internalized.
+New `receiveStasToken` (`packages/bsv/src/receive`) does the one call that matters
+— `internalizeAction` as a **basket insertion** into `stas-tokens` — making the
+tokens render (`listOutputs`) and become spendable. Discovery-scan path (buyer
+doesn't hold the transfer BEEF): the settlement tx BEEF is fetched from-chain
+(`getSourceBeef`) and passed in; idempotency is basket-based (re-register = no-op).
+Buyer UI = `ClaimTokens` on the sale page: "Check my orders" → lists settled
+purchases → "Register in wallet" per order (customInstructions stamp the STAS
+derivation `protocolID/keyID=slug/counterparty=self` for portable render + spend).
+Server action `getBuyerClaimableOrders(identity)` lists a buyer's settled orders.
+Recipient token output is always TX2:0. **Not yet live-tested against a wallet.**
+
 **Multi-hop settlement proven (2026-07-28).** Two live buyer orders settled back-
 to-back off the same moving pool: settle #1 `73d34b30…` (100→buyer + 800 change),
 settle #2 `334b9213…` (100→buyer + 700 change). Settle #2 spent settle #1's change
