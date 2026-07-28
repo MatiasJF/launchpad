@@ -4,6 +4,19 @@ _Last updated: 2026-07-24 — by: P0 scaffold_
 
 ## Current phase
 
+**⚠️ COUNTERFEIT FIX — genesis issuance reworked (2026-07-28, ADR-024) — LIVE-TEST PENDING.**
+First live token read `counterfeit` in BSV Desktop: WoC back-to-genesis returned
+`no-genesis` at the mint because our single-output issuance had no contract
+ancestor. Fixed with the classic **contract → issue** genesis (`issueStasGenesis`,
+`packages/bsv/src/issue/genesis.ts`; wired into `IssueButton`): contract locks the
+supply to the redeem pkh (= tokenId anchor) with an OP_RETURN schema, issue spends
+it to mint genesis-valid STAS. Non-custodial (wallet signs both). `recordIssuance`
+de-admin-gated (owner issues). Script formats verified offline; on-chain
+authenticity is the live test. **Existing `fdr` token stays counterfeit — reissue.**
+Also fixed from the first live test: settlement fee ~20× cheaper (was 1 sat/byte →
+0.05); auto-resolve retries WoC indexing lag + manual retry button; buy card shows
+remaining and caps amount; payout autofill still flaky (manual paste works).
+
 **🏗️ THREE-ROLE MARKETPLACE RESHAPE (2026-07-28, ADR-023) — built, live-test pending.**
 The app was a single-operator demo (admin's wallet did everything; buyers didn't
 really pay). Restructured into platform / project / buyer, non-custodial throughout:

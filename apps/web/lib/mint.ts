@@ -2,7 +2,6 @@
 
 import { prisma } from '@launchpad/db';
 import { planMint, type MintPlan, type TokenSchema } from '@launchpad/bsv/issue';
-import { isAdmin } from './auth';
 
 /**
  * Build the STAS mint plan server-side (runs bsv/stas-js). The client passes the
@@ -17,9 +16,14 @@ export async function buildMintPlan(
   return planMint(schema, ownerPubkey, redemptionPubkey);
 }
 
-/** Record a completed issuance (the client already broadcast it via the wallet). */
+/**
+ * Record a completed issuance. Called from the project owner's dashboard after
+ * their wallet issued the genesis on-chain — NOT admin-gated (the owner, not the
+ * platform, issues). The on-chain signature is the real authority: only the
+ * owner's key could have produced a genesis for their derived token, so this is
+ * bookkeeping over an already-committed fact.
+ */
 export async function recordIssuance(projectId: string, txid: string, tokenId: string): Promise<void> {
-  if (!(await isAdmin())) return;
   if (!/^[0-9a-fA-F]{64}$/.test(txid)) return;
 
   const token = await prisma.token.findFirst({ where: { projectId } });

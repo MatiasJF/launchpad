@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react';
 import type { MintPlan } from '@launchpad/bsv/issue';
 import { Button } from './ui';
 import { buildMintPlan, recordIssuance } from '../lib/mint';
+import { broadcastRawTx } from '../lib/settle-actions';
 
 // Canonical STAS BRC-42 protocol id (ADR-021). Hardcoded here so the client
 // never imports @launchpad/bsv (which pulls the heavy bsv/stas-js libs).
@@ -63,24 +64,22 @@ export function IssueButton({
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const wallet = walletRef.current as any;
-      const res = await wallet.createAction({
-        description: `Issue ${symbol} ${fmt(supply)}`.slice(0, 50),
-        outputs: [
-          {
-            lockingScript: plan.stasScriptHex,
-            satoshis: plan.tokenSatoshis,
-            outputDescription: `STAS issuance ${symbol}`.slice(0, 50),
-            basket: 'stas-tokens',
-            tags: [symbol, 'issuance'],
-            customInstructions: JSON.stringify({ protocolID: STAS_PROTOCOL, keyID: `${slug}-owner`, tokenId: plan.tokenId }),
-          },
-        ],
-        options: { randomizeOutputs: false },
-      });
-      const id: string | undefined = res?.txid;
-      if (!id) throw new Error('the wallet did not return a txid');
-      await recordIssuance(projectId, id, plan.tokenId);
-      setTxid(id);
+      // Genesis mint = CONTRACT → ISSUE (so WoC back-to-genesis reads it as
+      // authentic, not counterfeit). Non-custodial: the wallet signs both txs.
+      const { issueStasGenesis } = await import('@launchpad/bsv/genesis');
+      const res = await issueStasGenesis(wallet, '', 'main', { slug, symbol, supply, splittable: true });
+      if (!res.ok) throw new Error(res.reason);
+
+      // Broadcast CONTRACT first (the issue tx spends it), then ISSUE — to the
+      // same node, since createAction doesn't reliably propagate.
+      const bc1 = await broadcastRawTx(res.contractRawTx, res.contractTxid);
+      if (!bc1.ok) throw new Error(`contract broadcast rejected: ${bc1.error}`);
+      const bc2 = await broadcastRawTx(res.issueRawTx, res.genesisTxid);
+      if (!bc2.ok) throw new Error(`issue broadcast rejected: ${bc2.error}`);
+
+      const genesis = bc2.txid || res.genesisTxid;
+      await recordIssuance(projectId, genesis, res.tokenId);
+      setTxid(genesis);
       setStatus('done');
     } catch (e) {
       setError(msg(e));
