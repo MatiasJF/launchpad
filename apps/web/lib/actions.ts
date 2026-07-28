@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@launchpad/db';
 import { ADMIN_COOKIE, isAdmin } from './auth';
 import { isIdentityPubkey } from './identity';
+import { isProjectOwner } from './account-actions';
 
 function field(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
@@ -80,6 +81,41 @@ export async function createProject(form: FormData): Promise<void> {
 
   revalidatePath('/admin');
   redirect('/submit?ok=1');
+}
+
+/**
+ * Update a project's display metadata from the owner dashboard. Owner-gated
+ * (identity must match the project owner). Set logo/website before (re)issuing so
+ * the metadata lands in the genesis OP_RETURN too. Empty string clears a field.
+ */
+export async function updateProjectMeta(input: {
+  projectId: string;
+  identityPubkey: string;
+  logoUrl: string;
+  website: string;
+  description: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!(await isProjectOwner(input.projectId, input.identityPubkey))) {
+    return { ok: false, error: 'not the project owner' };
+  }
+  const isHttps = (u: string) => /^https:\/\/\S+$/i.test(u);
+  const logoUrl = input.logoUrl.trim();
+  const website = input.website.trim();
+  try {
+    await prisma.project.update({
+      where: { id: input.projectId },
+      data: {
+        logoUrl: logoUrl === '' ? null : isHttps(logoUrl) ? logoUrl : undefined,
+        links: website === '' ? null : isHttps(website) ? JSON.stringify({ website }) : undefined,
+        description: input.description.trim() || null,
+      },
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'update failed' };
+  }
+  revalidatePath('/');
+  revalidatePath(`/project/${input.projectId}/manage`);
+  return { ok: true };
 }
 
 export async function adminLogin(form: FormData): Promise<void> {

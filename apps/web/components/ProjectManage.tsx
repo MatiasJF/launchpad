@@ -1,9 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from './ui';
 import { IssueButton } from './IssueButton';
 import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
+import { updateProjectMeta } from '../lib/actions';
 
 export type ManageVM = {
   projectId: string;
@@ -35,8 +37,24 @@ export type ManageVM = {
  */
 export function ProjectManage({ p }: { p: ManageVM }) {
   const { identityKey: identity, status, error, connect } = useWallet();
+  const [meta, setMeta] = useState({ logoUrl: p.logoUrl ?? '', website: p.website ?? '', description: p.description ?? '' });
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  async function saveMeta() {
+    if (!identity) return;
+    setSaveState('saving');
+    setSaveErr(null);
+    const res = await updateProjectMeta({ projectId: p.projectId, identityPubkey: identity, ...meta });
+    if (res.ok) setSaveState('saved');
+    else {
+      setSaveState('error');
+      setSaveErr(res.error ?? 'update failed');
+    }
+  }
 
   const isOwner = !!identity && identity === p.ownerIdentity;
+  const metaInput = 'rounded-md border border-line bg-elevated px-3 py-2.5 text-sm text-fg outline-none transition focus:border-gold';
   const pending = p.orders.filter((o) => o.state === 'pending');
   const settled = p.orders.filter((o) => o.state === 'settled');
 
@@ -75,6 +93,58 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               {p.payoutAddress ?? '— not set —'}
             </p>
             <p className="mt-1 text-xs text-muted">Buyers pay here; sale proceeds go straight to your wallet.</p>
+          </section>
+
+          {/* Editable display metadata */}
+          <section>
+            <h2 className="text-xl font-semibold">Project details</h2>
+            <p className="mt-1 text-sm text-muted">
+              Logo, website and description. Set these <strong>before issuing</strong> so they’re embedded in the
+              token’s on-chain metadata too.
+            </p>
+            <div className="mt-4 flex flex-col gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Logo URL (https, square)</span>
+                <input
+                  value={meta.logoUrl}
+                  onChange={(e) => setMeta((m) => ({ ...m, logoUrl: e.target.value }))}
+                  placeholder="https://…/logo.png"
+                  className={`${metaInput} font-mono`}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Website (https)</span>
+                <input
+                  value={meta.website}
+                  onChange={(e) => setMeta((m) => ({ ...m, website: e.target.value }))}
+                  placeholder="https://…"
+                  className={`${metaInput} font-mono`}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Description</span>
+                <textarea
+                  value={meta.description}
+                  onChange={(e) => setMeta((m) => ({ ...m, description: e.target.value }))}
+                  rows={3}
+                  className={metaInput}
+                />
+              </label>
+              <div className="flex items-center gap-3">
+                <Button variant="primary" onClick={saveMeta} disabled={saveState === 'saving'}>
+                  {saveState === 'saving' ? 'Saving…' : 'Save details'}
+                </Button>
+                {saveState === 'saved' && <span className="font-mono text-xs text-teal">✓ saved</span>}
+                {saveState === 'error' && <span className="font-mono text-xs text-danger">⚠ {saveErr}</span>}
+              </div>
+              {meta.logoUrl && (
+                <img
+                  src={meta.logoUrl}
+                  alt="logo preview"
+                  className="h-14 w-14 rounded-xl border border-line object-cover"
+                />
+              )}
+            </div>
           </section>
 
           {/* Issuance */}
