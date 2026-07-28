@@ -4,6 +4,7 @@ import { prisma } from '@launchpad/db';
 import type { Prisma } from '@launchpad/db';
 import { revalidatePath } from 'next/cache';
 import { isAdmin } from './auth';
+import { verifyPaymentToAddress } from './settle-actions';
 
 /**
  * How long a reservation holds its slice of the allocation before it lazily
@@ -99,16 +100,37 @@ export async function confirmOrderPayment(
   paymentTxid?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId }, include: { sale: true } });
-      if (!order) throw new Error('reservation not found');
-      if (order.state === 'pending' || order.state === 'settling' || order.state === 'settled') return; // already confirmed
-      if (order.state !== 'reserved') throw new Error(`order is ${order.state}, not reservable`);
+    // 1. Load the order + pricing/payout (read only) and run state checks.
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { sale: { include: { token: { include: { project: true } } } } },
+    });
+    if (!order) throw new Error('reservation not found');
+    if (order.state === 'pending' || order.state === 'settling' || order.state === 'settled') {
+      return { ok: true }; // already confirmed — idempotent
+    }
+    if (order.state !== 'reserved') throw new Error(`order is ${order.state}, not reservable`);
 
-      const remaining = await remainingForSale(tx, order.saleId, order.sale.allocationForSale, orderId);
-      if (order.tokens > remaining) {
-        throw new Error('reservation expired and the tokens were taken — please try again');
-      }
+    // 2. Verify payment ON-CHAIN before confirming (network call OUTSIDE any tx so
+    //    we don't hold a DB write lock while polling WoC). Cost is server-computed
+    //    (tokens × price) — we never trust the client's number. Proceeds go 100%
+    //    to the project's payout address.
+    const cost = order.tokens * order.sale.priceSats; // BigInt sats
+    if (cost > 0n) {
+      const payout = order.sale.token.project.payoutAddress;
+      if (!payout) throw new Error('this sale has no payout address configured');
+      if (!paymentTxid) throw new Error('payment is required for this sale');
+      const v = await verifyPaymentToAddress(paymentTxid, payout, Number(cost));
+      if (!v.ok) throw new Error(v.error ?? 'payment could not be verified on-chain');
+    }
+
+    // 3. Short transaction: re-check the order is still reservable + allocation
+    //    still available, then flip reserved → pending (settle-eligible).
+    await prisma.$transaction(async (tx) => {
+      const fresh = await tx.order.findUnique({ where: { id: orderId }, include: { sale: true } });
+      if (!fresh || fresh.state !== 'reserved') throw new Error('reservation is no longer pending confirmation');
+      const remaining = await remainingForSale(tx, fresh.saleId, fresh.sale.allocationForSale, orderId);
+      if (fresh.tokens > remaining) throw new Error('reservation expired and the tokens were taken — please try again');
       await tx.order.update({
         where: { id: orderId },
         data: { state: 'pending', satsPaid: BigInt(Math.floor(satsPaid)), paymentTxid: paymentTxid ?? null },

@@ -74,6 +74,46 @@ export async function isOutputUnspent(
 }
 
 /**
+ * Verify on-chain that a payment tx actually pays a given address at least
+ * `minSats`. Sums all outputs to `address` in the tx (WoC exposes standard-script
+ * addresses on each vout). Retries briefly so a just-broadcast payment has time
+ * to propagate to WoC's node. This is what makes a "buy" real — the order only
+ * becomes settle-eligible once the seller's payout is confirmed on-chain.
+ */
+export async function verifyPaymentToAddress(
+  txid: string,
+  address: string,
+  minSats: number,
+): Promise<{ ok: boolean; paidSats?: number; error?: string }> {
+  if (!/^[0-9a-fA-F]{64}$/.test(txid)) return { ok: false, error: 'invalid payment txid' };
+  if (!address) return { ok: false, error: 'no payout address to verify against' };
+
+  const attempts = 6; // ~ up to ~15s to allow mempool propagation
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`, { cache: 'no-store' });
+      if (res.ok) {
+        const tx = (await res.json()) as { vout?: { value?: number; scriptPubKey?: { addresses?: string[] } }[] };
+        let paid = 0;
+        for (const o of tx.vout ?? []) {
+          if ((o.scriptPubKey?.addresses ?? []).includes(address) && typeof o.value === 'number') {
+            paid += Math.round(o.value * 1e8);
+          }
+        }
+        if (paid >= minSats) return { ok: true, paidSats: paid };
+        // Tx found but underpays — this won't improve on retry; fail fast.
+        return { ok: false, paidSats: paid, error: `paid ${paid} sats to ${address}, need ${minSats}` };
+      }
+      // Not indexed yet (likely 404) — wait and retry.
+    } catch {
+      /* transient — retry */
+    }
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  return { ok: false, error: 'payment tx not found on-chain yet — it may still be propagating; try confirming again' };
+}
+
+/**
  * Resolve the CURRENT pool UTXO for a token by walking its change chain on-chain.
  *
  * The pool moves after every partial send: each settle spends the pool STAS

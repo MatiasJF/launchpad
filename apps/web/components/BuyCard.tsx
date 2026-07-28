@@ -49,15 +49,20 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
       });
       if (!reserved.ok || !reserved.orderId) throw new Error(reserved.error ?? 'could not reserve tokens');
 
-      // Pay the seller, if a payout address is configured on the project.
+      // Pay the seller. Payment is REQUIRED when the sale has a price — the order
+      // only becomes settle-eligible once this is verified on-chain server-side.
+      // Broadcast immediately (not delayed) so verification can find it.
       let paymentTxid: string | undefined;
-      if (s.payoutAddress && cost > 0) {
+      if (cost > 0) {
+        if (!s.payoutAddress) throw new Error('this sale has no payout address configured yet');
         const lockingScript = new P2PKH().lock(s.payoutAddress).toHex();
         const res = (await wallet.createAction({
           description: `Buy ${tokens} ${s.ticker}`.slice(0, 50),
           outputs: [{ lockingScript, satoshis: cost, outputDescription: `pay ${s.ticker} sale`.slice(0, 50) }],
+          options: { acceptDelayedBroadcast: false },
         })) as { txid?: string };
         paymentTxid = res?.txid;
+        if (!paymentTxid) throw new Error('payment was not completed in the wallet');
       }
 
       const r = await confirmOrderPayment(reserved.orderId, cost, paymentTxid);
