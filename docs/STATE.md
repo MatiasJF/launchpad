@@ -111,6 +111,19 @@ Areas: OPS · KB · DB · BSV · WEB · ADMIN
   correctly skipping the recipient (`a7dbb874…`) and BSV-change outputs. The
   operator no longer hand-tracks the moving UTXO.
 
+**Added 2026-07-28 — concurrency hardening (ADR-022).** Two layers:
+· **Buy layer** — `placeOrder` now reserves atomically inside a transaction
+  (sums `pending|settling|settled` tokens, rejects crossing `allocationForSale`).
+  Concurrent buys can't oversell; buys scale freely (no on-chain contention).
+· **Settle layer** — single pool UTXO is inherently serial. Added an order-level
+  claim (`pending→settling` via one conditional UPDATE) so a double-click / second
+  admin tab can't build two transfers for the same order. Released on failure,
+  finalized on success. Pool-level throughput at scale = **batch settlement**
+  (one tx, N recipient outputs) + optional **UTXO sharding**; settlement stays
+  operator-sequenced, pipelined against unconfirmed change. Order.state gained
+  `settling`. Follow-ups: reserve-then-pay (buyer pays before placeOrder today),
+  stale-`settling` sweep, Postgres atomic-counter guard.
+
 ## Known issues / blockers
 
 - BSV-003 settlement is **VERIFIED ON-CHAIN** (tx 1506cf…11e3). `buildChainedAtomicBeef`'s

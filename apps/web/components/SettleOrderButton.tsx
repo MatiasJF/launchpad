@@ -9,7 +9,7 @@ import {
   isOutputUnspent,
   resolveCurrentPool,
 } from '../lib/settle-actions';
-import { markOrderSettled } from '../lib/order-actions';
+import { markOrderSettled, claimOrderForSettlement, releaseOrderClaim } from '../lib/order-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
 const ORIGINATOR = 'launchpad.local';
@@ -66,7 +66,15 @@ export function SettleOrderButton({
     setPhase('starting');
     // Nothing here can now finish silently: every exit sets either a txid or a
     // human-readable error that names the phase it stopped at (see console too).
+    let claimed = false;
     try {
+      // Claim the order first (pending → settling). Serializes this order against
+      // a double-click or a second admin tab before we ever touch the wallet.
+      setPhase('claiming order');
+      const claim = await claimOrderForSettlement(orderId);
+      if (!claim.ok) throw new Error(claim.error ?? 'could not claim order for settlement');
+      claimed = true;
+
       setPhase('fetching pool UTXO');
       const info = await getOutputInfo(srcTxid, srcVout);
       if (!info) throw new Error('could not fetch the pool UTXO (script + balance) — is it confirmed & unspent?');
@@ -146,6 +154,16 @@ export function SettleOrderButton({
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('[settle] failed at phase:', phase, e);
+      // Release the claim so the order returns to the pending list and can be
+      // retried (e.g. after pointing at the correct pool UTXO). Nothing landed
+      // on-chain on a thrown path — broadcast is the only thing that commits.
+      if (claimed) {
+        try {
+          await releaseOrderClaim(orderId);
+        } catch {
+          /* best-effort release; a stuck 'settling' is swept by a future job */
+        }
+      }
       const raw = e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
       setError(`[${phase}] ${raw || '(empty error — see browser console)'}`);
       setStatus('idle');
