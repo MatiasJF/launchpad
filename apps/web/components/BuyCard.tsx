@@ -78,7 +78,7 @@ export function BuyCard({ s }: { s: SaleCardVM }) {
   }
 
   return (
-    <div className="sticky top-20 overflow-hidden rounded-lg border border-line bg-surface p-5 shadow-[var(--shadow-2)]">
+    <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-5 shadow-[var(--shadow-2)]">
       <span
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-px"
