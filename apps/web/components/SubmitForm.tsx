@@ -43,13 +43,24 @@ export function SubmitForm() {
       await wallet.waitForAuthentication({});
       const { publicKey: identity } = await wallet.getPublicKey({ identityKey: true });
       setIdentityPubkey(identity);
-      // Derive a payout address from a dedicated wallet key (the seller controls it).
-      const { publicKey: payoutPub } = await wallet.getPublicKey({
-        protocolID: PAYOUT_PROTOCOL,
-        keyID: 'payout',
-        counterparty: 'self',
-      });
-      setPayoutAddress(PublicKey.fromString(payoutPub).toAddress().toString());
+      // Best-effort payout autofill from a dedicated wallet key (seller controls
+      // it). If derivation isn't supported by the wallet, fall back to the
+      // identity-key address, then leave it for manual paste — never block the
+      // form on this (the field stays editable regardless).
+      try {
+        const { publicKey: payoutPub } = await wallet.getPublicKey({
+          protocolID: PAYOUT_PROTOCOL,
+          keyID: 'payout',
+          counterparty: 'self',
+        });
+        setPayoutAddress(PublicKey.fromString(payoutPub).toAddress().toString());
+      } catch {
+        try {
+          setPayoutAddress(PublicKey.fromString(identity).toAddress().toString());
+        } catch {
+          /* leave blank — user pastes a payout address */
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
