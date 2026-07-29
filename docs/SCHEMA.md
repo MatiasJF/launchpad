@@ -59,6 +59,17 @@ Fields: `id`, `saleId → Sale`, `buyerIdentity` (BRC-100 pubkey), `kind`
 (default `instant_buy`), `tokens` (BigInt), `satsPaid` (BigInt), `state`
 (default `pending`), `txid?`, `refundTxid?`, timestamps.
 
+### Pledge
+
+A SIGHASH_ANYONECANPAY assurance-contract pledge for an escrow presale (ADR-025).
+Non-custodial: only the contributor's `0xC1` signature + their exact-value UTXO
+outpoint are stored; funds stay in the contributor's wallet until the assurance
+tx is assembled + broadcast on success.
+Fields: `id`, `saleId → Sale`, `contributor` (BRC-100 pubkey), `receiveAddress`,
+the pledged UTXO (`txid`, `vout`, `satoshis`, `scriptHex`), the pledge signature
+(`sigHex`, `pubkeyHex`), `derivationPrefix?`/`derivationSuffix?`, `state`
+(`pledged` · `withdrawn` · `assembled` · `expired`), timestamps.
+
 ### Event
 
 Append-only audit ledger.

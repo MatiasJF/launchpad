@@ -81,10 +81,41 @@ model Sale {
   hardCap           BigInt?
   status            String    @default("scheduled") // scheduled | live | finalized | failed
   orders            Order[]
+  pledges           Pledge[]
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([tokenId])
+}
+
+/// A SIGHASH_ANYONECANPAY assurance-contract pledge for an escrow presale
+/// (ADR-025). The contributor signed their OWN exact-value UTXO with 0xC1 over
+/// the fixed soft-cap output; funds stay in their wallet until the assurance tx
+/// is assembled + broadcast on success. Non-custodial — we only store the
+/// signature + outpoint, never keys or funds.
+model Pledge {
+  id             String   @id @default(cuid())
+  saleId         String
+  sale           Sale     @relation(fields: [saleId], references: [id])
+  contributor    String // BRC-100 identity pubkey of the pledger
+  receiveAddress String // where their STAS tokens are delivered on success
+  // the pledged UTXO (contributor-owned, exact denomination)
+  txid           String
+  vout           Int
+  satoshis       BigInt
+  scriptHex      String // the UTXO's locking script (P2PKH)
+  // the 0xC1 pledge signature + pubkey to rebuild the input's unlocking script
+  sigHex         String
+  pubkeyHex      String
+  // derivation of the pledged key (so it can be re-derived if needed)
+  derivationPrefix String?
+  derivationSuffix String?
+  state          String   @default("pledged") // pledged | withdrawn | assembled | expired
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([saleId])
+  @@index([contributor])
 }
 
 /// A buy (instant) or contribution (escrow) against a sale.
