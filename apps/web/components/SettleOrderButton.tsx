@@ -88,8 +88,22 @@ export function SettleOrderButton({
       if (!claim.ok) throw new Error(claim.error ?? 'could not claim order for settlement');
       claimed = true;
 
+      // Re-resolve the pool FRESH at settle time. After settling a sibling order
+      // the pool has moved, so the value resolved on page-load is stale — walk the
+      // chain again now. Fall back to the field value if resolution fails.
+      setPhase('resolving current pool');
+      let poolTxid = srcTxid;
+      let poolVout = srcVout;
+      const fresh = await resolveCurrentPool(defaultTxid);
+      if (!('error' in fresh)) {
+        poolTxid = fresh.txid;
+        poolVout = fresh.vout;
+        setSrcTxid(fresh.txid);
+        setSrcVout(fresh.vout);
+      }
+
       setPhase('fetching pool UTXO');
-      const info = await getOutputInfo(srcTxid, srcVout);
+      const info = await getOutputInfo(poolTxid, poolVout);
       if (!info) throw new Error('could not fetch the pool UTXO (script + balance) — is it confirmed & unspent?');
       if (tokens > info.satoshis) throw new Error(`pool holds ${info.satoshis} tokens; order needs ${tokens}`);
 
@@ -97,10 +111,10 @@ export function SettleOrderButton({
       // left a stale txid (e.g. the mint, already consumed by an earlier
       // settle) the miner would reject TX2 with a cryptic "Missing inputs".
       // Catch it here with a precise message instead.
-      const spent = await isOutputUnspent(srcTxid, srcVout);
+      const spent = await isOutputUnspent(poolTxid, poolVout);
       if (spent.unspent === false) {
         throw new Error(
-          `pool UTXO ${srcTxid.slice(0, 10)}…:${srcVout} is already SPENT` +
+          `pool UTXO ${poolTxid.slice(0, 10)}…:${poolVout} is already SPENT` +
             (spent.spentBy ? ` (by ${spent.spentBy.slice(0, 10)}…)` : '') +
             ' — enter the CURRENT pool UTXO. Its txid:vout changes after every settle.',
         );
@@ -110,7 +124,7 @@ export function SettleOrderButton({
       // Required so we can spend a pool UTXO that isn't in the wallet basket
       // (e.g. token change from an earlier transfer).
       setPhase('fetching source BEEF');
-      const sourceBeef = await getSourceBeef(srcTxid);
+      const sourceBeef = await getSourceBeef(poolTxid);
       if (!sourceBeef) throw new Error('could not fetch source BEEF — the pool tx must be confirmed (mined) to settle');
 
       setPhase('connecting wallet');
@@ -122,8 +136,8 @@ export function SettleOrderButton({
       setPhase('building + broadcasting transfer (approve in wallet)');
       const res = await transferStas(wallet as never, identityKey, 'main', {
         source: {
-          txid: srcTxid,
-          vout: srcVout,
+          txid: poolTxid,
+          vout: poolVout,
           scriptHex: info.scriptHex,
           satoshis: info.satoshis,
           beef: sourceBeef,
