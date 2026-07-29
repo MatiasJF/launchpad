@@ -18,6 +18,8 @@ import { Beef } from '@bsv/sdk';
 import { createTokenFundingOutput } from '../settle/twoTx/fundingOutput';
 import { BRC29_PROTOCOL_ID } from '../settle/twoTx/p2pkhInput';
 
+export * from './assemble';
+
 const ORIGINATOR = 'launchpad.pledge';
 /** ANYONECANPAY (0x80) | ALL (0x01) | FORKID (0x40). Never 0x81 (no-FORKID) on BSV. */
 const SIGHASH_ASSURANCE = 0xc1;
