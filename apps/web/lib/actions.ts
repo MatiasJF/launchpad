@@ -201,8 +201,25 @@ export async function updateSaleEscrow(input: {
       where: { id: input.projectId },
       include: { tokens: { include: { sales: true } } },
     });
+    const token = project?.tokens[0];
     const sale = project?.tokens.flatMap((t) => t.sales)[0];
-    if (!sale) return { ok: false, error: 'no sale found' };
+    if (!sale || !token) return { ok: false, error: 'no sale found' };
+
+    // Guard against selling more tokens than exist: tokens owed at the hard cap
+    // (hardCap / price) must fit the sale allocation (or the total supply).
+    if (input.type === 'escrow_presale') {
+      const price = Number(sale.priceSats) || 0;
+      if (price <= 0) return { ok: false, error: 'set a token price before configuring a presale' };
+      const maxTokens = Number(sale.allocationForSale) || Number(token.totalSupply);
+      const tokensAtHardCap = Math.floor(input.hardCapSats / price);
+      if (tokensAtHardCap > maxTokens) {
+        return {
+          ok: false,
+          error: `hard cap sells ${tokensAtHardCap} tokens but only ${maxTokens} are available — lower the hard cap or the price, or issue more supply`,
+        };
+      }
+    }
+
     await prisma.sale.update({
       where: { id: sale.id },
       data:

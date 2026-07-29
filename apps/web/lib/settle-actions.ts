@@ -6,16 +6,19 @@
  */
 export async function getOutputScriptHex(txid: string, vout: number): Promise<string | null> {
   if (!/^[0-9a-fA-F]{64}$/.test(txid) || !Number.isInteger(vout) || vout < 0) return null;
-  try {
-    const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/out/${vout}/hex`, {
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    const hex = (await res.text()).trim();
-    return /^[0-9a-fA-F]+$/.test(hex) ? hex : null;
-  } catch {
-    return null;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/out/${vout}/hex`, { cache: 'no-store' });
+      if (res.ok) {
+        const hex = (await res.text()).trim();
+        return /^[0-9a-fA-F]+$/.test(hex) ? hex : null;
+      }
+    } catch {
+      /* transient — retry */
+    }
+    if (i < 2) await new Promise((r) => setTimeout(r, 1500));
   }
+  return null;
 }
 
 /** Fetch a confirmed output's script hex + satoshi value (the STAS token balance). */
@@ -54,23 +57,29 @@ export async function isOutputUnspent(
   if (!/^[0-9a-fA-F]{64}$/.test(txid) || !Number.isInteger(vout) || vout < 0) {
     return { unspent: null };
   }
-  try {
-    const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/${vout}/spent`, {
-      cache: 'no-store',
-    });
-    if (res.status === 404) return { unspent: true };
-    if (!res.ok) return { unspent: null };
-    const body = (await res.text()).trim();
-    let spentBy: string | undefined;
+  // Retry transient WoC failures (rate limits / 5xx) instead of giving up — a
+  // hiccup here otherwise breaks pool auto-resolution.
+  for (let i = 0; i < 4; i++) {
     try {
-      spentBy = (JSON.parse(body) as { txid?: string }).txid;
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/${vout}/spent`, { cache: 'no-store' });
+      if (res.status === 404) return { unspent: true };
+      if (res.ok) {
+        const body = (await res.text()).trim();
+        let spentBy: string | undefined;
+        try {
+          spentBy = (JSON.parse(body) as { txid?: string }).txid;
+        } catch {
+          /* non-JSON body — leave spentBy undefined */
+        }
+        return { unspent: false, spentBy };
+      }
+      // non-ok, non-404 → transient; retry
     } catch {
-      /* non-JSON body — leave spentBy undefined */
+      /* network error → retry */
     }
-    return { unspent: false, spentBy };
-  } catch {
-    return { unspent: null };
+    if (i < 3) await new Promise((r) => setTimeout(r, 1500));
   }
+  return { unspent: null };
 }
 
 /**
