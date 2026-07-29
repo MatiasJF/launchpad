@@ -11,5 +11,6 @@ export * from './notImplemented';
 export * from './issue';
 export * from './settle';
 export * from './receive';
+export * from './pledge';
 export * from './spv';
 export * from './wallet';

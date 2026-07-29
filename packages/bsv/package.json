@@ -11,7 +11,8 @@
     "./issue": "./src/issue/index.ts",
     "./settle": "./src/settle/index.ts",
     "./receive": "./src/receive/index.ts",
-    "./genesis": "./src/issue/genesis.ts"
+    "./genesis": "./src/issue/genesis.ts",
+    "./pledge": "./src/pledge/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
