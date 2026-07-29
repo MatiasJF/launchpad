@@ -19,6 +19,13 @@ export interface SaleCardVM {
   status: SaleStatus;
   /** Effective buyability: open only if live AND within the start/end window. */
   saleState: 'open' | 'upcoming' | 'ended';
+  /** instant | escrow_presale */
+  type: string;
+  saleId: string;
+  softCapSats: number;
+  hardCapSats: number;
+  pledgeUnitSats: number;
+  raisedSats: number;
   priceSats: number;
   soldPct: number;
   hue: number;

@@ -144,9 +144,30 @@ export async function markAssemblyBroadcast(
   if (!sale) return { ok: false, error: 'sale not found' };
   if (!(await isProjectOwner(sale.token.projectId, identityPubkey))) return { ok: false, error: 'not the project owner' };
   if (!/^[0-9a-fA-F]{64}$/.test(assuranceTxid)) return { ok: false, error: 'invalid assurance txid' };
-  await prisma.pledge.updateMany({ where: { id: { in: pledgeIds } }, data: { state: 'assembled' } });
-  await prisma.sale.update({ where: { id: saleId }, data: { status: 'finalized' } });
-  await prisma.event.create({ data: { entity: 'Sale', entityId: saleId, type: 'assurance', payloadHash: assuranceTxid } });
+  const price = Number(sale.priceSats) || 1;
+
+  const assembled = await prisma.pledge.findMany({ where: { id: { in: pledgeIds }, saleId } });
+  await prisma.$transaction([
+    prisma.pledge.updateMany({ where: { id: { in: pledgeIds } }, data: { state: 'assembled' } }),
+    prisma.sale.update({ where: { id: saleId }, data: { status: 'finalized' } }),
+    prisma.event.create({ data: { entity: 'Sale', entityId: saleId, type: 'assurance', payloadHash: assuranceTxid } }),
+    // Turn each funded pledge into a settle-eligible Order so token delivery
+    // reuses the proven settlement flow (Orders-to-settle tab / SettleOrderButton).
+    ...assembled.map((p) =>
+      prisma.order.create({
+        data: {
+          saleId,
+          buyerIdentity: p.contributor,
+          receiveAddress: p.receiveAddress,
+          kind: 'escrow_contribution',
+          tokens: BigInt(Math.floor(Number(p.satoshis) / price)),
+          satsPaid: p.satoshis,
+          state: 'pending',
+          paymentTxid: assuranceTxid,
+        },
+      }),
+    ),
+  ]);
   revalidatePath('/');
   return { ok: true };
 }

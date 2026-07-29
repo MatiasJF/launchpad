@@ -175,6 +175,55 @@ export async function updateSaleSchedule(input: {
 }
 
 /**
+ * Owner sets the escrow-presale terms (ADR-025): sale type, soft/hard cap, and the
+ * fixed pledge unit. Caps must be whole multiples of the pledge unit so pledges
+ * compose exactly. Owner-gated.
+ */
+export async function updateSaleEscrow(input: {
+  projectId: string;
+  identityPubkey: string;
+  type: 'instant' | 'escrow_presale';
+  softCapSats: number;
+  hardCapSats: number;
+  pledgeUnitSats: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!(await isProjectOwner(input.projectId, input.identityPubkey))) {
+    return { ok: false, error: 'not the project owner' };
+  }
+  if (input.type === 'escrow_presale') {
+    const { softCapSats: soft, hardCapSats: hard, pledgeUnitSats: unit } = input;
+    if (unit <= 0) return { ok: false, error: 'pledge unit must be positive' };
+    if (soft <= 0 || soft % unit !== 0) return { ok: false, error: 'soft cap must be a positive multiple of the pledge unit' };
+    if (hard < soft || hard % unit !== 0) return { ok: false, error: 'hard cap must be ≥ soft cap and a multiple of the pledge unit' };
+  }
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: input.projectId },
+      include: { tokens: { include: { sales: true } } },
+    });
+    const sale = project?.tokens.flatMap((t) => t.sales)[0];
+    if (!sale) return { ok: false, error: 'no sale found' };
+    await prisma.sale.update({
+      where: { id: sale.id },
+      data:
+        input.type === 'escrow_presale'
+          ? {
+              type: 'escrow_presale',
+              softCap: BigInt(Math.floor(input.softCapSats)),
+              hardCap: BigInt(Math.floor(input.hardCapSats)),
+              pledgeUnitSats: BigInt(Math.floor(input.pledgeUnitSats)),
+            }
+          : { type: 'instant' },
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'update failed' };
+  }
+  revalidatePath('/');
+  revalidatePath(`/project/${input.projectId}/manage`);
+  return { ok: true };
+}
+
+/**
  * Delete a project and everything under it (token → sale → orders, plus events).
  * Allowed for the project OWNER (pass identity) or the platform ADMIN. This only
  * removes DB records — any tokens already issued on-chain still exist on mainnet.

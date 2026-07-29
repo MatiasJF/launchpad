@@ -235,3 +235,17 @@ Logo/banner accept PNG/ICO/JPG/WEBP uploads. On-chain schema still URL-only for 
 injection), links restricted to http(s), images to https — headings, lists, links,
 tables and inline images with zero XSS surface. `components/Markdown.tsx`, `.md`
 styles in globals.css. Sale-page About renders it; dashboard has a live preview.
+
+**🏗️ L2 ESCROW PRESALE — built (2026-07-29, ADR-025), live-test pending.** Trustless
+soft-cap presale via SIGHASH_ANYONECANPAY dominant-assurance contract, non-custodial.
+Verified offline: an `0xC1` pledge signed alone still verifies after other inputs join.
+· **Engine (packages/bsv):** `createPledge` (mint exact-value UTXO + 0xC1 sign, no
+  broadcast) · `assembleAssuranceTx` (pledges + fee input → fixed soft-cap output).
+· **Flow:** owner configures escrow (Presale tab: type/softCap/hardCap/pledgeUnit) →
+  contributor pledges on the sale page (`ContributeCard`; funds stay in their wallet)
+  → when soft cap met, owner assembles + broadcasts (Presale tab) → each funded pledge
+  becomes a settle-eligible Order → tokens delivered via the existing settlement flow.
+· **Trustless:** intake, refund (nothing taken), emergency withdraw (spend the UTXO).
+  **Not trustless:** delivery is operator-signed (classic STAS can't atomic-deliver in
+  the crowd tx). Files: `packages/bsv/src/pledge/`, `apps/web/lib/escrow-actions.ts`,
+  `apps/web/components/ContributeCard.tsx`, Presale tab in `ProjectManage.tsx`.

@@ -3,7 +3,11 @@ import type { Prisma } from '@launchpad/db';
 import type { SaleStatus } from '@launchpad/core';
 import type { Allocation, SaleCardVM } from './types';
 
-const saleInclude = { token: { include: { project: true } }, orders: true } satisfies Prisma.SaleInclude;
+const saleInclude = {
+  token: { include: { project: true } },
+  orders: true,
+  pledges: true,
+} satisfies Prisma.SaleInclude;
 type SaleWithRels = Prisma.SaleGetPayload<{ include: typeof saleInclude }>;
 
 function hueFromSlug(slug: string): number {
@@ -84,6 +88,14 @@ function mapSale(s: SaleWithRels): SaleCardVM {
     status: s.status as SaleStatus,
     priceSats: Number(s.priceSats),
     soldPct: alloc > 0 ? Math.round((soldTokens / alloc) * 100) : 0,
+    type: s.type,
+    saleId: s.id,
+    softCapSats: Number(s.softCap ?? 0n),
+    hardCapSats: Number(s.hardCap ?? 0n),
+    pledgeUnitSats: Number(s.pledgeUnitSats ?? 0n),
+    raisedSats: s.pledges
+      .filter((p) => p.state === 'pledged' || p.state === 'assembled')
+      .reduce((sum, p) => sum + Number(p.satoshis), 0),
     hue: hueFromSlug(s.token.project.slug),
     countdown: countdownFrom(s.status === 'scheduled' ? s.startsAt : s.endsAt),
     about: s.token.project.description ?? '',

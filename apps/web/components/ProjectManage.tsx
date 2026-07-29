@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, type ChangeEvent } from 'react';
-import { Button } from './ui';
+import { Button, NumberField } from './ui';
 import { IssueButton } from './IssueButton';
 import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
-import { updateProjectMeta, updateSaleSchedule, deleteProject } from '../lib/actions';
+import { updateProjectMeta, updateSaleSchedule, deleteProject, updateSaleEscrow } from '../lib/actions';
+import { getPledgesForAssembly, markAssemblyBroadcast } from '../lib/escrow-actions';
+import { broadcastRawTx } from '../lib/settle-actions';
 import { Markdown } from './Markdown';
 
 export type ManageVM = {
@@ -19,7 +21,17 @@ export type ManageVM = {
   logoUrl: string | null;
   bannerUrl: string | null;
   website: string | null;
-  sale: { status: string; startsAt: string | null; endsAt: string | null } | null;
+  sale: {
+    id: string;
+    status: string;
+    startsAt: string | null;
+    endsAt: string | null;
+    type: string;
+    softCapSats: number;
+    hardCapSats: number;
+    pledgeUnitSats: number;
+    raisedSats: number;
+  } | null;
   token: { ticker: string; supply: number; issuanceTxid: string | null; tokenId: string | null } | null;
   orders: {
     id: string;
@@ -116,7 +128,70 @@ export function ProjectManage({ p }: { p: ManageVM }) {
     }
   }
 
-  const [tab, setTab] = useState<'details' | 'schedule' | 'issuance' | 'orders' | 'danger'>('details');
+  const [tab, setTab] = useState<'details' | 'schedule' | 'presale' | 'issuance' | 'orders' | 'danger'>('details');
+
+  const [esc, setEsc] = useState({
+    type: p.sale?.type ?? 'instant',
+    softCapSats: p.sale?.softCapSats ?? 0,
+    hardCapSats: p.sale?.hardCapSats ?? 0,
+    pledgeUnitSats: p.sale?.pledgeUnitSats ?? 0,
+  });
+  const [escState, setEscState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [escErr, setEscErr] = useState<string | null>(null);
+  async function saveEscrow() {
+    if (!identity) return;
+    setEscState('saving');
+    setEscErr(null);
+    const res = await updateSaleEscrow({
+      projectId: p.projectId,
+      identityPubkey: identity,
+      type: esc.type as 'instant' | 'escrow_presale',
+      softCapSats: esc.softCapSats,
+      hardCapSats: esc.hardCapSats,
+      pledgeUnitSats: esc.pledgeUnitSats,
+    });
+    if (res.ok) setEscState('saved');
+    else {
+      setEscState('error');
+      setEscErr(res.error ?? 'update failed');
+    }
+  }
+
+  const [asm, setAsm] = useState<'idle' | 'working' | 'done'>('idle');
+  const [asmMsg, setAsmMsg] = useState('');
+  const [asmTxid, setAsmTxid] = useState('');
+  async function assemble() {
+    if (!identity || !p.sale) return;
+    setAsm('working');
+    setAsmMsg('gathering + re-validating pledges');
+    try {
+      const g = await getPledgesForAssembly(p.sale.id, identity);
+      if (!g.ok) throw new Error(g.error);
+      setAsmMsg('assembling assurance tx (approve fee in wallet)');
+      const { getWalletClient } = await import('@launchpad/bsv/wallet');
+      const { assembleAssuranceTx } = await import('@launchpad/bsv/pledge');
+      const wallet = await getWalletClient();
+      const res = await assembleAssuranceTx(wallet as never, 'main', {
+        pledges: g.pledges,
+        softCapSats: g.softCapSats,
+        projectAddress: g.projectAddress,
+      });
+      if (!res.ok) throw new Error(res.reason);
+      setAsmMsg('broadcasting fee funding');
+      const bc1 = await broadcastRawTx(res.feeFundingRawTx, '');
+      if (!bc1.ok) throw new Error(`fee funding broadcast: ${bc1.error}`);
+      setAsmMsg('broadcasting assurance tx');
+      const bc2 = await broadcastRawTx(res.assuranceRawTx, res.assuranceTxid);
+      if (!bc2.ok) throw new Error(`assurance broadcast: ${bc2.error}`);
+      const txid = bc2.txid || res.assuranceTxid;
+      await markAssemblyBroadcast(p.sale.id, identity, txid, g.pledges.map((x) => x.id));
+      setAsmTxid(txid);
+      setAsm('done');
+    } catch (e) {
+      setAsmMsg(`⚠ ${e instanceof Error ? e.message : String(e)}`);
+      setAsm('idle');
+    }
+  }
   const [deleting, setDeleting] = useState(false);
   async function doDelete() {
     if (!identity) return;
@@ -190,6 +265,7 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               [
                 ['details', 'Details'],
                 ['schedule', 'Schedule'],
+                ['presale', 'Presale'],
                 ['issuance', 'Issuance'],
                 ['orders', `Orders${pending.length ? ` (${pending.length})` : ''}`],
                 ['danger', 'Danger'],
@@ -369,6 +445,78 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                 {schedState === 'error' && <span className="font-mono text-xs text-danger">⚠ {schedErr}</span>}
               </div>
             </div>
+          </section>
+          </div>
+
+          <div hidden={tab !== 'presale'}>
+          <section>
+            <h2 className="text-xl font-semibold">Escrow presale</h2>
+            <p className="mt-1 text-sm text-muted">
+              Trustless soft-cap sale (ADR-025). Contributors pledge a fixed unit; funds stay in their wallets until
+              the soft cap is met, then you assemble the assurance tx. Caps must be whole multiples of the pledge unit.
+            </p>
+            <div className="mt-4 flex flex-col gap-3">
+              <div className="flex flex-wrap gap-2">
+                {(['instant', 'escrow_presale'] as const).map((t) => (
+                  <button key={t} type="button" onClick={() => setEsc((s) => ({ ...s, type: t }))} className="chip" data-active={esc.type === t}>
+                    {t === 'instant' ? 'Instant buy' : 'Escrow presale'}
+                  </button>
+                ))}
+              </div>
+              {esc.type === 'escrow_presale' && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Pledge unit (sats)</span>
+                    <NumberField value={esc.pledgeUnitSats} onValueChange={(n) => setEsc((s) => ({ ...s, pledgeUnitSats: n }))} min={0} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Soft cap (sats)</span>
+                    <NumberField value={esc.softCapSats} onValueChange={(n) => setEsc((s) => ({ ...s, softCapSats: n }))} min={0} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="font-mono text-xs uppercase tracking-[0.08em] text-faint">Hard cap (sats)</span>
+                    <NumberField value={esc.hardCapSats} onValueChange={(n) => setEsc((s) => ({ ...s, hardCapSats: n }))} min={0} />
+                  </label>
+                </div>
+              )}
+              <div className="flex items-center gap-3">
+                <Button variant="primary" onClick={saveEscrow} disabled={escState === 'saving'}>
+                  {escState === 'saving' ? 'Saving…' : 'Save presale terms'}
+                </Button>
+                {escState === 'saved' && <span className="font-mono text-xs text-teal">✓ saved</span>}
+                {escState === 'error' && <span className="font-mono text-xs text-danger">⚠ {escErr}</span>}
+              </div>
+            </div>
+
+            {p.sale?.type === 'escrow_presale' && (
+              <div className="mt-6 rounded-md border border-line bg-elevated/40 p-4">
+                <p className="font-mono text-xs text-muted">
+                  Raised {p.sale.raisedSats.toLocaleString('en-US')} / {p.sale.softCapSats.toLocaleString('en-US')} soft
+                  cap sats
+                </p>
+                {p.sale.raisedSats >= p.sale.softCapSats && p.sale.softCapSats > 0 ? (
+                  asm === 'done' && asmTxid ? (
+                    <a
+                      href={`https://whatsonchain.com/tx/${asmTxid}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-block font-mono text-xs text-teal underline underline-offset-2"
+                    >
+                      ✓ funded · {asmTxid.slice(0, 12)}… ↗
+                    </a>
+                  ) : (
+                    <div className="mt-3">
+                      <Button variant="primary" onClick={assemble} disabled={asm === 'working'}>
+                        {asm === 'working' ? 'Assembling…' : 'Assemble & broadcast assurance tx'}
+                      </Button>
+                      {asmMsg && <p className="mt-2 break-words font-mono text-xs text-muted">{asmMsg}</p>}
+                    </div>
+                  )
+                ) : (
+                  <p className="mt-2 font-mono text-xs text-faint">Soft cap not reached yet — nothing to assemble.</p>
+                )}
+              </div>
+            )}
           </section>
           </div>
 

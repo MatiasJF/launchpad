@@ -5,6 +5,7 @@ import { getSaleVMBySlug } from '../../../lib/data';
 import { SiteHeader } from '../../../components/SiteHeader';
 import { SiteFooter } from '../../../components/SiteFooter';
 import { BuyCard } from '../../../components/BuyCard';
+import { ContributeCard } from '../../../components/ContributeCard';
 import { ClaimTokens } from '../../../components/ClaimTokens';
 import { Markdown } from '../../../components/Markdown';
 import { StatusPill, Tabs } from '../../../components/ui';
@@ -111,7 +112,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           </div>
 
           <aside>
-            <BuyCard s={s} />
+            {s.type === 'escrow_presale' ? <ContributeCard s={s} /> : <BuyCard s={s} />}
             <ClaimTokens slug={s.slug} />
             <Link
               href={`/project/${s.slug}/manage`}

@@ -10,7 +10,7 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
   const { slug } = await params;
   const project = await prisma.project.findUnique({
     where: { slug },
-    include: { owner: true, tokens: { include: { sales: { include: { orders: true } } } } },
+    include: { owner: true, tokens: { include: { sales: { include: { orders: true, pledges: true } } } } },
   });
   if (!project) notFound();
 
@@ -55,9 +55,17 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
     website,
     sale: sale
       ? {
+          id: sale.id,
           status: sale.status,
           startsAt: sale.startsAt ? sale.startsAt.toISOString() : null,
           endsAt: sale.endsAt ? sale.endsAt.toISOString() : null,
+          type: sale.type,
+          softCapSats: Number(sale.softCap ?? 0n),
+          hardCapSats: Number(sale.hardCap ?? 0n),
+          pledgeUnitSats: Number(sale.pledgeUnitSats ?? 0n),
+          raisedSats: (sale.pledges ?? [])
+            .filter((p) => p.state === 'pledged' || p.state === 'assembled')
+            .reduce((sum, p) => sum + Number(p.satoshis), 0),
         }
       : null,
     token: token
