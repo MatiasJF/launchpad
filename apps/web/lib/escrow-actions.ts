@@ -38,8 +38,12 @@ export async function recordPledge(input: {
       _sum: { satoshis: true },
     });
     const raised = active._sum.satoshis ?? 0n;
-    if (sale.hardCap != null && raised + BigInt(input.satoshis) > sale.hardCap) {
-      return { ok: false, error: 'this pledge would exceed the hard cap' };
+    // Pledges fill the assurance contract up to the SOFT cap only — that's the
+    // fixed amount every pledge signed over. Beyond it there is nothing to pledge
+    // into (over-subscription would strand the pledge). Contributions above the
+    // soft cap are the instant-buy phase (ADR-025), not more pledges.
+    if (sale.softCap != null && raised + BigInt(input.satoshis) > sale.softCap) {
+      return { ok: false, error: 'the soft cap is fully pledged — the presale is ready to assemble' };
     }
 
     await prisma.pledge.create({

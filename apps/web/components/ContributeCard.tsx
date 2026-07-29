@@ -114,6 +114,10 @@ export function ContributeCard({ s }: { s: SaleCardVM }) {
           <div className="rounded-md border border-teal/40 bg-teal/10 px-4 py-3 text-sm text-teal">
             ✓ Pledged. Your sats stay in your wallet until the soft cap is met. To withdraw, just spend that coin.
           </div>
+        ) : capReached ? (
+          <Button variant="secondary" block disabled>
+            Soft cap fully pledged
+          </Button>
         ) : open ? (
           <Button variant="primary" block onClick={pledge} disabled={status === 'pledging'}>
             {status === 'pledging' ? 'Pledging…' : `Pledge ${s.pledgeUnitSats.toLocaleString('en-US')} sats`}
