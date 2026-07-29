@@ -79,6 +79,9 @@ model Sale {
   endsAt            DateTime?
   softCap           BigInt?
   hardCap           BigInt?
+  // Escrow presale (ADR-025): fixed pledge denomination in sats. Each pledge is
+  // one unit; softCap/hardCap are whole multiples so pledges compose exactly.
+  pledgeUnitSats    BigInt?
   status            String    @default("scheduled") // scheduled | live | finalized | failed
   orders            Order[]
   pledges           Pledge[]
