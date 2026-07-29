@@ -194,6 +194,47 @@ export async function claimOrderForSettlement(orderId: string): Promise<{ ok: bo
   return { ok: true };
 }
 
+/**
+ * Gather all pending orders for a sale that can be delivered in ONE batch
+ * settlement — each buyer's receive address + token amount, plus the token's
+ * mint txid (pool source). Admin-gated (settlement is operator-run).
+ */
+export async function getBatchForSale(saleId: string): Promise<
+  | { ok: true; slug: string; mintTxid: string; recipients: { orderId: string; address: string; amount: number }[] }
+  | { ok: false; error: string }
+> {
+  if (!(await isAdmin())) return { ok: false, error: 'unauthorized' };
+  const orders = await prisma.order.findMany({
+    where: { saleId, state: 'pending', receiveAddress: { not: null } },
+    include: { sale: { include: { token: { include: { project: true } } } } },
+    orderBy: { createdAt: 'asc' },
+  });
+  const first = orders[0];
+  if (!first) return { ok: false, error: 'no pending orders to settle' };
+  const token = first.sale.token;
+  if (!token.issuanceTxid) return { ok: false, error: 'token not issued' };
+  return {
+    ok: true,
+    slug: token.project.slug,
+    mintTxid: token.issuanceTxid,
+    recipients: orders.map((o) => ({ orderId: o.id, address: o.receiveAddress as string, amount: Number(o.tokens) })),
+  };
+}
+
+/** Mark several orders settled with one batch txid (delivered together). */
+export async function markOrdersSettled(orderIds: string[], txid: string): Promise<void> {
+  if (!(await isAdmin())) return;
+  if (!/^[0-9a-fA-F]{64}$/.test(txid)) return;
+  await prisma.order.updateMany({
+    where: { id: { in: orderIds }, state: { in: ['pending', 'settling'] } },
+    data: { state: 'settled', txid },
+  });
+  await prisma.event.createMany({
+    data: orderIds.map((id) => ({ entity: 'Order', entityId: id, type: 'settled', payloadHash: txid })),
+  });
+  revalidatePath('/admin');
+}
+
 /** Release a settlement claim back to pending (settling → pending) after a failed attempt. */
 export async function releaseOrderClaim(orderId: string): Promise<void> {
   if (!(await isAdmin())) return;

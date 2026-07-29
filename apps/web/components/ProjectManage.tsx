@@ -7,7 +7,8 @@ import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
 import { updateProjectMeta, updateSaleSchedule, deleteProject, updateSaleEscrow } from '../lib/actions';
 import { getPledgesForAssembly, markAssemblyBroadcast } from '../lib/escrow-actions';
-import { broadcastRawTx } from '../lib/settle-actions';
+import { getBatchForSale, markOrdersSettled } from '../lib/order-actions';
+import { broadcastRawTx, resolveCurrentPool, getOutputInfo, getSourceBeef } from '../lib/settle-actions';
 import { Markdown } from './Markdown';
 
 export type ManageVM = {
@@ -192,6 +193,63 @@ export function ProjectManage({ p }: { p: ManageVM }) {
       setAsm('idle');
     }
   }
+  const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
+  const [batchState, setBatchState] = useState<'idle' | 'working' | 'done'>('idle');
+  const [batchMsg, setBatchMsg] = useState('');
+  const [batchTxid, setBatchTxid] = useState('');
+  async function batchSettle() {
+    if (!p.sale) return;
+    setBatchState('working');
+    setBatchMsg('gathering orders');
+    try {
+      const b = await getBatchForSale(p.sale.id);
+      if (!b.ok) throw new Error(b.error);
+      setBatchMsg('resolving current pool');
+      const pool = await resolveCurrentPool(b.mintTxid);
+      if ('error' in pool) throw new Error(pool.error);
+      const info = await getOutputInfo(pool.txid, pool.vout);
+      if (!info) throw new Error('could not fetch the pool UTXO');
+      const total = b.recipients.reduce((s, r) => s + r.amount, 0);
+      if (total > info.satoshis) throw new Error(`pool holds ${info.satoshis} tokens; batch needs ${total}`);
+      const beef = await getSourceBeef(pool.txid);
+      if (!beef) throw new Error('pool must be confirmed to settle');
+      setBatchMsg('building batch transfer (approve in wallet)');
+      const { getWalletClient } = await import('@launchpad/bsv/wallet');
+      const { batchTransferStas } = await import('@launchpad/bsv/settle');
+      const wallet = await getWalletClient();
+      const res = await batchTransferStas(wallet as never, '', 'main', {
+        source: {
+          txid: pool.txid,
+          vout: pool.vout,
+          scriptHex: info.scriptHex,
+          satoshis: info.satoshis,
+          beef,
+          brc42KeyId: `${b.slug}-owner`,
+          owner: { protocolID: STAS_PROTOCOL, keyID: `${b.slug}-owner`, counterparty: 'self', forSelf: false },
+        },
+        recipients: b.recipients.map((r) => ({ address: r.address, amount: r.amount })),
+        senderChangeHash160: info.scriptHex.substring(6, 46),
+      });
+      if (!res.ok) throw new Error(res.reason);
+      setBatchMsg('broadcasting funding (TX1)');
+      const bc1 = await broadcastRawTx(res.fundingRawTx, res.fundingTxid);
+      if (!bc1.ok) throw new Error(`funding broadcast: ${bc1.error}`);
+      setBatchMsg('broadcasting batch transfer (TX2)');
+      const bc2 = await broadcastRawTx(res.rawTx, res.txid);
+      if (!bc2.ok) throw new Error(`batch broadcast: ${bc2.error}`);
+      const txid = bc2.txid || res.txid;
+      await markOrdersSettled(
+        b.recipients.map((r) => r.orderId),
+        txid,
+      );
+      setBatchTxid(txid);
+      setBatchState('done');
+    } catch (e) {
+      setBatchMsg(`⚠ ${e instanceof Error ? e.message : String(e)}`);
+      setBatchState('idle');
+    }
+  }
+
   const [deleting, setDeleting] = useState(false);
   async function doDelete() {
     if (!identity) return;
@@ -561,6 +619,28 @@ export function ProjectManage({ p }: { p: ManageVM }) {
           {/* Settlement */}
           <section>
             <h2 className="text-xl font-semibold">Orders to settle ({pending.length})</h2>
+            {p.token?.issuanceTxid && pending.length > 1 && (
+              <div className="mt-3 rounded-md border border-violet/40 bg-[color-mix(in_srgb,var(--c-violet)_7%,transparent)] p-3">
+                <p className="mb-2 text-sm text-muted">Deliver every pending order in a single transaction.</p>
+                {batchState === 'done' && batchTxid ? (
+                  <a
+                    href={`https://whatsonchain.com/tx/${batchTxid}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-xs text-teal underline underline-offset-2"
+                  >
+                    ✓ all settled · {batchTxid.slice(0, 12)}… ↗
+                  </a>
+                ) : (
+                  <>
+                    <Button variant="primary" onClick={batchSettle} disabled={batchState === 'working'}>
+                      {batchState === 'working' ? 'Settling…' : `Settle all ${pending.length} in one tx`}
+                    </Button>
+                    {batchMsg && <p className="mt-2 break-words font-mono text-xs text-muted">{batchMsg}</p>}
+                  </>
+                )}
+              </div>
+            )}
             {!p.token?.issuanceTxid ? (
               <p className="mt-2 text-sm text-muted">Issue the token first, then paid orders appear here.</p>
             ) : pending.length === 0 ? (

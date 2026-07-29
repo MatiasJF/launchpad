@@ -21,6 +21,8 @@ import { signP2pkhInput } from './twoTx/p2pkhInput';
 import { broadcastAndInternalizeChange } from './twoTx/internalizeChange';
 import { buildChainedAtomicBeef } from './beef';
 
+export * from './batch';
+
 // Our canonical STAS owner protocol id (matches packages/bsv/src/issue, ADR-021).
 const STAS_PROTOCOL_ID: any = [2, '3241645161d8'];
 const STAS_COUNTERPARTY = 'self';

@@ -249,3 +249,10 @@ Verified offline: an `0xC1` pledge signed alone still verifies after other input
   **Not trustless:** delivery is operator-signed (classic STAS can't atomic-deliver in
   the crowd tx). Files: `packages/bsv/src/pledge/`, `apps/web/lib/escrow-actions.ts`,
   `apps/web/components/ContributeCard.tsx`, Presale tab in `ProjectManage.tsx`.
+
+**Added 2026-07-29 — batch settlement (ADR-022 lever).** `batchTransferStas`
+(`packages/bsv/src/settle/batch.ts`) spends the pool ONCE → N recipient token
+outputs + token-change + one BSV change, delivering every pending order in a single
+tx (was N sequential settles, each moving the pool). Owner dashboard → Orders tab →
+"Settle all N in one tx". Server: `getBatchForSale` / `markOrdersSettled`. The right
+tool for escrow presales with many contributors.
