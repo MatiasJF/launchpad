@@ -29,7 +29,18 @@ over-debit + bad-sig reject (sig over sha256sha256(preimage) = our wallet path);
 (6) — inflated payout, shrunk pool reserve, swapped successor, redirected payout, over-credited
 buy all REJECTED by hashOutputs (buy pins out0 via ANYONECANPAY_SINGLE; sell pins both outs via
 ANYONECANPAY_ALL). Everything routes through the server-side state service (`service/ledgerState.ts`,
-scrypt-ts→getUnlockingScript) and re-verifies in @bsv/sdk `Spend`. **SERVER-SIDE INTEGRATION DONE — web builds green.** Next drives the scrypt-ts state service
+scrypt-ts→getUnlockingScript) and re-verifies in @bsv/sdk `Spend`. **CODE-COMPLETE END-TO-END — web builds green; only the live mainnet test remains.**
+Client integration done: `packages/curve/src/ledgerTx.ts` (buy/sell tx assembly from the
+server unlock + wallet input, no change output so the pool's hashOutputs holds),
+`apps/web/components/LedgerTradeCard.tsx` (buy credits + sell debits the ledger; holder
+signs the sell digest with a derived key via `createSignature`), deploy card gains a
+linear/ledger variant toggle, sale page renders LedgerTradeCard when `variant='ledger'`.
+**Before running the app you MUST build the service:** `pnpm --filter @launchpad/curve
+build:service` (server actions spawn `service/dist/service/cli.js`; dist is gitignored).
+**Live test = deploy a ledger pool (manage) → buy → sell (dust) on mainnet.** Everything
+below (covenant/service/server) is proven; this is the last step. ↓
+
+**SERVER-SIDE INTEGRATION DONE — web builds green.** Next drives the scrypt-ts state service
 as a CHILD PROCESS (`packages/curve/service/cli.ts`, JSON in/out) so scrypt-ts is never bundled
 into Next (feasibility gate PASSED). `apps/web/lib/ledger-service.ts` (server-only execFile
 bridge) + `ledger-actions.ts` (createLedgerPool/deploy, getLedgerPool, prepare+recordLedgerBuy,
