@@ -99,6 +99,21 @@ export function poolScriptForSold(currentScriptHex: string, newSold: bigint): st
   return codePart + Buffer.from(region).toString('hex');
 }
 
+/**
+ * Encode a buy's unlocking script: `<delta> <newReserve> <preimage>` in the
+ * covenant method's declaration order. Number args use minimal pushes (OP_N for
+ * 0..16) or the interpreter rejects them as non-minimal; the preimage is a plain
+ * data push. Shared by the interpreter path (buildBuySpend) and the real bsv-js
+ * transaction builder (buyAssembly) so they can never drift.
+ */
+export function encodeBuyUnlockingHex(delta: bigint, newReserve: bigint | number, preimage: number[]): string {
+  return Buffer.from([
+    ...pushInt(delta),
+    ...pushInt(BigInt(newReserve)),
+    ...push(preimage),
+  ]).toString('hex');
+}
+
 export interface BuySpendArgs {
   poolLockHex: string; // covenant script at current `sold`
   reserveBefore: number; // covenant UTXO satoshi value
@@ -129,15 +144,7 @@ export function buildBuySpend(args: BuySpendArgs): { preimage: number[]; unlocki
     subscript: lockingScript, inputSequence, lockTime, scope: CURVE_SCOPE,
   } as Parameters<typeof TransactionSignature.format>[0]);
 
-  // declaration order: buy(delta, newReserve, preimage). Number args use minimal
-  // number pushes (OP_N for 0..16); the preimage is a plain data push.
-  const unlockingHex = Buffer.from([
-    ...pushInt(delta),
-    ...pushInt(BigInt(newReserve)),
-    ...push(preimage),
-  ]).toString('hex');
-
-  return { preimage, unlockingScript: UnlockingScript.fromHex(unlockingHex) };
+  return { preimage, unlockingScript: UnlockingScript.fromHex(encodeBuyUnlockingHex(delta, newReserve, preimage)) };
 }
 
 /** Assemble a buy and run it through @bsv/sdk's Script interpreter (offline). */

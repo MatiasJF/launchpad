@@ -2,8 +2,19 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/covenant.ts", "src/index.ts", "src/spike.ts", "src/curvePool.ts", "src/vendor.d.ts", "artifacts/locks.json", "artifacts/curve-locks.json"],
+  "include": [
+    "src/covenant.ts",
+    "src/index.ts",
+    "src/spike.ts",
+    "src/curvePool.ts",
+    "src/vendor.d.ts",
+    "artifacts/locks.json",
+    "artifacts/curve-locks.json",
+    "src/buyAssembly.ts"
+  ],
   "comment": "src/contracts/*.ts is sCrypt source (build-time only, needs scrypt-ts); it is compiled in isolation by scripts/compile.sh and excluded from the runtime TS project."
 }

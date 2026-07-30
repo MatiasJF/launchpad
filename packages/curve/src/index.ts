@@ -20,6 +20,16 @@ export {
   curveCost,
   buildBuySpend,
   validateBuy,
+  encodeBuyUnlockingHex,
+  poolScriptForSold,
+  poolCodePart,
   CURVE_SCOPE,
   type BuySpendArgs,
 } from './curvePool';
+
+export {
+  buildCurveBuyTx,
+  type CurvePoolState,
+  type CurveBuyArgs,
+  type CurveBuyResult,
+} from './buyAssembly';

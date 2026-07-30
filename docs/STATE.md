@@ -14,9 +14,18 @@ wrong-successor reject, oversupply reject, zero-delta reject, chaining, whole-su
 buy. Caught + fixed a real audit-surface bug: small int args (delta 1..16) must use
 minimal `OP_N` pushes or the interpreter rejects "not minimally-encoded". Module:
 `src/contracts/linearCurvePool.ts` (source), `src/curvePool.ts` (@bsv/sdk buy
-spend/verify). **Next in Phase 1:** integration layer via /orchestrate — DB pool
-state, operator-sequenced buy assembly (buyer signs their payment ALL, covenant
-enforces the curve), admin "create pool" + buy UI, then one live mainnet buy.
+spend/verify). **On-chain core COMPLETE + tested (18/18):** added runtime successor-
+script derivation (`poolScriptForSold`, scrypt-ts-free, byte-matches every compiled
+fixture incl. high-bit padding — the pool-brick risk, eliminated) and the non-custodial
+buy assembly (`buildCurveBuyTx`, `src/buyAssembly.ts`): two-tx like settle/batch —
+buyer funds an exact BRC-29 payment input, TX2 = [pool covenant input (push
+delta/newReserve/preimage), buyer payment input signed ALL 0x41] → [successor pool @
+reserveBefore+cost, buyer token receipt]; pre-broadcast interpreter guard. Routing
+note: scouting found successor-derivation to be a money-critical byte-format problem
+that must NOT be parallelized, so the core was built directly (not via /orchestrate).
+**Remaining Phase 1 (plumbing):** DB CurvePool model + migration · operator-sequencing
+server actions (reserve vs latest pool outpoint) · admin deploy-pool flow · curve buy
+card + sale-page wiring · then one live mainnet buy.
 
 **✅ BONDING-CURVE AMM · PHASE 0 — PROVEN ON MAINNET (2026-07-30, ADR-026).**
 A stateful OP_PUSH_TX covenant self-replicated on-chain: deploy
