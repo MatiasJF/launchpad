@@ -7,6 +7,7 @@ const saleInclude = {
   token: { include: { project: true } },
   orders: true,
   pledges: true,
+  curvePool: true,
 } satisfies Prisma.SaleInclude;
 type SaleWithRels = Prisma.SaleGetPayload<{ include: typeof saleInclude }>;
 
@@ -104,6 +105,14 @@ function mapSale(s: SaleWithRels): SaleCardVM {
     publicAllocation: alloc,
     remaining: Math.max(0, alloc - committed),
     allocations: parseAlloc(s.token.allocations),
+    curve: s.curvePool
+      ? {
+          status: s.curvePool.status,
+          sold: Number(s.curvePool.sold),
+          supply: Number(s.curvePool.supply),
+          reserveSats: Number(s.curvePool.reserveSats),
+        }
+      : null,
   };
 }
 

@@ -23,9 +23,15 @@ delta/newReserve/preimage), buyer payment input signed ALL 0x41] → [successor 
 reserveBefore+cost, buyer token receipt]; pre-broadcast interpreter guard. Routing
 note: scouting found successor-derivation to be a money-critical byte-format problem
 that must NOT be parallelized, so the core was built directly (not via /orchestrate).
-**Remaining Phase 1 (plumbing):** DB CurvePool model + migration · operator-sequencing
-server actions (reserve vs latest pool outpoint) · admin deploy-pool flow · curve buy
-card + sale-page wiring · then one live mainnet buy.
+**Plumbing COMPLETE — web builds green:** DB `CurvePool` + migration; server actions
+`apps/web/lib/curve-actions.ts` (create/deploy/state + operator-sequenced `recordCurveBuy`
+with an optimistic outpoint guard so a raced buy can't corrupt tracked state); owner
+deploy `CurvePoolDeploy.tsx`; buyer `CurveBuyCard.tsx` (shows live curve cost, funds+signs
+own payment); owner sets `bonding_curve` in ProjectManage Presale tab (`updateSaleEscrow`);
+sale page renders deploy-or-buy by pool status. Phase-1 limit: pools use compiled params
+(k=1, supply=1000) since k/supply are script constants — arbitrary params need runtime
+script-gen (fast-follow). **Only step left: one live mainnet buy** — owner sets type →
+deploys pool → buyer buys along the curve (needs wallet, ring the user).
 
 **✅ BONDING-CURVE AMM · PHASE 0 — PROVEN ON MAINNET (2026-07-30, ADR-026).**
 A stateful OP_PUSH_TX covenant self-replicated on-chain: deploy

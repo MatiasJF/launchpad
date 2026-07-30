@@ -182,7 +182,7 @@ export async function updateSaleSchedule(input: {
 export async function updateSaleEscrow(input: {
   projectId: string;
   identityPubkey: string;
-  type: 'instant' | 'escrow_presale';
+  type: 'instant' | 'escrow_presale' | 'bonding_curve';
   softCapSats: number;
   hardCapSats: number;
   pledgeUnitSats: number;
@@ -220,21 +220,31 @@ export async function updateSaleEscrow(input: {
       }
     }
 
-    await prisma.sale.update({
-      where: { id: sale.id },
-      data:
-        input.type === 'escrow_presale'
-          ? {
-              type: 'escrow_presale',
-              softCap: BigInt(Math.floor(input.softCapSats)),
-              hardCap: BigInt(Math.floor(input.hardCapSats)),
-              pledgeUnitSats: BigInt(Math.floor(input.pledgeUnitSats)),
-              // Total tokens the presale can distribute (soft-cap pledges + instant
-              // top-up above it) = hardCap / price. Bounds the oversell guard.
-              allocationForSale: BigInt(Math.floor(input.hardCapSats / (Number(sale.priceSats) || 1))),
-            }
-          : { type: 'instant' },
-    });
+    // Bonding curve (ADR-026): Phase 1 uses the compiled curve params. Price is
+    // dynamic (set by the curve, not priceSats); allocation = the curve supply.
+    if (input.type === 'bonding_curve') {
+      const { CURVE_PARAMS } = await import('@launchpad/curve');
+      await prisma.sale.update({
+        where: { id: sale.id },
+        data: { type: 'bonding_curve', allocationForSale: BigInt(CURVE_PARAMS.supply) },
+      });
+    } else {
+      await prisma.sale.update({
+        where: { id: sale.id },
+        data:
+          input.type === 'escrow_presale'
+            ? {
+                type: 'escrow_presale',
+                softCap: BigInt(Math.floor(input.softCapSats)),
+                hardCap: BigInt(Math.floor(input.hardCapSats)),
+                pledgeUnitSats: BigInt(Math.floor(input.pledgeUnitSats)),
+                // Total tokens the presale can distribute (soft-cap pledges + instant
+                // top-up above it) = hardCap / price. Bounds the oversell guard.
+                allocationForSale: BigInt(Math.floor(input.hardCapSats / (Number(sale.priceSats) || 1))),
+              }
+            : { type: 'instant' },
+      });
+    }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'update failed' };
   }

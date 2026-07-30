@@ -147,7 +147,7 @@ export function ProjectManage({ p }: { p: ManageVM }) {
     const res = await updateSaleEscrow({
       projectId: p.projectId,
       identityPubkey: identity,
-      type: esc.type as 'instant' | 'escrow_presale',
+      type: esc.type as 'instant' | 'escrow_presale' | 'bonding_curve',
       softCapSats: esc.softCapSats,
       hardCapSats: esc.hardCapSats,
       pledgeUnitSats: esc.pledgeUnitSats,
@@ -530,12 +530,19 @@ export function ProjectManage({ p }: { p: ManageVM }) {
             </p>
             <div className="mt-4 flex flex-col gap-3">
               <div className="flex flex-wrap gap-2">
-                {(['instant', 'escrow_presale'] as const).map((t) => (
+                {(['instant', 'escrow_presale', 'bonding_curve'] as const).map((t) => (
                   <button key={t} type="button" onClick={() => setEsc((s) => ({ ...s, type: t }))} className="chip" data-active={esc.type === t}>
-                    {t === 'instant' ? 'Instant buy' : 'Escrow presale'}
+                    {t === 'instant' ? 'Instant buy' : t === 'escrow_presale' ? 'Escrow presale' : 'Bonding curve'}
                   </button>
                 ))}
               </div>
+              {esc.type === 'bonding_curve' && (
+                <p className="rounded-md border border-line bg-elevated/40 p-3 text-sm text-muted">
+                  Bonding curve (ADR-026): price rises as tokens sell, into an on-chain reserve. Phase 1 uses fixed
+                  curve params (k=1, supply=1000). Save, then open the sale page to <strong>deploy the pool</strong> and
+                  seed its reserve — after which anyone can buy along the curve.
+                </p>
+              )}
               {esc.type === 'escrow_presale' && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <label className="flex flex-col gap-1.5">

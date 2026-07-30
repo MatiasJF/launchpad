@@ -22,6 +22,16 @@ import { signP2pkhInput } from '@launchpad/bsv/settle/p2pkh';
 import { createTokenFundingOutput } from '@launchpad/bsv/settle/funding';
 import { curveCost, poolScriptForSold, encodeBuyUnlockingHex } from './curvePool';
 import { validateAssembledCovenantInput } from './covenant';
+import curveLocks from '../artifacts/curve-locks.json';
+
+/**
+ * Phase 1 pools use the compiled curve params (k, supply are script CONSTANTS, so
+ * arbitrary values would need runtime script generation — a fast-follow). The
+ * genesis pool locking script (sold=0) is the committed fixture; buys advance it
+ * with the param-agnostic poolScriptForSold.
+ */
+export const CURVE_PARAMS = { k: curveLocks.k, supply: curveLocks.supply } as const;
+export const GENESIS_POOL_SCRIPT_HEX: string = (curveLocks.locks as Record<string, string>)['0'] as string;
 
 const SIGHASH_POOL = 0xc3; // ANYONECANPAY | SINGLE | FORKID
 const SIGHASH_BUYER = 0x41; // ALL | FORKID
@@ -30,6 +40,44 @@ const ORIGINATOR = 'launchpad.curve.buy';
 async function loadBsv(): Promise<any> {
   const mod: any = await import('bsv');
   return mod.default ?? mod;
+}
+
+export interface DeployPoolResult {
+  txid: string;
+  pool: { txid: string; vout: number; scriptHex: string; reserveSats: number; sold: number; k: number; supply: number };
+}
+
+/**
+ * Deploy a bonding-curve pool: one wallet tx creating the genesis pool covenant
+ * (sold=0) seeded with `seedReserveSats`. Non-custodial (the deployer's wallet
+ * funds + signs + broadcasts). Mirrors deployCovenant in spike.ts.
+ */
+export async function deployCurvePool(args: {
+  wallet: WalletInterface;
+  chain: 'main' | 'test';
+  seedReserveSats: number;
+  originator?: string;
+}): Promise<DeployPoolResult> {
+  const { wallet, seedReserveSats, originator = ORIGINATOR } = args;
+  const scriptHex = GENESIS_POOL_SCRIPT_HEX;
+
+  const res: any = await wallet.createAction(
+    {
+      description: 'deploy bonding-curve pool (sold=0)',
+      outputs: [{ lockingScript: scriptHex, satoshis: seedReserveSats, outputDescription: 'curve pool covenant' }],
+      options: { randomizeOutputs: false, acceptDelayedBroadcast: false },
+    } as never,
+    originator,
+  );
+
+  const txid: string = res.txid;
+  if (typeof txid !== 'string' || !/^[0-9a-f]{64}$/i.test(txid)) {
+    throw new Error(`deploy createAction returned no txid (got ${JSON.stringify(res?.txid)})`);
+  }
+  return {
+    txid,
+    pool: { txid, vout: 0, scriptHex, reserveSats: seedReserveSats, sold: 0, k: CURVE_PARAMS.k, supply: CURVE_PARAMS.supply },
+  };
 }
 
 export interface CurvePoolState {

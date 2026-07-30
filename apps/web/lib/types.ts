@@ -38,4 +38,6 @@ export interface SaleCardVM {
   /** Tokens still available to buy (allocation minus committed orders). */
   remaining: number;
   allocations: Allocation[];
+  /** Bonding curve (ADR-026): null unless type === 'bonding_curve'. */
+  curve: { status: string; sold: number; supply: number; reserveSats: number } | null;
 }

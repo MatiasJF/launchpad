@@ -29,7 +29,11 @@ export {
 
 export {
   buildCurveBuyTx,
+  deployCurvePool,
+  CURVE_PARAMS,
+  GENESIS_POOL_SCRIPT_HEX,
   type CurvePoolState,
   type CurveBuyArgs,
   type CurveBuyResult,
+  type DeployPoolResult,
 } from './buyAssembly';

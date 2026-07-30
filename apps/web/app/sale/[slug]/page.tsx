@@ -6,6 +6,8 @@ import { SiteHeader } from '../../../components/SiteHeader';
 import { SiteFooter } from '../../../components/SiteFooter';
 import { BuyCard } from '../../../components/BuyCard';
 import { ContributeCard } from '../../../components/ContributeCard';
+import { CurveBuyCard } from '../../../components/CurveBuyCard';
+import { CurvePoolDeploy } from '../../../components/CurvePoolDeploy';
 import { ClaimTokens } from '../../../components/ClaimTokens';
 import { Markdown } from '../../../components/Markdown';
 import { StatusPill, Tabs } from '../../../components/ui';
@@ -112,7 +114,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           </div>
 
           <aside>
-            {s.type === 'escrow_presale' && !s.assured ? <ContributeCard s={s} /> : <BuyCard s={s} />}
+            {s.type === 'bonding_curve' ? (
+              s.curve && s.curve.status === 'live' ? <CurveBuyCard s={s} /> : <CurvePoolDeploy s={s} />
+            ) : s.type === 'escrow_presale' && !s.assured ? (
+              <ContributeCard s={s} />
+            ) : (
+              <BuyCard s={s} />
+            )}
             <ClaimTokens slug={s.slug} />
             <Link
               href={`/project/${s.slug}/manage`}
