@@ -50,7 +50,21 @@ An offering of a token's public allocation.
 Fields: `id`, `tokenId → Token`, `type` (default `instant`), `priceSats`
 (BigInt, sats per token), `allocationForSale` (BigInt), `startsAt?`, `endsAt?`,
 `softCap?` (BigInt), `hardCap?` (BigInt), `status` (default `scheduled`),
-`orders[]`, timestamps.
+`orders[]`, `curvePool?`, timestamps. `type` ∈ `instant` · `escrow_presale` ·
+`bonding_curve`.
+
+### CurvePool
+
+A bonding-curve AMM reserve pool (ADR-026, Phase 1). ONE on-chain covenant UTXO
+whose satoshi balance is the reserve and whose script carries `sold`; this row
+mirrors that UTXO's current state so the operator can sequence buys against the
+latest outpoint. Non-custodial — outpoints/scripts only, never keys.
+Fields: `id`, `saleId → Sale` (unique), `k` (BigInt, price slope), `supply`
+(BigInt, max sellable), `sold` (BigInt, default 0 = covenant state),
+`seedReserveSats` (BigInt, deploy base), `reserveSats` (BigInt, current UTXO
+value), `poolTxid?`/`poolVout?`/`scriptHex?` (current outpoint — moves each buy),
+`status` (`draft` · `live` · `graduated`), timestamps. A buy is recorded as an
+`Order` with `kind = curve_buy`.
 
 ### Order
 

@@ -18,6 +18,12 @@ export const SALE_TRANSITIONS: Record<SaleType, Partial<Record<SaleStatus, SaleS
     scheduled: ['live'],
     live: ['finalized', 'failed'],
   },
+  // Bonding curve (ADR-026): opens live once the pool covenant is deployed; ends
+  // 'finalized' at graduation (curve sold out / reserve threshold).
+  bonding_curve: {
+    scheduled: ['live'],
+    live: ['finalized'],
+  },
 };
 
 export function canTransition(type: SaleType, from: SaleStatus, to: SaleStatus): boolean {

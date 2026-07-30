@@ -72,7 +72,7 @@ model Sale {
   id                String    @id @default(cuid())
   tokenId           String
   token             Token     @relation(fields: [tokenId], references: [id])
-  type              String    @default("instant") // instant | escrow_presale
+  type              String    @default("instant") // instant | escrow_presale | bonding_curve
   priceSats         BigInt // sats per token
   allocationForSale BigInt
   startsAt          DateTime?
@@ -85,10 +85,34 @@ model Sale {
   status            String    @default("scheduled") // scheduled | live | finalized | failed
   orders            Order[]
   pledges           Pledge[]
+  curvePool         CurvePool?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([tokenId])
+}
+
+/// A bonding-curve AMM reserve pool (Phase 1, ADR-026). ONE on-chain covenant UTXO
+/// whose satoshi balance is the reserve and whose script carries `sold`. This row
+/// mirrors that UTXO's current state so the operator can sequence buys against the
+/// latest outpoint (BSV has no global mutable state). Immutable curve params: `k`
+/// (price slope) and `supply` (max sellable). Non-custodial: we store outpoints +
+/// scripts, never keys — the covenant is spent by the pushed preimage, not a sig.
+model CurvePool {
+  id              String   @id @default(cuid())
+  saleId          String   @unique
+  sale            Sale     @relation(fields: [saleId], references: [id])
+  k               BigInt // curve slope: price of the (s+1)-th token = k*(s+1)
+  supply          BigInt // max tokens the curve sells
+  sold            BigInt   @default(0) // tokens sold so far (== covenant state)
+  seedReserveSats BigInt // sats the pool was deployed with (base, below the curve)
+  reserveSats     BigInt   @default(0) // current pool UTXO value (== reserve)
+  poolTxid        String? // current pool outpoint (moves after each buy)
+  poolVout        Int?
+  scriptHex       String? // current pool locking script
+  status          String   @default("draft") // draft | live | graduated
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 /// A SIGHASH_ANYONECANPAY assurance-contract pledge for an escrow presale
@@ -128,7 +152,7 @@ model Order {
   sale          Sale     @relation(fields: [saleId], references: [id])
   buyerIdentity  String // BRC-100 pubkey
   receiveAddress String? // buyer's STAS owner address (where tokens are delivered)
-  kind           String   @default("instant_buy") // instant_buy | escrow_contribution
+  kind           String   @default("instant_buy") // instant_buy | escrow_contribution | curve_buy
   tokens         BigInt
   satsPaid       BigInt
   state          String   @default("pending") // reserved | pending | settling | settled | refunded | withdrawn | failed

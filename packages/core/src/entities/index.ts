@@ -13,7 +13,7 @@ export type Role = (typeof ROLES)[number];
 export const PROJECT_STATUSES = ['draft', 'pending', 'approved', 'live', 'closed'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
-export const SALE_TYPES = ['instant', 'escrow_presale'] as const;
+export const SALE_TYPES = ['instant', 'escrow_presale', 'bonding_curve'] as const;
 export type SaleType = (typeof SALE_TYPES)[number];
 
 export const SALE_STATUSES = ['scheduled', 'live', 'finalized', 'failed'] as const;
