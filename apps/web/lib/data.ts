@@ -96,6 +96,7 @@ function mapSale(s: SaleWithRels): SaleCardVM {
     raisedSats: s.pledges
       .filter((p) => p.state === 'pledged' || p.state === 'assembled')
       .reduce((sum, p) => sum + Number(p.satoshis), 0),
+    assured: s.pledges.some((p) => p.state === 'assembled'),
     hue: hueFromSlug(s.token.project.slug),
     countdown: countdownFrom(s.status === 'scheduled' ? s.startsAt : s.endsAt),
     about: s.token.project.description ?? '',

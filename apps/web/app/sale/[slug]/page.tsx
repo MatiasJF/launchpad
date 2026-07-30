@@ -112,7 +112,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           </div>
 
           <aside>
-            {s.type === 'escrow_presale' ? <ContributeCard s={s} /> : <BuyCard s={s} />}
+            {s.type === 'escrow_presale' && !s.assured ? <ContributeCard s={s} /> : <BuyCard s={s} />}
             <ClaimTokens slug={s.slug} />
             <Link
               href={`/project/${s.slug}/manage`}

@@ -72,6 +72,12 @@ export async function reserveOrder(input: {
       if (sale.status !== 'live') throw new Error('this sale is not open for buying');
       if (sale.startsAt && sale.startsAt > now) throw new Error('this sale has not started yet');
       if (sale.endsAt && sale.endsAt <= now) throw new Error('this sale has ended');
+      // An escrow presale only accepts instant buys AFTER its soft cap is
+      // assembled (funded). Before that it's the pledge phase — buyers pledge.
+      if (sale.type === 'escrow_presale') {
+        const assembled = await tx.pledge.count({ where: { saleId: sale.id, state: 'assembled' } });
+        if (assembled === 0) throw new Error('this presale is in its pledge phase — pledge instead of buying');
+      }
 
       const remaining = await remainingForSale(tx, sale.id, sale.allocationForSale);
       if (want > remaining) throw new Error(`only ${remaining} tokens left in this sale (you asked for ${want})`);

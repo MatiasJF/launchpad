@@ -26,6 +26,8 @@ export interface SaleCardVM {
   hardCapSats: number;
   pledgeUnitSats: number;
   raisedSats: number;
+  /** Escrow: soft cap assembled/funded — the sale is now in the instant-buy top-up phase. */
+  assured: boolean;
   priceSats: number;
   soldPct: number;
   hue: number;

@@ -32,6 +32,7 @@ export type ManageVM = {
     hardCapSats: number;
     pledgeUnitSats: number;
     raisedSats: number;
+    assured: boolean;
   } | null;
   token: { ticker: string; supply: number; issuanceTxid: string | null; tokenId: string | null } | null;
   orders: {
@@ -566,24 +567,25 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                   Raised {p.sale.raisedSats.toLocaleString('en-US')} / {p.sale.softCapSats.toLocaleString('en-US')} soft
                   cap sats
                 </p>
-                {p.sale.raisedSats >= p.sale.softCapSats && p.sale.softCapSats > 0 ? (
-                  asm === 'done' && asmTxid ? (
-                    <a
-                      href={`https://whatsonchain.com/tx/${asmTxid}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-block font-mono text-xs text-teal underline underline-offset-2"
-                    >
-                      ✓ funded · {asmTxid.slice(0, 12)}… ↗
-                    </a>
-                  ) : (
-                    <div className="mt-3">
-                      <Button variant="primary" onClick={assemble} disabled={asm === 'working'}>
-                        {asm === 'working' ? 'Assembling…' : 'Assemble & broadcast assurance tx'}
-                      </Button>
-                      {asmMsg && <p className="mt-2 break-words font-mono text-xs text-muted">{asmMsg}</p>}
-                    </div>
-                  )
+                {p.sale.assured || (asm === 'done' && asmTxid) ? (
+                  <p className="mt-2 font-mono text-xs text-teal">
+                    ✓ Soft cap funded — the sale is now open for instant top-up buys up to the hard cap.
+                    {asmTxid && (
+                      <>
+                        {' '}
+                        <a href={`https://whatsonchain.com/tx/${asmTxid}`} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                          {asmTxid.slice(0, 12)}… ↗
+                        </a>
+                      </>
+                    )}
+                  </p>
+                ) : p.sale.raisedSats >= p.sale.softCapSats && p.sale.softCapSats > 0 ? (
+                  <div className="mt-3">
+                    <Button variant="primary" onClick={assemble} disabled={asm === 'working'}>
+                      {asm === 'working' ? 'Assembling…' : 'Assemble & broadcast assurance tx'}
+                    </Button>
+                    {asmMsg && <p className="mt-2 break-words font-mono text-xs text-muted">{asmMsg}</p>}
+                  </div>
                 ) : (
                   <p className="mt-2 font-mono text-xs text-faint">Soft cap not reached yet — nothing to assemble.</p>
                 )}

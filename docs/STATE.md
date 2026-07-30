@@ -256,3 +256,10 @@ outputs + token-change + one BSV change, delivering every pending order in a sin
 tx (was N sequential settles, each moving the pool). Owner dashboard → Orders tab →
 "Settle all N in one tx". Server: `getBatchForSale` / `markOrdersSettled`. The right
 tool for escrow presales with many contributors.
+
+**Added 2026-07-30 — instant-buy above soft cap (completes ADR-025).** Once an escrow
+presale's soft cap is assembled (`assured` = assembled pledges exist), the sale stays
+LIVE and switches from pledge → **instant buy** for the top-up up to the hard cap. Config
+sets `allocationForSale = hardCap/price`; `markAssemblyBroadcast` keeps status live;
+sale page shows `ContributeCard` while unassured, `BuyCard` once assured; `reserveOrder`
+blocks instant buys during the pledge phase. Presale tab shows "✓ Soft cap funded".

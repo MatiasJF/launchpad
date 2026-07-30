@@ -229,6 +229,9 @@ export async function updateSaleEscrow(input: {
               softCap: BigInt(Math.floor(input.softCapSats)),
               hardCap: BigInt(Math.floor(input.hardCapSats)),
               pledgeUnitSats: BigInt(Math.floor(input.pledgeUnitSats)),
+              // Total tokens the presale can distribute (soft-cap pledges + instant
+              // top-up above it) = hardCap / price. Bounds the oversell guard.
+              allocationForSale: BigInt(Math.floor(input.hardCapSats / (Number(sale.priceSats) || 1))),
             }
           : { type: 'instant' },
     });

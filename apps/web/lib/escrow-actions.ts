@@ -153,7 +153,9 @@ export async function markAssemblyBroadcast(
   const assembled = await prisma.pledge.findMany({ where: { id: { in: pledgeIds }, saleId } });
   await prisma.$transaction([
     prisma.pledge.updateMany({ where: { id: { in: pledgeIds } }, data: { state: 'assembled' } }),
-    prisma.sale.update({ where: { id: saleId }, data: { status: 'finalized' } }),
+    // Keep the sale LIVE — the soft cap is funded, and buyers can now instant-buy
+    // the top-up above it, up to the hard cap (ADR-025). The `assured` flag
+    // (assembled pledges exist) switches the sale page from pledge → instant buy.
     prisma.event.create({ data: { entity: 'Sale', entityId: saleId, type: 'assurance', payloadHash: assuranceTxid } }),
     // Turn each funded pledge into a settle-eligible Order so token delivery
     // reuses the proven settlement flow (Orders-to-settle tab / SettleOrderButton).

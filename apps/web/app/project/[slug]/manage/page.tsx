@@ -66,6 +66,7 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
           raisedSats: (sale.pledges ?? [])
             .filter((p) => p.state === 'pledged' || p.state === 'assembled')
             .reduce((sum, p) => sum + Number(p.satoshis), 0),
+          assured: (sale.pledges ?? []).some((p) => p.state === 'assembled'),
         }
       : null,
     token: token
