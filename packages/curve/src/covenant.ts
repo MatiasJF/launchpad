@@ -9,7 +9,7 @@
  * This is the Phase-0 spike (ADR-026). It proves the loop end-to-end offline:
  *   compiled covenant hex -> @bsv/sdk output -> preimage-unlock -> valid spend.
  */
-import { Spend, Script, UnlockingScript, LockingScript, TransactionSignature } from '@bsv/sdk';
+import { Spend, Script, UnlockingScript, LockingScript, TransactionSignature, Transaction } from '@bsv/sdk';
 
 /** sighash the Counter covenant checks: ANYONECANPAY | SINGLE | FORKID (0xc3). */
 export const COUNTER_SCOPE =
@@ -113,6 +113,53 @@ export function validateCovenantSpend(args: CovenantSpendArgs): { ok: boolean; e
   } as unknown as ConstructorParameters<typeof Spend>[0]);
 
   try {
+    return { ok: spend.validate() };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Validate a covenant input of an ALREADY-ASSEMBLED transaction through
+ * @bsv/sdk's Script interpreter. Unlike `validateCovenantSpend` (which builds an
+ * idealized spend from scratch), this parses the real broadcastable tx and checks
+ * the exact input we're about to send — the true pre-broadcast guard. Reads the
+ * real outpoint, version, sequences and outputs from the tx itself, so it can't
+ * disagree with the bytes on the wire.
+ */
+export function validateAssembledCovenantInput(
+  rawTxHex: string,
+  covenant: { scriptHex: string; satoshis: number },
+  inputIndex = 0,
+): { ok: boolean; error?: string } {
+  try {
+    const tx = Transaction.fromHex(rawTxHex);
+    const input = tx.inputs[inputIndex];
+    if (!input) return { ok: false, error: `no input at index ${inputIndex}` };
+
+    const otherInputs = tx.inputs
+      .filter((_, i) => i !== inputIndex)
+      .map((inp) => ({
+        sourceTXID: inp.sourceTXID ?? inp.sourceTransaction?.id('hex') ?? '',
+        sourceOutputIndex: inp.sourceOutputIndex,
+        sequence: inp.sequence ?? 0xffffffff,
+      }));
+    const outputs = tx.outputs.map((o) => ({ satoshis: o.satoshis, lockingScript: o.lockingScript }));
+
+    const spend = new Spend({
+      sourceTXID: input.sourceTXID ?? '',
+      sourceOutputIndex: input.sourceOutputIndex,
+      sourceSatoshis: covenant.satoshis,
+      lockingScript: LockingScript.fromHex(covenant.scriptHex),
+      transactionVersion: tx.version,
+      otherInputs,
+      outputs,
+      inputIndex,
+      unlockingScript: input.unlockingScript as unknown as UnlockingScript,
+      inputSequence: input.sequence ?? 0xffffffff,
+      lockTime: tx.lockTime,
+    } as unknown as ConstructorParameters<typeof Spend>[0]);
+
     return { ok: spend.validate() };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

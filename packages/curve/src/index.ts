@@ -1,6 +1,7 @@
 export {
   buildCovenantSpend,
   validateCovenantSpend,
+  validateAssembledCovenantInput,
   COUNTER_SCOPE,
   type CovenantSpendArgs,
   type CovenantSpend,

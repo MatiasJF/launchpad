@@ -57,7 +57,7 @@ export function CovenantSpike() {
       const built = await buildIncrementTx({ wallet: wallet as never, covenant: deploy.covenant, fee: deploy.fee });
       if (!built.ok || !built.rawTx || !built.txid) throw new Error(built.reason ?? 'increment build failed');
       if (built.verifiedLocally === false) {
-        throw new Error('local interpreter check failed (bsv-js vs @bsv/sdk preimage mismatch) — not broadcasting');
+        throw new Error(`covenant input failed local interpreter check — not broadcasting${built.reason ? `: ${built.reason}` : ''}`);
       }
       const bc = await broadcastRawTx(built.rawTx, built.txid);
       if (!bc.ok) throw new Error(`increment broadcast rejected: ${bc.error}`);

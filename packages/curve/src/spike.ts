@@ -15,7 +15,7 @@ import type { WalletInterface } from '@bsv/sdk';
 import { PublicKey, P2PKH, createNonce, Transaction } from '@bsv/sdk';
 import { signP2pkhInput, BRC29_PROTOCOL_ID } from '@launchpad/bsv/settle/p2pkh';
 import locks from '../artifacts/locks.json';
-import { buildCovenantSpend } from './covenant';
+import { validateAssembledCovenantInput } from './covenant';
 
 type Chain = 'main' | 'test';
 
@@ -148,13 +148,6 @@ export async function buildIncrementTx(args: {
     const preimageBuf: Buffer = bsv.Transaction.sighash.sighashPreimage(tx, SIGHASH_COVENANT, 0, covScript, covSatsBN);
     tx.inputs[0].setScript(new bsv.Script().add(preimageBuf));
 
-    // Sanity: the bsv-js preimage must match the @bsv/sdk one the interpreter
-    // uses; if these libs diverged, the broadcast would fail — catch it now.
-    const sdkSpend = buildCovenantSpend({ sourceLockHex: covenant.scriptHex, nextLockHex, satoshis: covenant.satoshis });
-    const sdkPreimageHex = Buffer.from(sdkSpend.preimage).toString('hex');
-    const bsvPreimageHex = preimageBuf.toString('hex');
-    const preimagesMatch = sdkPreimageHex === bsvPreimageHex;
-
     // Fee input: standard BRC-29 P2PKH signature (ALL|FORKID).
     const feeUnlock = await signP2pkhInput({
       wallet, bsv, tx, inputIndex: 1,
@@ -166,7 +159,13 @@ export async function buildIncrementTx(args: {
     const rawTx: string = tx.toString();
     const txid = Transaction.fromHex(rawTx).id('hex');
 
-    return { ok: true, rawTx, txid, verifiedLocally: preimagesMatch };
+    // Pre-broadcast guard: run the covenant input of the REAL assembled tx through
+    // @bsv/sdk's interpreter. This reads the actual outpoint/version/outputs from
+    // the tx, so it can't false-alarm on an idealized reference the way a preimage
+    // comparison did — it genuinely answers "will the covenant accept this tx?".
+    const check = validateAssembledCovenantInput(rawTx, { scriptHex: covenant.scriptHex, satoshis: covenant.satoshis }, 0);
+
+    return { ok: true, rawTx, txid, verifiedLocally: check.ok, reason: check.error };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) };
   }
