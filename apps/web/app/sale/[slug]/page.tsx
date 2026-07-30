@@ -7,7 +7,6 @@ import { SiteFooter } from '../../../components/SiteFooter';
 import { BuyCard } from '../../../components/BuyCard';
 import { ContributeCard } from '../../../components/ContributeCard';
 import { CurveBuyCard } from '../../../components/CurveBuyCard';
-import { CurvePoolDeploy } from '../../../components/CurvePoolDeploy';
 import { ClaimTokens } from '../../../components/ClaimTokens';
 import { Markdown } from '../../../components/Markdown';
 import { StatusPill, Tabs } from '../../../components/ui';
@@ -115,7 +114,14 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
 
           <aside>
             {s.type === 'bonding_curve' ? (
-              s.curve && s.curve.status === 'live' ? <CurveBuyCard s={s} /> : <CurvePoolDeploy s={s} />
+              s.curve && s.curve.status === 'live' ? (
+                <CurveBuyCard s={s} />
+              ) : (
+                <div className="card p-6 text-sm text-muted">
+                  This bonding-curve sale isn’t open yet — the project owner needs to deploy the pool (from their manage
+                  page). Check back shortly.
+                </div>
+              )
             ) : s.type === 'escrow_presale' && !s.assured ? (
               <ContributeCard s={s} />
             ) : (

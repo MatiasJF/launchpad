@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import type { SaleCardVM } from '../lib/types';
 import { Button } from './ui';
 import { useWallet } from './WalletProvider';
 import { createCurvePool, markCurvePoolDeployed } from '../lib/curve-actions';
@@ -12,7 +11,7 @@ import { createCurvePool, markCurvePoolDeployed } from '../lib/curve-actions';
  * owner's wallet, then records the outpoint (which opens the sale for buying).
  * Server actions enforce project ownership; non-owners are rejected.
  */
-export function CurvePoolDeploy({ s }: { s: SaleCardVM }) {
+export function CurvePoolDeploy({ saleId }: { saleId: string }) {
   const { connect } = useWallet();
   const [seed, setSeed] = useState(546);
   const [status, setStatus] = useState<'idle' | 'deploying' | 'done'>('idle');
@@ -30,13 +29,13 @@ export function CurvePoolDeploy({ s }: { s: SaleCardVM }) {
       const { publicKey: identity } = await wallet.getPublicKey({ identityKey: true });
 
       // Idempotent-ish: create the row (ignore "already exists").
-      const created = await createCurvePool({ saleId: s.saleId, identityPubkey: identity, seedReserveSats: seed });
+      const created = await createCurvePool({ saleId, identityPubkey: identity, seedReserveSats: seed });
       if (!created.ok && !/already exists/.test(created.error ?? '')) throw new Error(created.error);
 
       const dep = await deployCurvePool({ wallet: wallet as never, chain: 'main', seedReserveSats: seed });
 
       const rec = await markCurvePoolDeployed({
-        saleId: s.saleId,
+        saleId,
         identityPubkey: identity,
         txid: dep.pool.txid,
         vout: dep.pool.vout,

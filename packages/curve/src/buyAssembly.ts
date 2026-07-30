@@ -182,13 +182,24 @@ export async function buildCurveBuyTx(args: CurveBuyArgs): Promise<CurveBuyResul
     const check = validateAssembledCovenantInput(rawTx, { scriptHex: pool.scriptHex, satoshis: pool.reserveSats }, 0);
     if (!check.ok) return { ok: false, reason: `pool input failed interpreter check: ${check.error}` };
 
+    // TX1's raw hex (from its BEEF) so the caller can push it to the SAME node it
+    // broadcasts the buy to — the wallet may broadcast TX1 via a different path,
+    // and the buy references TX1's output ("Missing inputs" if the node hasn't
+    // seen it yet).
+    let paymentRawTx = '';
+    try {
+      if (funding.beef && funding.beef.length) paymentRawTx = Transaction.fromAtomicBEEF(funding.beef).toHex();
+    } catch {
+      paymentRawTx = '';
+    }
+
     return {
       ok: true,
       rawTx,
       txid,
       cost,
       paymentTxid: funding.txid,
-      paymentRawTx: '', // TX1 already broadcast by createAction; kept for symmetry
+      paymentRawTx,
       newPool: { txid, vout: 0, scriptHex: nextScriptHex, reserveSats: newReserve, sold: nextSold },
       receipt: { vout: 1, tokens: delta, satoshis: receiptDustSats },
     };

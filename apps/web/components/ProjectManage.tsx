@@ -6,6 +6,7 @@ import { IssueButton } from './IssueButton';
 import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
 import { updateProjectMeta, updateSaleSchedule, deleteProject, updateSaleEscrow } from '../lib/actions';
+import { CurvePoolDeploy } from './CurvePoolDeploy';
 import { getPledgesForAssembly, markAssemblyBroadcast } from '../lib/escrow-actions';
 import { getBatchForSale, markOrdersSettled } from '../lib/order-actions';
 import { broadcastRawTx, resolveCurrentPool, getOutputInfo, getSourceBeef } from '../lib/settle-actions';
@@ -33,6 +34,7 @@ export type ManageVM = {
     pledgeUnitSats: number;
     raisedSats: number;
     assured: boolean;
+    curvePool: { status: string; sold: number; supply: number; reserveSats: number; poolTxid: string | null } | null;
   } | null;
   token: { ticker: string; supply: number; issuanceTxid: string | null; tokenId: string | null } | null;
   orders: {
@@ -539,8 +541,8 @@ export function ProjectManage({ p }: { p: ManageVM }) {
               {esc.type === 'bonding_curve' && (
                 <p className="rounded-md border border-line bg-elevated/40 p-3 text-sm text-muted">
                   Bonding curve (ADR-026): price rises as tokens sell, into an on-chain reserve. Phase 1 uses fixed
-                  curve params (k=1, supply=1000). Save, then open the sale page to <strong>deploy the pool</strong> and
-                  seed its reserve — after which anyone can buy along the curve.
+                  curve params (k=1, supply=1000). Save the type, then <strong>deploy the pool</strong> below to seed its
+                  reserve and open the sale — after which anyone can buy along the curve.
                 </p>
               )}
               {esc.type === 'escrow_presale' && (
@@ -567,6 +569,32 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                 {escState === 'error' && <span className="font-mono text-xs text-danger">⚠ {escErr}</span>}
               </div>
             </div>
+
+            {p.sale?.type === 'bonding_curve' && p.sale.id && (
+              <div className="mt-6">
+                {p.sale.curvePool?.status === 'live' ? (
+                  <div className="rounded-md border border-line bg-elevated/40 p-4 font-mono text-xs text-muted">
+                    ✓ Pool live · sold {p.sale.curvePool.sold.toLocaleString('en-US')} / {p.sale.curvePool.supply.toLocaleString('en-US')} ·
+                    reserve {p.sale.curvePool.reserveSats.toLocaleString('en-US')} sats
+                    {p.sale.curvePool.poolTxid && (
+                      <>
+                        {' · '}
+                        <a
+                          href={`https://whatsonchain.com/tx/${p.sale.curvePool.poolTxid}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-teal underline underline-offset-2"
+                        >
+                          pool tx ↗
+                        </a>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <CurvePoolDeploy saleId={p.sale.id} />
+                )}
+              </div>
+            )}
 
             {p.sale?.type === 'escrow_presale' && (
               <div className="mt-6 rounded-md border border-line bg-elevated/40 p-4">

@@ -10,7 +10,7 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
   const { slug } = await params;
   const project = await prisma.project.findUnique({
     where: { slug },
-    include: { owner: true, tokens: { include: { sales: { include: { orders: true, pledges: true } } } } },
+    include: { owner: true, tokens: { include: { sales: { include: { orders: true, pledges: true, curvePool: true } } } } },
   });
   if (!project) notFound();
 
@@ -67,6 +67,15 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
             .filter((p) => p.state === 'pledged' || p.state === 'assembled')
             .reduce((sum, p) => sum + Number(p.satoshis), 0),
           assured: (sale.pledges ?? []).some((p) => p.state === 'assembled'),
+          curvePool: sale.curvePool
+            ? {
+                status: sale.curvePool.status,
+                sold: Number(sale.curvePool.sold),
+                supply: Number(sale.curvePool.supply),
+                reserveSats: Number(sale.curvePool.reserveSats),
+                poolTxid: sale.curvePool.poolTxid,
+              }
+            : null,
         }
       : null,
     token: token

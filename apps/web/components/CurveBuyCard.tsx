@@ -70,7 +70,18 @@ export function CurveBuyCard({ s }: { s: SaleCardVM }) {
       });
       if (!res.ok) throw new Error(res.reason);
 
-      const bc = await broadcastRawTx(res.rawTx, res.txid);
+      // Push TX1 (the payment) to WoC first, so the node that receives the buy
+      // already knows the input it spends. The wallet may have broadcast TX1 via a
+      // different path; "already known" is fine.
+      if (res.paymentRawTx) await broadcastRawTx(res.paymentRawTx, res.paymentTxid);
+
+      // Broadcast the buy, retrying briefly on "Missing inputs" while TX1 (and the
+      // pool tx, if freshly deployed) propagate to the broadcasting node.
+      let bc = await broadcastRawTx(res.rawTx, res.txid);
+      for (let i = 0; i < 4 && !bc.ok && /missing inputs/i.test(bc.error ?? ''); i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        bc = await broadcastRawTx(res.rawTx, res.txid);
+      }
       if (!bc.ok) throw new Error(`buy broadcast rejected: ${bc.error}`);
 
       const rec = await recordCurveBuy({
