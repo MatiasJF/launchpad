@@ -17,10 +17,19 @@ as a state calculator — `startTracing→canGet/set→serializedAccessPath()` g
 access-path proof, `ledger.data()` the new commitment, `getStateScript()` the successor
 script — and **@bsv/sdk `Spend` validates the result**, so our pre-broadcast guard still
 works. Gotchas documented (clone-then-set successor; rebuild current map fresh; sold=0n-then-
-assign; new-holder needs the `!has` branch just added). **Remaining (multi-day):** a Node
-"LedgerPool state service" (scrypt-ts, clone-then-set discipline) → adversarial drain-test
-battery → buy/sell assembly + DB ledger persistence + UI → dust-amount live buy+sell. New
-covenant version; the live buy-only `LinearCurvePool` pools are unaffected.
+assign; new-holder needs the `!has` branch just added). **Ledger state service BUILT + buy proven (4/4):** `packages/curve/service/ledgerState.ts`
+runs scrypt-ts server-side (runtime dep, compiled with tsc — esbuild/tsx use new-style
+decorators that break scrypt-ts). `computeBuySpend` builds the pool unlock via scrypt-ts
+`getUnlockingScript` (correct arg encoding + HashedMap access path) and **@bsv/sdk `Spend`
+validates it** — new-holder-into-empty-ledger, existing-holder, 2nd-holder, underpay-reject.
+Key discipline: clone cur's ACTUAL map (`new HashedMap(cur.ledger)`) for the successor, not
+a fresh mkLedger, else re-lock fails. **Remaining:** (1) SELL in the service — needs the
+owner signature (non-custodial: service computes preimage → wallet signs → getUnlockingScript
+with the Sig; change sell to ANYONECANPAY_ALL so a fee input can be added); (2) adversarial
+drain-test battery (audit gate); (3) app integration — LedgerPool deploy, buy-that-credits +
+sell assembly/UI, DB ledger persistence (store balances → rebuild map each spend), buyer
+payment/fee input wiring; (4) dust-amount live buy+sell. New covenant version; live buy-only
+`LinearCurvePool` pools unaffected.
 
 **✅ BONDING-CURVE AMM · PHASE 1 (BUY-ONLY CURVE) — PROVEN ON MAINNET (2026-07-30, ADR-026).**
 A real non-custodial curve buy confirmed on-chain: buy tx
