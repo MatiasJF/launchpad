@@ -4,6 +4,18 @@ _Last updated: 2026-07-30 — by: bonding-curve Phase 0 spike_
 
 ## Current phase
 
+**✅ BONDING-CURVE AMM · PHASE 0 — PROVEN ON MAINNET (2026-07-30, ADR-026).**
+A stateful OP_PUSH_TX covenant self-replicated on-chain: deploy
+`71407ee6e6f7874969f7d8ce076a4f5d1ce7d77ff82380793390b70e94ac6e7b` (covenant
+count=0 at vout 0), increment
+`1f5e95080ad611ac1a4e2d0be58d89675f5dc02d87aacf1f15ce63b997282f7c` — spends the
+covenant with **NO signature on that input** (1761-byte pushed tx preimage) + a
+P2PKH fee input, and out0 re-locks byte-identically to the count=1 successor
+script (`ls1`). Non-custodial, verify-invariant covenant mechanism confirmed live.
+Two false-alarm fixes on the way (dummy-outpoint guard; extensionless imports for
+Next). **Phase 0 done — the approach is validated. Next: Phase 1 (buy-only linear
+curve).** Detail below ↓
+
 **🧪 BONDING-CURVE AMM · PHASE 0 (TOOLCHAIN SPIKE) — GREEN (2026-07-30, ADR-026).**
 The trustless AMM (`pump.fun`-style buy/sell against an on-chain reserve) needs a
 **stateful OP_PUSH_TX covenant**. Phase 0 de-risked the whole approach with a
