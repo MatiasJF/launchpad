@@ -58,10 +58,14 @@ export function LedgerTradeCard({ s }: { s: SaleCardVM }) {
     : 0;
 
   async function broadcastWithParent(paymentRawTx: string | undefined, paymentTxid: string | undefined, rawTx: string, id: string) {
+    // Push the payment (TX1) first, then the spend. WoC load-balances broadcast
+    // nodes, so re-push the parent on each retry to seed whichever node gets the
+    // spend, over a ~24s window while it propagates.
     if (paymentRawTx) await broadcastRawTx(paymentRawTx, paymentTxid);
     let bc = await broadcastRawTx(rawTx, id);
-    for (let i = 0; i < 4 && !bc.ok && /missing inputs/i.test(bc.error ?? ''); i++) {
-      await new Promise((r) => setTimeout(r, 2000));
+    for (let i = 0; i < 8 && !bc.ok && /missing inputs/i.test(bc.error ?? ''); i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      if (paymentRawTx) await broadcastRawTx(paymentRawTx, paymentTxid);
       bc = await broadcastRawTx(rawTx, id);
     }
     return bc;
