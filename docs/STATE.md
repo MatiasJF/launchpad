@@ -1,8 +1,30 @@
 # Project State
 
-_Last updated: 2026-07-24 — by: P0 scaffold_
+_Last updated: 2026-07-30 — by: bonding-curve Phase 0 spike_
 
 ## Current phase
+
+**🧪 BONDING-CURVE AMM · PHASE 0 (TOOLCHAIN SPIKE) — GREEN (2026-07-30, ADR-026).**
+The trustless AMM (`pump.fun`-style buy/sell against an on-chain reserve) needs a
+**stateful OP_PUSH_TX covenant**. Phase 0 de-risked the whole approach with a
+trivial `Counter` covenant (state may only increment by +1) — all the covenant
+machinery, none of the curve math. `packages/curve`:
+· scrypt-ts **compiles a stateful covenant to Bitcoin Script** (the compiled
+  `Tx.checkPreimage` forged-sig construction + `hash256(hashOutputs)` self-
+  replication constraint are visible in `artifacts/counter.scrypt`);
+· it **executes correctly in `@bsv/sdk`'s own Script interpreter** — our production
+  runtime, not scrypt-ts: `count 0→1` accepted, `0→0` and `0→2` rejected, `1→2`
+  accepted (`pnpm --filter @launchpad/curve test`, 4/4 green).
+**Toolchain gotcha (documented):** scrypt-ts-transpiler needs TS ~5.3; pnpm's
+workspace hoisting gives it 5.9 and the transform silently emits nothing. Fix:
+compile in an isolated npm project (`scripts/compile.sh`), commit the hex. sCrypt
+is build-time only — runtime is `@bsv/sdk` + committed artifacts.
+**Remaining for Phase 0:** one live mainnet broadcast of a self-replicating spend
+(needs a funding wallet — the covenant itself needs no signature to spend).
+**Next:** Phase 1 — buy-only linear-curve covenant (verify-invariant, round against
+the taker), covenant-native token, operator-sequenced. See ADR-026 for the plan.
+
+
 
 **✅ COUNTERFEIT FIX — genesis issuance reworked (2026-07-28, ADR-024) — VERIFIED ON-CHAIN.**
 Reissued token `bd7e084371493136a36236dbd927ed8b0aef3835e662f6900e8ae9bd62eda87f:0`

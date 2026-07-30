@@ -61,6 +61,7 @@ present, not implemented.
 - Settle-order UI (admin, delivers tokens; auto-resolves pool) → `apps/web/components/SettleOrderButton.tsx`
 - Pool auto-resolution + spent-guard + broadcast → `apps/web/lib/settle-actions.ts` (`resolveCurrentPool`, `isOutputUnspent`, `broadcastRawTx`)
 - STAS receive-register (buyer internalizes delivered tokens) → `packages/bsv/src/receive` (`receiveStasToken`)
+- Bonding-curve AMM covenant (Phase 0 spike; ADR-026) → `packages/curve` — sCrypt source `src/contracts/counter.ts`, compiled hex `artifacts/`, `@bsv/sdk` spend/verify `src/covenant.ts`, offline proof `test/`, isolated compile `scripts/compile.sh`, notes `README.md`
 - Buyer claim UI (register settled purchases into wallet) → `apps/web/components/ClaimTokens.tsx` (on sale page)
 - Safe markdown renderer (project descriptions) → `apps/web/components/Markdown.tsx` + `.md` styles in `globals.css`
 - Submit a project → `apps/web/app/submit/page.tsx`

@@ -1,0 +1,19 @@
+
+contract Counter {
+  @state int count;
+  bytes __scrypt_ts_ctx_hashoutputs;
+  int __scrypt_ts_ctx_value;
+  constructor(int count) {
+    this.count = count;
+  }
+  public function increment(SigHashPreimage __scrypt_ts_txPreimage) {
+    require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'c3')));
+    this.__scrypt_ts_ctx_hashoutputs = SigHash.hashOutputs(__scrypt_ts_txPreimage);
+    this.__scrypt_ts_ctx_value = SigHash.value(__scrypt_ts_txPreimage);
+    this.count++;
+    int amount = this.__scrypt_ts_ctx_value;
+    bytes outputs = this.buildStateOutput(amount);
+    require(this.__scrypt_ts_ctx_hashoutputs == hash256(outputs));
+  }
+  function buildStateOutput(int amount) : bytes {  return Utils.buildOutput(this.getStateScript(), amount);}
+}
