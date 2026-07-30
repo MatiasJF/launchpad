@@ -1,0 +1,51 @@
+
+contract LedgerPool {
+  @state int sold;
+  @state HashedMap<Ripemd160,int> ledger;
+  VarIntReader __scrypt_ts_accessPathReaderForProp__ledger;
+  const int k;
+  const int supply;
+  bytes __scrypt_ts_ctx_hashoutputs;
+  int __scrypt_ts_ctx_value;
+  constructor(int sold, HashedMap<Ripemd160,int> ledger, int k, int supply) {
+    this.sold = sold;
+    this.ledger = ledger;
+    this.k = k;
+    this.supply = supply;
+  }
+  public function buy(Ripemd160 owner, int oldBal, int delta, int newReserve, SigHashPreimage __scrypt_ts_txPreimage, bytes __scrypt_ts_accessPathForProp__ledger) {
+    require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'c3')));
+    this.__scrypt_ts_ctx_hashoutputs = SigHash.hashOutputs(__scrypt_ts_txPreimage);
+    this.__scrypt_ts_ctx_value = SigHash.value(__scrypt_ts_txPreimage);
+    this.__scrypt_ts_accessPathReaderForProp__ledger = new VarIntReader(__scrypt_ts_accessPathForProp__ledger);
+    require(delta > 0);
+    require(this.sold + delta <= this.supply);
+    int cost = (this.k * delta * (2 * this.sold + delta + 1)) / 2;
+    require(newReserve >= this.__scrypt_ts_ctx_value + cost);
+    require(this.ledger.canGet({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}, oldBal));
+    require(this.ledger.set({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}, oldBal + delta));
+    this.sold += delta;
+    bytes out = this.buildStateOutput(newReserve);
+    require(this.__scrypt_ts_ctx_hashoutputs == hash256(out));
+  }
+  public function sell(Ripemd160 owner, PubKey ownerPub, Sig ownerSig, int oldBal, int amount, bytes payoutScript, SigHashPreimage __scrypt_ts_txPreimage, bytes __scrypt_ts_accessPathForProp__ledger) {
+    require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'41')));
+    this.__scrypt_ts_ctx_hashoutputs = SigHash.hashOutputs(__scrypt_ts_txPreimage);
+    this.__scrypt_ts_ctx_value = SigHash.value(__scrypt_ts_txPreimage);
+    this.__scrypt_ts_accessPathReaderForProp__ledger = new VarIntReader(__scrypt_ts_accessPathForProp__ledger);
+    require(hash160(ownerPub) == owner);
+    require(checkSig(ownerSig, ownerPub));
+    require(amount > 0);
+    require(oldBal >= amount);
+    require(this.ledger.canGet({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}, oldBal));
+    int newSold = this.sold - amount;
+    int refund = (this.k * amount * (2 * newSold + amount + 1)) / 2;
+    require(this.ledger.set({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}, oldBal - amount));
+    this.sold = newSold;
+    int reserveAfter = this.__scrypt_ts_ctx_value - refund;
+    bytes poolOut = this.buildStateOutput(reserveAfter);
+    bytes payoutOut = Utils.buildOutput(payoutScript, refund);
+    require(this.__scrypt_ts_ctx_hashoutputs == hash256(poolOut + payoutOut));
+  }
+  function buildStateOutput(int amount) : bytes {  return Utils.buildOutput(this.getStateScript(), amount);}
+}
