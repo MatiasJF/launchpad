@@ -19,8 +19,14 @@ machinery, none of the curve math. `packages/curve`:
 workspace hoisting gives it 5.9 and the transform silently emits nothing. Fix:
 compile in an isolated npm project (`scripts/compile.sh`), commit the hex. sCrypt
 is build-time only — runtime is `@bsv/sdk` + committed artifacts.
-**Remaining for Phase 0:** one live mainnet broadcast of a self-replicating spend
-(needs a funding wallet — the covenant itself needs no signature to spend).
+**Live bench built (pending on-chain run):** admin-gated `/admin/covenant` deploys
+the covenant (count=0) via a wallet `createAction`, then hand-assembles + broadcasts
+the increment spend — covenant input carries NO signature (just the pushed BIP-143
+preimage, OP_PUSH_TX); a second wallet-owned input pays the fee (the covenant pins
+successor.value == covenant.value, so no fee can be skimmed from it). Pre-broadcast
+it cross-checks the bsv-js preimage against the @bsv/sdk one. Module:
+`packages/curve/src/spike.ts`. **Remaining: the user runs the two mainnet txs in
+BSV Desktop** — the only manual wallet step; then Phase 0 is closed on-chain.
 **Next:** Phase 1 — buy-only linear-curve covenant (verify-invariant, round against
 the taker), covenant-native token, operator-sequenced. See ADR-026 for the plan.
 

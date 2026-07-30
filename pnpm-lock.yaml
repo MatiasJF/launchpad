@@ -38,6 +38,9 @@ importers:
       '@launchpad/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@launchpad/curve':
+        specifier: workspace:*
+        version: link:../../packages/curve
       '@launchpad/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -121,6 +124,12 @@ importers:
       '@bsv/sdk':
         specifier: ^2.1.9
         version: 2.1.9
+      '@launchpad/bsv':
+        specifier: workspace:*
+        version: link:../bsv
+      bsv:
+        specifier: ^1.5.6
+        version: 1.5.6
     devDependencies:
       '@types/node':
         specifier: ^20.16.11

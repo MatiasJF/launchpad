@@ -14,6 +14,7 @@
     "@bsv/sdk": "^2.1.9",
     "@launchpad/bsv": "workspace:*",
     "@launchpad/core": "workspace:*",
+    "@launchpad/curve": "workspace:*",
     "@launchpad/db": "workspace:*",
     "buffer": "^6.0.3",
     "next": "^15.0.3",
