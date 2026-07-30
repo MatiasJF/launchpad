@@ -14,7 +14,8 @@
     "src/vendor.d.ts",
     "artifacts/locks.json",
     "artifacts/curve-locks.json",
-    "src/buyAssembly.ts"
+    "src/buyAssembly.ts",
+    "src/ledgerTx.ts"
   ],
   "comment": "src/contracts/*.ts is sCrypt source (build-time only, needs scrypt-ts); it is compiled in isolation by scripts/compile.sh and excluded from the runtime TS project."
 }

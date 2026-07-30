@@ -70,6 +70,7 @@ export default async function ManagePage({ params }: { params: Promise<{ slug: s
           curvePool: sale.curvePool
             ? {
                 status: sale.curvePool.status,
+                variant: sale.curvePool.variant,
                 sold: Number(sale.curvePool.sold),
                 supply: Number(sale.curvePool.supply),
                 reserveSats: Number(sale.curvePool.reserveSats),

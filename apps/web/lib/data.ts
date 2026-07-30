@@ -108,6 +108,7 @@ function mapSale(s: SaleWithRels): SaleCardVM {
     curve: s.curvePool
       ? {
           status: s.curvePool.status,
+          variant: s.curvePool.variant,
           sold: Number(s.curvePool.sold),
           supply: Number(s.curvePool.supply),
           reserveSats: Number(s.curvePool.reserveSats),

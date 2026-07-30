@@ -34,7 +34,7 @@ export type ManageVM = {
     pledgeUnitSats: number;
     raisedSats: number;
     assured: boolean;
-    curvePool: { status: string; sold: number; supply: number; reserveSats: number; poolTxid: string | null } | null;
+    curvePool: { status: string; variant: string; sold: number; supply: number; reserveSats: number; poolTxid: string | null } | null;
   } | null;
   token: { ticker: string; supply: number; issuanceTxid: string | null; tokenId: string | null } | null;
   orders: {

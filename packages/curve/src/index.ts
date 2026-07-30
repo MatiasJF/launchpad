@@ -28,6 +28,13 @@ export {
 } from './curvePool';
 
 export {
+  buildLedgerBuyTx,
+  buildLedgerSellTx,
+  type LedgerPoolUtxo,
+  type LedgerTxResult,
+} from './ledgerTx';
+
+export {
   buildCurveBuyTx,
   deployCurvePool,
   CURVE_PARAMS,
