@@ -204,45 +204,59 @@ export function ProjectManage({ p }: { p: ManageVM }) {
     try {
       const b = await getBatchForSale(p.sale.id);
       if (!b.ok) throw new Error(b.error);
-      setBatchMsg('resolving current pool');
-      const pool = await resolveCurrentPool(b.mintTxid);
-      if ('error' in pool) throw new Error(pool.error);
-      const info = await getOutputInfo(pool.txid, pool.vout);
-      if (!info) throw new Error('could not fetch the pool UTXO');
-      const total = b.recipients.reduce((s, r) => s + r.amount, 0);
-      if (total > info.satoshis) throw new Error(`pool holds ${info.satoshis} tokens; batch needs ${total}`);
-      const beef = await getSourceBeef(pool.txid);
-      if (!beef) throw new Error('pool must be confirmed to settle');
-      setBatchMsg('building batch transfer (approve in wallet)');
       const { getWalletClient } = await import('@launchpad/bsv/wallet');
-      const { batchTransferStas } = await import('@launchpad/bsv/settle');
+      const { batchTransferStas, MAX_BATCH_RECIPIENTS } = await import('@launchpad/bsv/settle');
       const wallet = await getWalletClient();
-      const res = await batchTransferStas(wallet as never, '', 'main', {
-        source: {
-          txid: pool.txid,
-          vout: pool.vout,
-          scriptHex: info.scriptHex,
-          satoshis: info.satoshis,
-          beef,
-          brc42KeyId: `${b.slug}-owner`,
-          owner: { protocolID: STAS_PROTOCOL, keyID: `${b.slug}-owner`, counterparty: 'self', forSelf: false },
-        },
-        recipients: b.recipients.map((r) => ({ address: r.address, amount: r.amount })),
-        senderChangeHash160: info.scriptHex.substring(6, 46),
-      });
-      if (!res.ok) throw new Error(res.reason);
-      setBatchMsg('broadcasting funding (TX1)');
-      const bc1 = await broadcastRawTx(res.fundingRawTx, res.fundingTxid);
-      if (!bc1.ok) throw new Error(`funding broadcast: ${bc1.error}`);
-      setBatchMsg('broadcasting batch transfer (TX2)');
-      const bc2 = await broadcastRawTx(res.rawTx, res.txid);
-      if (!bc2.ok) throw new Error(`batch broadcast: ${bc2.error}`);
-      const txid = bc2.txid || res.txid;
-      await markOrdersSettled(
-        b.recipients.map((r) => r.orderId),
-        txid,
-      );
-      setBatchTxid(txid);
+
+      // Resolve the starting pool.
+      setBatchMsg('resolving current pool');
+      const pool0 = await resolveCurrentPool(b.mintTxid);
+      if ('error' in pool0) throw new Error(pool0.error);
+      const info0 = await getOutputInfo(pool0.txid, pool0.vout);
+      if (!info0) throw new Error('could not fetch the pool UTXO');
+      const total = b.recipients.reduce((s, r) => s + r.amount, 0);
+      if (total > info0.satoshis) throw new Error(`pool holds ${info0.satoshis} tokens; batch needs ${total}`);
+      const beef0 = await getSourceBeef(pool0.txid);
+      if (!beef0) throw new Error('pool must be confirmed to settle');
+
+      // Chunk into groups of ≤3 (STAS 5-output limit) and CHAIN them: each chunk
+      // spends the previous chunk's token-change, using its BEEF — no waiting.
+      let cur = { txid: pool0.txid, vout: pool0.vout, scriptHex: info0.scriptHex, satoshis: info0.satoshis, beef: beef0 as number[] };
+      const chunks: (typeof b.recipients)[] = [];
+      for (let i = 0; i < b.recipients.length; i += MAX_BATCH_RECIPIENTS) chunks.push(b.recipients.slice(i, i + MAX_BATCH_RECIPIENTS));
+      let lastTxid = '';
+      for (let c = 0; c < chunks.length; c++) {
+        const chunk = chunks[c] as typeof b.recipients;
+        setBatchMsg(`chunk ${c + 1}/${chunks.length} · building (approve in wallet)`);
+        const res = await batchTransferStas(wallet as never, '', 'main', {
+          source: {
+            txid: cur.txid,
+            vout: cur.vout,
+            scriptHex: cur.scriptHex,
+            satoshis: cur.satoshis,
+            beef: cur.beef,
+            brc42KeyId: `${b.slug}-owner`,
+            owner: { protocolID: STAS_PROTOCOL, keyID: `${b.slug}-owner`, counterparty: 'self', forSelf: false },
+          },
+          recipients: chunk.map((r) => ({ address: r.address, amount: r.amount })),
+          senderChangeHash160: cur.scriptHex.substring(6, 46),
+        });
+        if (!res.ok) throw new Error(res.reason);
+        setBatchMsg(`chunk ${c + 1}/${chunks.length} · broadcasting funding`);
+        const bc1 = await broadcastRawTx(res.fundingRawTx, res.fundingTxid);
+        if (!bc1.ok) throw new Error(`funding broadcast: ${bc1.error}`);
+        setBatchMsg(`chunk ${c + 1}/${chunks.length} · broadcasting transfer`);
+        const bc2 = await broadcastRawTx(res.rawTx, res.txid);
+        if (!bc2.ok) throw new Error(`transfer broadcast: ${bc2.error}`);
+        lastTxid = bc2.txid || res.txid;
+        // Record this chunk's orders as delivered by this chunk's tx.
+        await markOrdersSettled(chunk.map((r) => r.orderId), lastTxid);
+        // Chain the next chunk onto this tx's token-change.
+        if (res.newPool && c < chunks.length - 1) {
+          cur = { ...res.newPool, beef: res.chainBeef };
+        }
+      }
+      setBatchTxid(lastTxid);
       setBatchState('done');
     } catch (e) {
       setBatchMsg(`⚠ ${e instanceof Error ? e.message : String(e)}`);
@@ -621,7 +635,10 @@ export function ProjectManage({ p }: { p: ManageVM }) {
             <h2 className="text-xl font-semibold">Orders to settle ({pending.length})</h2>
             {p.token?.issuanceTxid && pending.length > 1 && (
               <div className="mt-3 rounded-md border border-violet/40 bg-[color-mix(in_srgb,var(--c-violet)_7%,transparent)] p-3">
-                <p className="mb-2 text-sm text-muted">Deliver every pending order in a single transaction.</p>
+                <p className="mb-2 text-sm text-muted">
+                  Deliver every pending order — chained in groups of {3} (STAS allows ≤ 3 recipients per tx). After it
+                  finishes, give the chain a minute to confirm before other on-chain actions.
+                </p>
                 {batchState === 'done' && batchTxid ? (
                   <a
                     href={`https://whatsonchain.com/tx/${batchTxid}`}

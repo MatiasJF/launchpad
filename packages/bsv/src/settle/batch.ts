@@ -50,8 +50,24 @@ export interface BatchArgs {
   senderChangeHash160?: string;
 }
 
+/** STAS transfers allow at most 5 outputs; with token-change + BSV-change that
+ *  leaves room for 3 recipients per transaction. Chunk larger batches. */
+export const MAX_BATCH_RECIPIENTS = 3;
+
 export type BatchResult =
-  | { ok: true; txid: string; beef: number[]; rawTx: string; fundingRawTx: string; fundingTxid: string }
+  | {
+      ok: true;
+      txid: string;
+      beef: number[];
+      rawTx: string;
+      fundingRawTx: string;
+      fundingTxid: string;
+      /** Plain BEEF of this tx (+ ancestry) so the next chunk can use it as its
+       *  source BEEF and chain onto the token-change WITHOUT waiting for a block. */
+      chainBeef: number[];
+      /** The token-change output (new pool) so the next chunk can chain onto it. */
+      newPool: { txid: string; vout: number; scriptHex: string; satoshis: number } | null;
+    }
   | { ok: false; reason: string };
 
 export async function batchTransferStas(
@@ -62,6 +78,9 @@ export async function batchTransferStas(
 ): Promise<BatchResult> {
   const { source, recipients } = args;
   if (!recipients.length) return { ok: false, reason: 'no recipients' };
+  if (recipients.length > MAX_BATCH_RECIPIENTS) {
+    return { ok: false, reason: `max ${MAX_BATCH_RECIPIENTS} recipients per tx (STAS 5-output limit)` };
+  }
 
   let bsv: any, stas: any, SIGHASH: number;
   try {
@@ -211,7 +230,7 @@ export async function batchTransferStas(
   }
 
   const rawTx = tx.toString();
-  let tx2Txid = '', tx2AtomicBeef: number[];
+  let tx2Txid = '', tx2AtomicBeef: number[], chainBeef: number[];
   try {
     const beef = Beef.fromBinary(tokenBeef);
     beef.mergeBeef(Beef.fromBinary(funding.beef));
@@ -219,11 +238,20 @@ export async function batchTransferStas(
     beef.mergeTransaction(sdkTx2);
     tx2Txid = sdkTx2.id('hex');
     tx2AtomicBeef = beef.toBinaryAtomic(tx2Txid);
+    chainBeef = beef.toBinary(); // plain BEEF incl. this tx — for chaining the next chunk
   } catch (err) {
     return { ok: false, reason: `BEEF assembly: ${errMsg(err)}` };
   }
 
-  return { ok: true, txid: tx2Txid, beef: tx2AtomicBeef, rawTx, fundingRawTx, fundingTxid: funding.txid };
+  // The token-change output is the new pool (it sits right after the N recipient
+  // outputs). Return it so the caller can chain the next chunk onto it directly,
+  // using this tx's BEEF — no need to wait for confirmation.
+  const newPool =
+    changeStasScriptHex != null
+      ? { txid: tx2Txid, vout: recipients.length, scriptHex: changeStasScriptHex, satoshis: changeAmt }
+      : null;
+
+  return { ok: true, txid: tx2Txid, beef: tx2AtomicBeef, rawTx, fundingRawTx, fundingTxid: funding.txid, chainBeef, newPool };
 }
 
 function errMsg(err: unknown): string {
