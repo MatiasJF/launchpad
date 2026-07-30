@@ -143,6 +143,75 @@ export function computeBuyCalldata(args: {
   return { isNew, oldBal, accessPathHex, nextLockingHex };
 }
 
+export interface SellSpend {
+  unlockingHex: string;
+  sourceLockHex: string;
+  nextLockingHex: string;
+  payoutScriptHex: string;
+  refund: bigint;
+}
+
+/**
+ * Build the pool-input unlock for a SELL. ANYONECANPAY|ALL, so the preimage pins
+ * BOTH outputs (successor pool + seller payout) but not other inputs — the caller
+ * adds a fee input afterwards. The holder authorises with `signHash`, which signs
+ * the standard sighash (in production this is the wallet's createSignature; here a
+ * local key). The returned sig is DER + the sighash-type byte (0xc1).
+ */
+export function computeSellSpend(args: {
+  sold: bigint; k: bigint; supply: bigint; balances: Balance[];
+  ownerPkh: string; ownerPubHex: string; amount: bigint;
+  poolTxid: string; poolVout: number; reserveBefore: number;
+  payoutScriptHex: string;
+  signHash: (sighashHex: string) => string; // returns DER sig hex (no sighash byte)
+}): SellSpend {
+  ensureLoaded();
+  const { sold, k, supply, balances, ownerPkh, ownerPubHex, amount, poolTxid, poolVout, reserveBefore, payoutScriptHex, signHash } = args;
+  const B: any = bsv;
+  const key = PubKeyHash(toByteString(ownerPkh));
+  const existing = balances.find((b) => b.ownerPkh.toLowerCase() === ownerPkh.toLowerCase());
+  if (!existing) throw new Error('seller has no ledger balance');
+  const oldBal = existing.amount;
+  if (amount > oldBal) throw new Error('insufficient balance');
+
+  const newSold = sold - amount;
+  const refund = (k * amount * (2n * newSold + amount + 1n)) / 2n;
+
+  const cur = poolWith(sold, mkLedger(balances), k, supply);
+  const sourceLockHex: string = cur.lockingScript.toHex();
+
+  const clone: Ledger = new HashedMap<PubKeyHash, bigint>(cur.ledger as any);
+  const next = poolWith(newSold, clone, k, supply);
+  next.ledger.set(key, oldBal - amount);
+  const nextLockingHex: string = String((next as any).getStateScript());
+
+  const reserveAfter = reserveBefore - Number(refund);
+  const tx = new B.Transaction();
+  tx.addInput(
+    new B.Transaction.Input({ prevTxId: poolTxid, outputIndex: poolVout, script: new B.Script() }),
+    B.Script.fromHex(sourceLockHex),
+    reserveBefore,
+  );
+  tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(nextLockingHex), satoshis: reserveAfter }));
+  tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(payoutScriptHex), satoshis: Number(refund) }));
+  (cur as any).to = { tx, inputIndex: 0 };
+
+  // The sig the covenant's checkSig verifies is over sha256sha256(sighashPreimage)
+  // — the exact digest our production wallet path signs (settle/twoTx/p2pkhInput).
+  const SIGHASH = 0xc1;
+  const preimage = B.Transaction.sighash.sighashPreimage(tx, SIGHASH, 0, B.Script.fromHex(sourceLockHex), new B.crypto.BN(reserveBefore));
+  const digest = B.crypto.Hash.sha256sha256(preimage);
+  const derHex = signHash(Buffer.from(digest).toString('hex'));
+  const sigHex = derHex + SIGHASH.toString(16).padStart(2, '0');
+
+  const { Sig, PubKey } = require('scrypt-ts');
+  const usc = (cur as any).getUnlockingScript((self: any) => {
+    self.sell(key, PubKey(toByteString(ownerPubHex)), Sig(toByteString(sigHex)), oldBal, amount, toByteString(payoutScriptHex));
+  });
+
+  return { unlockingHex: usc.toHex(), sourceLockHex, nextLockingHex, payoutScriptHex, refund };
+}
+
 export interface SellCalldata {
   oldBal: bigint;
   accessPathHex: string;

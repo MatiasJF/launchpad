@@ -73,7 +73,7 @@ export class LedgerPool extends SmartContract {
     assert(this.ctx.hashOutputs === hash256(out), 're-lock successor pool');
   }
 
-  @method()
+  @method(SigHash.ANYONECANPAY_ALL)
   public sell(
     owner: PubKeyHash,
     ownerPub: PubKey,

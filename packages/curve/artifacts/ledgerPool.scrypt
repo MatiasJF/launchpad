@@ -34,7 +34,7 @@ contract LedgerPool {
     require(this.__scrypt_ts_ctx_hashoutputs == hash256(out));
   }
   public function sell(Ripemd160 owner, PubKey ownerPub, Sig ownerSig, int oldBal, int amount, bytes payoutScript, SigHashPreimage __scrypt_ts_txPreimage, bytes __scrypt_ts_accessPathForProp__ledger) {
-    require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'41')));
+    require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'c1')));
     this.__scrypt_ts_ctx_hashoutputs = SigHash.hashOutputs(__scrypt_ts_txPreimage);
     this.__scrypt_ts_ctx_value = SigHash.value(__scrypt_ts_txPreimage);
     this.__scrypt_ts_accessPathReaderForProp__ledger = new VarIntReader(__scrypt_ts_accessPathForProp__ledger);
