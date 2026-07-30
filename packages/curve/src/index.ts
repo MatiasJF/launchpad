@@ -15,3 +15,11 @@ export {
   type DeployResult,
   type IncrementResult,
 } from './spike';
+
+export {
+  curveCost,
+  buildBuySpend,
+  validateBuy,
+  CURVE_SCOPE,
+  type BuySpendArgs,
+} from './curvePool';

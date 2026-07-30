@@ -63,6 +63,7 @@ present, not implemented.
 - STAS receive-register (buyer internalizes delivered tokens) → `packages/bsv/src/receive` (`receiveStasToken`)
 - Bonding-curve AMM covenant (Phase 0 spike; ADR-026) → `packages/curve` — sCrypt source `src/contracts/counter.ts`, compiled hex `artifacts/`, `@bsv/sdk` spend/verify `src/covenant.ts`, offline proof `test/`, isolated compile `scripts/compile.sh`, notes `README.md`
 - Covenant live mainnet bench (deploy + increment, non-custodial) → `packages/curve/src/spike.ts` (`deployCovenant`, `buildIncrementTx`) · UI `apps/web/components/CovenantSpike.tsx` · page `apps/web/app/admin/covenant/page.tsx` (admin-gated)
+- Linear bonding-curve reserve covenant (Phase 1; ADR-026) → sCrypt `packages/curve/src/contracts/linearCurvePool.ts` · @bsv/sdk buy spend+verify `packages/curve/src/curvePool.ts` (`curveCost`, `buildBuySpend`, `validateBuy`) · fixtures `artifacts/curve-locks.json` · tests `test/curve-pool.test.mjs`
 - Buyer claim UI (register settled purchases into wallet) → `apps/web/components/ClaimTokens.tsx` (on sale page)
 - Safe markdown renderer (project descriptions) → `apps/web/components/Markdown.tsx` + `.md` styles in `globals.css`
 - Submit a project → `apps/web/app/submit/page.tsx`

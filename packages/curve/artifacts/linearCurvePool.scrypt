@@ -1,0 +1,28 @@
+
+contract LinearCurvePool {
+  @state int sold;
+  const int k;
+  const int supply;
+  bytes __scrypt_ts_ctx_hashoutputs;
+  int __scrypt_ts_ctx_value;
+  constructor(int sold, int k, int supply) {
+    this.sold = sold;
+    this.k = k;
+    this.supply = supply;
+  }
+  public function buy(int delta, int newReserve, SigHashPreimage __scrypt_ts_txPreimage) {
+    require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'c3')));
+    this.__scrypt_ts_ctx_hashoutputs = SigHash.hashOutputs(__scrypt_ts_txPreimage);
+    this.__scrypt_ts_ctx_value = SigHash.value(__scrypt_ts_txPreimage);
+    require(delta > 0);
+    int s = this.sold;
+    require(s + delta <= this.supply);
+    int cost = (this.k * delta * (2 * s + delta + 1)) / 2;
+    int reserveBefore = this.__scrypt_ts_ctx_value;
+    require(newReserve >= reserveBefore + cost);
+    this.sold = s + delta;
+    bytes poolOut = this.buildStateOutput(newReserve);
+    require(this.__scrypt_ts_ctx_hashoutputs == hash256(poolOut));
+  }
+  function buildStateOutput(int amount) : bytes {  return Utils.buildOutput(this.getStateScript(), amount);}
+}

@@ -4,6 +4,20 @@ _Last updated: 2026-07-30 — by: bonding-curve Phase 0 spike_
 
 ## Current phase
 
+**🏗️ BONDING-CURVE AMM · PHASE 1 (BUY-ONLY CURVE) — covenant core GREEN offline (2026-07-30, ADR-026).**
+The `LinearCurvePool` reserve covenant compiles and passes its math battery in the
+@bsv/sdk interpreter (`packages/curve`, 15/15). Enforces `cost = k·delta·(2·sold+
+delta+1)/2` (exact /2), `newReserve ≥ reserveBefore + cost` (verify-invariant,
+rounds for the pool), supply cap, and self-replication to the `sold+delta`
+successor. Tests cover: exact-cost accept, overpay accept, underpay-by-1 reject,
+wrong-successor reject, oversupply reject, zero-delta reject, chaining, whole-supply
+buy. Caught + fixed a real audit-surface bug: small int args (delta 1..16) must use
+minimal `OP_N` pushes or the interpreter rejects "not minimally-encoded". Module:
+`src/contracts/linearCurvePool.ts` (source), `src/curvePool.ts` (@bsv/sdk buy
+spend/verify). **Next in Phase 1:** integration layer via /orchestrate — DB pool
+state, operator-sequenced buy assembly (buyer signs their payment ALL, covenant
+enforces the curve), admin "create pool" + buy UI, then one live mainnet buy.
+
 **✅ BONDING-CURVE AMM · PHASE 0 — PROVEN ON MAINNET (2026-07-30, ADR-026).**
 A stateful OP_PUSH_TX covenant self-replicated on-chain: deploy
 `71407ee6e6f7874969f7d8ce076a4f5d1ce7d77ff82380793390b70e94ac6e7b` (covenant
