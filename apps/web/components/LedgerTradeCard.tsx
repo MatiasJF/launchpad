@@ -10,6 +10,16 @@ import { getLedgerPool, prepareLedgerBuy, recordLedgerBuy, prepareLedgerSell, fi
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
 
+/**
+ * The holder-key derivation. MUST be identical for getPublicKey (ledger key) and
+ * createSignature (sell authorisation), or the covenant's checkSig fails. Mirrors
+ * the proven pattern in packages/bsv settle/twoTx/p2pkhInput.ts (counterparty
+ * 'anyone' + forSelf), which signs correctly on mainnet.
+ */
+function holderDerivation(slug: string) {
+  return { protocolID: STAS_PROTOCOL, keyID: slug, counterparty: 'anyone' as const, forSelf: true };
+}
+
 function cost(k: number, sold: number, delta: number): number {
   return (k * delta * (2 * sold + delta + 1)) / 2;
 }
@@ -33,7 +43,7 @@ export function LedgerTradeCard({ s }: { s: SaleCardVM }) {
     const { getWalletClient } = await import('@launchpad/bsv/wallet');
     const { PublicKey } = await import('@bsv/sdk');
     const wallet = await getWalletClient();
-    const { publicKey } = await wallet.getPublicKey({ protocolID: STAS_PROTOCOL, keyID: s.slug, counterparty: 'self' });
+    const { publicKey } = await wallet.getPublicKey(holderDerivation(s.slug));
     return Buffer.from(PublicKey.fromString(publicKey).toHash() as number[]).toString('hex');
   }
 
@@ -110,7 +120,7 @@ export function LedgerTradeCard({ s }: { s: SaleCardVM }) {
       const { PublicKey, P2PKH } = await import('@bsv/sdk');
       const wallet = await getWalletClient();
       const { publicKey: identity } = await wallet.getPublicKey({ identityKey: true });
-      const derivation = { protocolID: STAS_PROTOCOL, keyID: s.slug, counterparty: 'self' as const };
+      const derivation = holderDerivation(s.slug);
       const { publicKey: ownerPubHex } = await wallet.getPublicKey(derivation);
       const pkh = Buffer.from(PublicKey.fromString(ownerPubHex).toHash() as number[]).toString('hex');
       const payoutScriptHex = new P2PKH().lock(PublicKey.fromString(ownerPubHex).toAddress()).toHex();
