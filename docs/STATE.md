@@ -4,6 +4,24 @@ _Last updated: 2026-07-30 — by: bonding-curve Phase 0 spike_
 
 ## Current phase
 
+**🏗️ BONDING-CURVE AMM · PHASE 2 (SELL-BACK) — design + feasibility PROVEN, building (2026-07-30, ADR-027).**
+Research (grounded in the real DSTAS swap SDK) proved independent receipt UTXOs CAN'T
+be trustless + reserve-safe (a forged AMM receipt sold back drains real sats; authenticity
+isn't checkable in bounded Script). So (user chose) balances live INSIDE the pool covenant
+as a `HashedMap<ownerPkh,amount>` ledger — no forgeable token exists, reserve drain-proof,
+no indexer, no platform key. A holder proves ownership by SIGNATURE on sell. `LedgerPool`
+covenant compiles: `buy` credits (new-holder `!has` non-membership branch + existing
+`canGet` branch), `sell` debits with owner sig + curve refund + payout; sighash split c3
+(buy) / 41 (sell). **Runtime spike PASSED (10/10, off-network):** scrypt-ts runs server-side
+as a state calculator — `startTracing→canGet/set→serializedAccessPath()` gives the Merkle
+access-path proof, `ledger.data()` the new commitment, `getStateScript()` the successor
+script — and **@bsv/sdk `Spend` validates the result**, so our pre-broadcast guard still
+works. Gotchas documented (clone-then-set successor; rebuild current map fresh; sold=0n-then-
+assign; new-holder needs the `!has` branch just added). **Remaining (multi-day):** a Node
+"LedgerPool state service" (scrypt-ts, clone-then-set discipline) → adversarial drain-test
+battery → buy/sell assembly + DB ledger persistence + UI → dust-amount live buy+sell. New
+covenant version; the live buy-only `LinearCurvePool` pools are unaffected.
+
 **✅ BONDING-CURVE AMM · PHASE 1 (BUY-ONLY CURVE) — PROVEN ON MAINNET (2026-07-30, ADR-026).**
 A real non-custodial curve buy confirmed on-chain: buy tx
 `6bcdbb97b50f32188b7982f2c86033744f51d3f7b5061770d3e7ce1761909e4b` spends the pool

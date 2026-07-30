@@ -13,7 +13,7 @@ contract LedgerPool {
     this.k = k;
     this.supply = supply;
   }
-  public function buy(Ripemd160 owner, int oldBal, int delta, int newReserve, SigHashPreimage __scrypt_ts_txPreimage, bytes __scrypt_ts_accessPathForProp__ledger) {
+  public function buy(Ripemd160 owner, bool isNew, int oldBal, int delta, int newReserve, SigHashPreimage __scrypt_ts_txPreimage, bytes __scrypt_ts_accessPathForProp__ledger) {
     require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'c3')));
     this.__scrypt_ts_ctx_hashoutputs = SigHash.hashOutputs(__scrypt_ts_txPreimage);
     this.__scrypt_ts_ctx_value = SigHash.value(__scrypt_ts_txPreimage);
@@ -22,8 +22,13 @@ contract LedgerPool {
     require(this.sold + delta <= this.supply);
     int cost = (this.k * delta * (2 * this.sold + delta + 1)) / 2;
     require(newReserve >= this.__scrypt_ts_ctx_value + cost);
-    require(this.ledger.canGet({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}, oldBal));
-    require(this.ledger.set({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}, oldBal + delta));
+    if(isNew) {
+        require(!this.ledger.has({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}));
+        require(this.ledger.set({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}, delta));
+      } else {
+        require(this.ledger.canGet({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}, oldBal));
+        require(this.ledger.set({owner, this.__scrypt_ts_accessPathReaderForProp__ledger.readInt()}, oldBal + delta));
+      }
     this.sold += delta;
     bytes out = this.buildStateOutput(newReserve);
     require(this.__scrypt_ts_ctx_hashoutputs == hash256(out));

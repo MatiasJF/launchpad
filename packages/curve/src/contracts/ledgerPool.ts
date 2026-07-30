@@ -50,15 +50,23 @@ export class LedgerPool extends SmartContract {
   }
 
   @method(SigHash.ANYONECANPAY_SINGLE)
-  public buy(owner: PubKeyHash, oldBal: bigint, delta: bigint, newReserve: bigint) {
+  public buy(owner: PubKeyHash, isNew: boolean, oldBal: bigint, delta: bigint, newReserve: bigint) {
     assert(delta > 0n, 'delta must be positive');
     assert(this.sold + delta <= this.supply, 'exceeds supply');
     const cost: bigint = (this.k * delta * (2n * this.sold + delta + 1n)) / 2n;
     assert(newReserve >= this.ctx.utxo.value + cost, 'underpaid');
 
-    // credit the ledger: prove current balance, then set the new one
-    assert(this.ledger.canGet(owner, oldBal), 'ledger proof (buy)');
-    this.ledger.set(owner, oldBal + delta);
+    // credit the ledger. A first-time buyer has no entry: prove NON-membership so
+    // `oldBal` can't be spoofed to overwrite/reset an existing balance (which would
+    // break the sold == sum(balances) invariant). An existing buyer proves their
+    // current balance, then we increment it.
+    if (isNew) {
+      assert(!this.ledger.has(owner), 'holder already exists');
+      this.ledger.set(owner, delta);
+    } else {
+      assert(this.ledger.canGet(owner, oldBal), 'ledger proof (buy)');
+      this.ledger.set(owner, oldBal + delta);
+    }
     this.sold += delta;
 
     const out: ByteString = this.buildStateOutput(newReserve);
