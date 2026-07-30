@@ -56,6 +56,49 @@ function pushInt(n: bigint): number[] {
   return push(scriptNum(n));
 }
 
+/**
+ * Runtime derivation of the pool's SUCCESSOR locking script (scrypt-ts-free).
+ *
+ * A stateful scrypt-ts contract's locking script is `codePart ++ stateRegion`,
+ * where only `stateRegion` changes between states. For LinearCurvePool the sole
+ * mutable field is `sold`, serialized as:
+ *
+ *     6a <flag> <push(scriptNum(sold))> <stateBodyLen : 4-byte LE> 00
+ *
+ * `codePart` (which bakes in the immutable k / supply) is identical across all
+ * successors, so we strip the current script's state region to recover it, then
+ * re-emit the region for `newSold` in canonical getStateScript form (flag 0x00 —
+ * exactly what the covenant's `buildStateOutput` reconstructs and hashes). Verified
+ * byte-for-byte against compiled fixtures in test/curve-script.test.mjs — the pool
+ * would brick if this diverged, so it is not derived by hand at call sites.
+ */
+function stateRegionLen(script: Buffer): number {
+  const n = script.length;
+  // trailer byte at n-1, the 4-byte LE state-body length at n-5..n-2
+  const bodyLen = script.readUInt32LE(n - 5);
+  return 1 /* 6a */ + bodyLen + 4 /* LE len */ + 1 /* trailer */;
+}
+
+/** Recover the immutable code part (everything before the mutable state region). */
+export function poolCodePart(currentScriptHex: string): string {
+  const b = Buffer.from(currentScriptHex, 'hex');
+  const region = stateRegionLen(b);
+  const start = b.length - region;
+  if (start < 0 || b[start] !== 0x6a) throw new Error('unexpected pool state layout');
+  return b.subarray(0, start).toString('hex');
+}
+
+/** Build the successor pool locking script for `newSold` from the current script. */
+export function poolScriptForSold(currentScriptHex: string, newSold: bigint): string {
+  const codePart = poolCodePart(currentScriptHex);
+  const sn = scriptNum(newSold); // minimal LE, sign-padded — matches scrypt @state int
+  const body = [0x00, sn.length, ...sn]; // flag 0x00 + push(scriptNum(sold))
+  const len = body.length;
+  const le4 = [len & 0xff, (len >> 8) & 0xff, (len >> 16) & 0xff, (len >> 24) & 0xff];
+  const region = [0x6a, ...body, ...le4, 0x00];
+  return codePart + Buffer.from(region).toString('hex');
+}
+
 export interface BuySpendArgs {
   poolLockHex: string; // covenant script at current `sold`
   reserveBefore: number; // covenant UTXO satoshi value

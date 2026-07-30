@@ -60,7 +60,7 @@ const Pool = buildContractClass(require('./artifacts/linearCurvePool.json'));
 const K = 1n, SUPPLY = 1000n;
 const p = new Pool(0n, K, SUPPLY);
 const at = (sold) => p.getNewStateScript({ sold: BigInt(sold) }).toHex();
-const soldValues = [0, 10, 15, 25, 1000];
+const soldValues = [0, 1, 10, 15, 25, 128, 200, 1000];
 const locks = {};
 for (const s of soldValues) locks[String(s)] = s === 0 ? p.lockingScript.toHex() : at(s);
 fs.writeFileSync('artifacts/curve-locks.json', JSON.stringify({
