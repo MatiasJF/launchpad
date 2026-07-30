@@ -102,11 +102,15 @@ model CurvePool {
   id              String   @id @default(cuid())
   saleId          String   @unique
   sale            Sale     @relation(fields: [saleId], references: [id])
+  variant         String   @default("linear") // linear (buy-only, ADR-026) | ledger (buy+sell, ADR-027)
   k               BigInt // curve slope: price of the (s+1)-th token = k*(s+1)
   supply          BigInt // max tokens the curve sells
   sold            BigInt   @default(0) // tokens sold so far (== covenant state)
   seedReserveSats BigInt // sats the pool was deployed with (base, below the curve)
   reserveSats     BigInt   @default(0) // current pool UTXO value (== reserve)
+  // ledger variant only: JSON [{ownerPkh, amount}] mirroring the covenant's HashedMap
+  // so the operator can rebuild the map to prove each spend (the ledger is public).
+  ledgerBalances  String?
   poolTxid        String? // current pool outpoint (moves after each buy)
   poolVout        Int?
   scriptHex       String? // current pool locking script

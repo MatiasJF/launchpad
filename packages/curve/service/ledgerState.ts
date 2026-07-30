@@ -49,6 +49,12 @@ export function poolScript(args: { sold: bigint; k: bigint; supply: bigint; bala
   return String((poolWith(args.sold, mkLedger(args.balances), args.k, args.supply) as any).getStateScript());
 }
 
+/** The genesis pool locking script (sold=0, empty ledger) — deployed to open a pool. */
+export function genesisPoolScript(k: bigint, supply: bigint): string {
+  ensureLoaded();
+  return poolWith(0n, mkLedger([]), k, supply).lockingScript.toHex();
+}
+
 export interface BuyCalldata {
   isNew: boolean;
   oldBal: bigint;
@@ -158,15 +164,16 @@ export interface SellSpend {
  * the standard sighash (in production this is the wallet's createSignature; here a
  * local key). The returned sig is DER + the sighash-type byte (0xc1).
  */
-export function computeSellSpend(args: {
+interface SellArgs {
   sold: bigint; k: bigint; supply: bigint; balances: Balance[];
-  ownerPkh: string; ownerPubHex: string; amount: bigint;
-  poolTxid: string; poolVout: number; reserveBefore: number;
-  payoutScriptHex: string;
-  signHash: (sighashHex: string) => string; // returns DER sig hex (no sighash byte)
-}): SellSpend {
+  ownerPkh: string; amount: bigint;
+  poolTxid: string; poolVout: number; reserveBefore: number; payoutScriptHex: string;
+}
+
+/** Shared, DETERMINISTIC sell-tx builder so digest (step 1) and unlock (step 2) agree. */
+function buildSellTx(args: SellArgs) {
   ensureLoaded();
-  const { sold, k, supply, balances, ownerPkh, ownerPubHex, amount, poolTxid, poolVout, reserveBefore, payoutScriptHex, signHash } = args;
+  const { sold, k, supply, balances, ownerPkh, amount, poolTxid, poolVout, reserveBefore, payoutScriptHex } = args;
   const B: any = bsv;
   const key = PubKeyHash(toByteString(ownerPkh));
   const existing = balances.find((b) => b.ownerPkh.toLowerCase() === ownerPkh.toLowerCase());
@@ -179,7 +186,6 @@ export function computeSellSpend(args: {
 
   const cur = poolWith(sold, mkLedger(balances), k, supply);
   const sourceLockHex: string = cur.lockingScript.toHex();
-
   const clone: Ledger = new HashedMap<PubKeyHash, bigint>(cur.ledger as any);
   const next = poolWith(newSold, clone, k, supply);
   next.ledger.set(key, oldBal - amount);
@@ -187,29 +193,44 @@ export function computeSellSpend(args: {
 
   const reserveAfter = reserveBefore - Number(refund);
   const tx = new B.Transaction();
-  tx.addInput(
-    new B.Transaction.Input({ prevTxId: poolTxid, outputIndex: poolVout, script: new B.Script() }),
-    B.Script.fromHex(sourceLockHex),
-    reserveBefore,
-  );
+  tx.addInput(new B.Transaction.Input({ prevTxId: poolTxid, outputIndex: poolVout, script: new B.Script() }), B.Script.fromHex(sourceLockHex), reserveBefore);
   tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(nextLockingHex), satoshis: reserveAfter }));
   tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(payoutScriptHex), satoshis: Number(refund) }));
   (cur as any).to = { tx, inputIndex: 0 };
 
-  // The sig the covenant's checkSig verifies is over sha256sha256(sighashPreimage)
-  // — the exact digest our production wallet path signs (settle/twoTx/p2pkhInput).
-  const SIGHASH = 0xc1;
-  const preimage = B.Transaction.sighash.sighashPreimage(tx, SIGHASH, 0, B.Script.fromHex(sourceLockHex), new B.crypto.BN(reserveBefore));
-  const digest = B.crypto.Hash.sha256sha256(preimage);
-  const derHex = signHash(Buffer.from(digest).toString('hex'));
-  const sigHex = derHex + SIGHASH.toString(16).padStart(2, '0');
+  return { B, cur, tx, key, oldBal, sourceLockHex, nextLockingHex, reserveAfter, refund };
+}
 
+export interface SellDigest {
+  digestHex: string; // sha256sha256(sighashPreimage) — what the holder's wallet signs
+  sourceLockHex: string; nextLockingHex: string; payoutScriptHex: string;
+  refund: bigint; reserveAfter: number;
+}
+
+/** SELL step 1: the digest the holder must sign, plus the successor + payout info. */
+export function computeSellDigest(args: SellArgs): SellDigest {
+  const { B, tx, sourceLockHex, nextLockingHex, reserveAfter, refund } = buildSellTx(args);
+  const preimage = B.Transaction.sighash.sighashPreimage(tx, 0xc1, 0, B.Script.fromHex(sourceLockHex), new B.crypto.BN(args.reserveBefore));
+  const digest = B.crypto.Hash.sha256sha256(preimage);
+  return { digestHex: Buffer.from(digest).toString('hex'), sourceLockHex, nextLockingHex, payoutScriptHex: args.payoutScriptHex, refund, reserveAfter };
+}
+
+/** SELL step 2: build the unlock from the holder's signature (DER, no sighash byte). */
+export function computeSellUnlock(args: SellArgs & { ownerPubHex: string; sigDerHex: string }): SellSpend {
+  const { cur, key, oldBal, sourceLockHex, nextLockingHex, refund } = buildSellTx(args);
+  const sigHex = args.sigDerHex + 'c1'; // DER + sighash-type byte
   const { Sig, PubKey } = require('scrypt-ts');
   const usc = (cur as any).getUnlockingScript((self: any) => {
-    self.sell(key, PubKey(toByteString(ownerPubHex)), Sig(toByteString(sigHex)), oldBal, amount, toByteString(payoutScriptHex));
+    self.sell(key, PubKey(toByteString(args.ownerPubHex)), Sig(toByteString(sigHex)), oldBal, args.amount, toByteString(args.payoutScriptHex));
   });
+  return { unlockingHex: usc.toHex(), sourceLockHex, nextLockingHex, payoutScriptHex: args.payoutScriptHex, refund };
+}
 
-  return { unlockingHex: usc.toHex(), sourceLockHex, nextLockingHex, payoutScriptHex, refund };
+/** Convenience one-shot (tests): digest -> signHash -> unlock. */
+export function computeSellSpend(args: SellArgs & { ownerPubHex: string; signHash: (digestHex: string) => string }): SellSpend {
+  const d = computeSellDigest(args);
+  const sigDerHex = args.signHash(d.digestHex);
+  return computeSellUnlock({ ...args, sigDerHex });
 }
 
 export interface SellCalldata {
