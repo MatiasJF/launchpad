@@ -4,6 +4,17 @@ _Last updated: 2026-07-30 — by: bonding-curve Phase 0 spike_
 
 ## Current phase
 
+**✅ BONDING-CURVE AMM · PHASE 1 (BUY-ONLY CURVE) — PROVEN ON MAINNET (2026-07-30, ADR-026).**
+A real non-custodial curve buy confirmed on-chain: buy tx
+`6bcdbb97b50f32188b7982f2c86033744f51d3f7b5061770d3e7ce1761909e4b` spends the pool
+covenant `c17f549d…:0` with **NO signature** (1877-byte pushed delta/newReserve/preimage)
++ a buyer P2PKH payment input → out0 re-locks byte-identically to the sold=5 successor
+pool (reserve 546→561, cost 15 = exact `5·6/2`) + out1 546-sat token receipt to the
+buyer. The covenant enforced the price on-chain and self-replicated with advanced state.
+Also fixed a "Missing inputs" race (pre-broadcast TX1 to WoC + retry) and moved the pool
+deploy into ProjectManage (owner action). **Phase 1 done. Next: Phase 2 (sell-back).**
+Detail below ↓
+
 **🏗️ BONDING-CURVE AMM · PHASE 1 (BUY-ONLY CURVE) — covenant core GREEN offline (2026-07-30, ADR-026).**
 The `LinearCurvePool` reserve covenant compiles and passes its math battery in the
 @bsv/sdk interpreter (`packages/curve`, 15/15). Enforces `cost = k·delta·(2·sold+
