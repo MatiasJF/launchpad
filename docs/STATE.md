@@ -23,12 +23,18 @@ decorators that break scrypt-ts). `computeBuySpend` builds the pool unlock via s
 `getUnlockingScript` (correct arg encoding + HashedMap access path) and **@bsv/sdk `Spend`
 validates it** — new-holder-into-empty-ledger, existing-holder, 2nd-holder, underpay-reject.
 Key discipline: clone cur's ACTUAL map (`new HashedMap(cur.ledger)`) for the successor, not
-a fresh mkLedger, else re-lock fails. **Remaining:** (1) SELL in the service — needs the
-owner signature (non-custodial: service computes preimage → wallet signs → getUnlockingScript
-with the Sig; change sell to ANYONECANPAY_ALL so a fee input can be added); (2) adversarial
-drain-test battery (audit gate); (3) app integration — LedgerPool deploy, buy-that-credits +
-sell assembly/UI, DB ledger persistence (store balances → rebuild map each spend), buyer
-payment/fee input wiring; (4) dust-amount live buy+sell. New covenant version; live buy-only
+a fresh mkLedger, else re-lock fails. **COVENANT SIDE COMPLETE + drain-proof (13/13, `pnpm --filter @launchpad/curve test:ledger`):**
+buy (4) — new/existing holder, underpay reject; sell (3) — holder-signed debit validates,
+over-debit + bad-sig reject (sig over sha256sha256(preimage) = our wallet path); adversarial
+(6) — inflated payout, shrunk pool reserve, swapped successor, redirected payout, over-credited
+buy all REJECTED by hashOutputs (buy pins out0 via ANYONECANPAY_SINGLE; sell pins both outs via
+ANYONECANPAY_ALL). Everything routes through the server-side state service (`service/ledgerState.ts`,
+scrypt-ts→getUnlockingScript) and re-verifies in @bsv/sdk `Spend`. **Remaining = APP INTEGRATION
+(distinct multi-session chunk, new integration gate):** (1) run the scrypt-ts state service in the
+Next.js SERVER runtime (bundling risk, like the compiler had) — feasibility-check first; (2) DB
+ledger persistence (store per-holder balances → rebuild the map each spend) + a ledger pool
+variant/type; (3) buy-that-credits + sell (two-round: digest→wallet sign→unlock) server actions
++ client flows + UI; (4) dust-amount live buy+sell. New covenant version; live buy-only
 `LinearCurvePool` pools unaffected.
 
 **✅ BONDING-CURVE AMM · PHASE 1 (BUY-ONLY CURVE) — PROVEN ON MAINNET (2026-07-30, ADR-026).**
