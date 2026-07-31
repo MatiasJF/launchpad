@@ -72,7 +72,19 @@ model), `deliverStasToBuyer` (claims `pending→settling`, builds TX-B, broadcas
 operator-side via WoC with Missing-inputs retry, stamps `settled`+delivery `txid`). No broadcast at
 import/build/typecheck — delivery fires only on explicit invocation. Green: bsv+curve+web
 typecheck, web build, offline covenant tests 5/5 (added: byte-patch==scrypt-ts successor; assembled
-TX-A validates). **Deferred: SELL + all UI.** See ADR-028 Step-2 updates.
+TX-A validates). **ADVERSARIALLY VERIFIED (3 lenses, all could-not-refute):** (1) anti-shortchange —
+ran the compiled covenant through @bsv/sdk: UNDERPAY (newReserve-1) and SKIM (output0 value low) both
+REJECTED, honest accepted; buyer's 0x41 is the sole anti-divert gate (SINGLE only pins output0); fee
+unskimmable (no TX-A change); covenant enforces `newReserve >= reserveBefore+cost` (>= not =, not
+exploitable — surplus stays locked in reserve). (2) delivery — token conservation exact, operator key
+confined to the callback, vault walk follows token-change to the unspent tip, atomic pending→settling
+claim blocks double-delivery. (3) sequencing — line-equal to recordCurveBuy, stronger oversell guard.
+**Known follow-ups (non-blocking, mostly inherited from the proven paths):** (a) delivery is
+at-least-once — a node-accepts-but-broadcast-reports-failure window could double-deliver on retry;
+clean fix = a per-delivery idempotency key tied to the consumed vault outpoint; (b) TX-B liveness is
+the acknowledged ADR-028 operator trust (operator can stall/censor delivery, never overpay/divert);
+(c) inherited: record trusts the client-supplied successor outpoint was broadcast (same as recordCurveBuy).
+**Deferred: SELL + all UI.** See ADR-028 Step-2 updates.
 **Remaining = STAS integration + app wiring:** buy/sell UI + assembly (next steps); deploy (reserve
 covenant + mint supply to operator vault via genesis.ts) SERVER layer done ↑; buy = reserve buy (client) + operator STAS delivery
 (backend); sell = buyer STAS return (client) + operator reserve-refund cosign (backend, back-to-
