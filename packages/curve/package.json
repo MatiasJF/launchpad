@@ -18,7 +18,7 @@
     "test:ledger": "tsc -p service/tsconfig.json && node service/dist/service/verify.js && node service/dist/service/verify-sell.js && node service/dist/service/verify-adversarial.js && node service/dist/service/verify-graduate.js && node service/dist/service/verify-stas.js"
   },
   "dependencies": {
-    "@bsv/sdk": "^2.1.9",
+    "@bsv/sdk": "^2.2.15",
     "@launchpad/bsv": "workspace:*",
     "bsv": "^1.5.6",
     "scrypt-ts": "1.4.4"
