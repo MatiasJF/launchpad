@@ -6,6 +6,8 @@
 import { StasCurvePool } from '../src/contracts/stasCurvePool';
 import { PubKeyHash, PubKey, Sig, toByteString, bsv } from 'scrypt-ts';
 import { Spend, LockingScript, UnlockingScript } from '@bsv/sdk';
+import { poolScriptForSold, encodeBuyUnlockingHex } from '../src/curvePool';
+import { validateAssembledCovenantInput } from '../src/covenant';
 import artifact from '../artifacts/stasCurvePool.json';
 (StasCurvePool as any).loadArtifact(artifact as any);
 
@@ -70,6 +72,36 @@ function buildSell(signer: any) {
   try { const s = buildSell(B.PrivateKey.fromRandom()); const outs = [{ satoshis: s.reserveAfter, lockingScript: LockingScript.fromHex(s.nextHex) }, { satoshis: s.refund, lockingScript: LockingScript.fromHex(payoutScriptHex) }]; rejected = run(s.cur, s.cur.lockingScript.toHex(), outs, s.reserveBefore, s.usc) === false; }
   catch { rejected = true; }
   check('sell REJECTED with wrong operator key', rejected);
+}
+
+// ASSEMBLED TX-A (step 2 buy): byte-patch successor (poolScriptForSold) + linear
+// buy unlock + '00' selector on a REAL two-input tx, validated via @bsv/sdk. This
+// is exactly what buildStasBuyTx assembles (minus the buyer payment signature,
+// which the covenant input doesn't depend on under ANYONECANPAY|SINGLE).
+{
+  const cur = pool(0n);
+  const delta = 5n;
+  const reserveBefore = 546;
+  const newReserve = reserveBefore + Number(curveCost(0n, delta));
+  const curHex = cur.lockingScript.toHex();
+  const nextHex = poolScriptForSold(curHex, delta); // byte-patch (not scrypt-ts)
+
+  // sanity: byte-patched successor must equal the scrypt-ts getStateScript successor
+  const realNextHex = String((pool(delta) as any).getStateScript());
+  check('poolScriptForSold matches scrypt-ts successor (stas pool)', nextHex === realNextHex, `patched=${nextHex.slice(-16)} real=${realNextHex.slice(-16)}`);
+
+  const tx = new B.Transaction();
+  tx.addInput(new B.Transaction.Input({ prevTxId: TXID, outputIndex: 0, script: new B.Script() }), B.Script.fromHex(curHex), reserveBefore);
+  // a dummy buyer payment input (its signature is irrelevant to the pool input)
+  tx.addInput(new B.Transaction.Input({ prevTxId: 'b'.repeat(64), outputIndex: 0, script: new B.Script() }), B.Script.fromHex(payoutScriptHex), newReserve);
+  tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(nextHex), satoshis: newReserve }));
+
+  const preimage = B.Transaction.sighash.sighashPreimage(tx, 0xc3, 0, B.Script.fromHex(curHex), new B.crypto.BN(reserveBefore));
+  const unlockHex = encodeBuyUnlockingHex(delta, newReserve, Array.from(preimage) as number[]) + '00';
+  tx.inputs[0].setScript(B.Script.fromHex(unlockHex));
+
+  const chk = validateAssembledCovenantInput(tx.toString(), { scriptHex: curHex, satoshis: reserveBefore }, 0);
+  check('assembled TX-A pool input validates (byte-patch + linear unlock + 00)', chk.ok, chk.error ?? '');
 }
 
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);

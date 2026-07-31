@@ -45,3 +45,10 @@ export {
   type CurveBuyResult,
   type DeployPoolResult,
 } from './buyAssembly';
+
+export {
+  buildStasBuyTx,
+  type StasPoolState,
+  type StasBuyArgs,
+  type StasBuyResult,
+} from './stasBuyAssembly';

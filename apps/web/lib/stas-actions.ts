@@ -3,9 +3,16 @@
 import { prisma } from '@launchpad/db';
 import { revalidatePath } from 'next/cache';
 import { planMint } from '@launchpad/bsv/issue';
+import { operatorDeliverStas } from '@launchpad/bsv/settle';
 import { isProjectOwner } from './account-actions';
-import { getOperator } from './operator-wallet';
+import { getOperator, getOperatorWallet, operatorSignDigest } from './operator-wallet';
 import { stasGenesisScript } from './stas-service';
+import { resolveCurrentPool, getOutputInfo, getSourceBeef, broadcastRawTx } from './settle-actions';
+
+/** Exact linear-curve cost to move `sold` by delta (mirrors StasCurvePool.buy). */
+function curveCost(k: bigint, sold: bigint, delta: bigint): bigint {
+  return (k * delta * (2n * sold + delta + 1n)) / 2n;
+}
 
 /**
  * Option-B "stas" bonding-curve server actions (ADR-028). The on-chain state is split:
@@ -171,6 +178,192 @@ export async function getStasPool(saleId: string): Promise<
       k: p.k.toString(), supply: p.supply.toString(), operatorPkh: p.operatorPkh,
       stasTokenId: p.sale.token.stasTokenId, issuanceTxid: p.sale.token.issuanceTxid,
     };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 2 · BUY (ADR-028). A stas buy is TWO sequenced txs:
+//   TX-A "reserve buy" (buyer-signed, client-assembled via curve/buildStasBuyTx):
+//        buyer pays `cost` into the reserve, sold += delta.  recorded by recordStasBuy.
+//   TX-B "STAS delivery" (operator-signed, backend): deliverStasToBuyer transfers
+//        `delta` STAS from the operator vault to the buyer's receive address.
+// Sequencing mirrors recordCurveBuy exactly: buys build against the LATEST pool
+// outpoint; the record step advances the pool ONLY if it still sits there
+// (optimistic guard) so a raced buy can't corrupt tracked state. The single pool
+// UTXO is inherently serial, so this outpoint guard IS the concurrency control —
+// no separate DB reservation (kept faithful to recordCurveBuy).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sequence a stas reserve buy against the LATEST StasCurvePool outpoint and return
+ * the current pool state + exact curve `cost` for the buyer to assemble TX-A
+ * (buildStasBuyTx funds + signs its own SIGHASH_ALL payment). This is the
+ * sequencing anchor — the buyer builds against exactly this outpoint and passes it
+ * back to recordStasBuy, whose optimistic guard rejects a stale (raced) advance.
+ */
+export async function prepareStasBuy(input: { saleId: string; buyerIdentity: string; delta: number }): Promise<
+  | { ok: true; pool: { txid: string; vout: number; scriptHex: string; reserveSats: number; sold: number; k: number; supply: number }; cost: number; delta: number }
+  | { ok: false; error: string }
+> {
+  try {
+    if (!Number.isInteger(input.delta) || input.delta <= 0) return { ok: false, error: 'delta must be a positive integer' };
+    const p = await prisma.curvePool.findUnique({ where: { saleId: input.saleId }, include: { sale: { include: { token: true } } } });
+    if (!p || p.variant !== 'stas') return { ok: false, error: 'no stas pool for this sale' };
+    if (p.status !== 'live' || !p.poolTxid || p.poolVout == null || !p.scriptHex) return { ok: false, error: 'pool is not live yet' };
+    if (!p.sale.token.issuanceTxid) return { ok: false, error: 'inventory not minted yet — no vault to deliver from' };
+    const sold = Number(p.sold);
+    const supply = Number(p.supply);
+    if (sold + input.delta > supply) return { ok: false, error: 'exceeds curve supply' };
+    const cost = Number(curveCost(p.k, p.sold, BigInt(input.delta)));
+    return {
+      ok: true,
+      pool: { txid: p.poolTxid, vout: p.poolVout, scriptHex: p.scriptHex, reserveSats: Number(p.reserveSats), sold, k: Number(p.k), supply },
+      cost,
+      delta: input.delta,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Record a broadcast reserve buy (TX-A): advance the pool + create the buy Order.
+ * Mirrors recordCurveBuy's sequencing EXACTLY (optimistic outpoint guard), with one
+ * difference: the Order is left `pending` (paymentTxid = TX-A) because STAS delivery
+ * is a SEPARATE operator tx (TX-B) — deliverStasToBuyer flips it to `settled` and
+ * stamps the delivery `txid`. Returns the new orderId so the caller can trigger
+ * delivery.
+ */
+export async function recordStasBuy(input: {
+  saleId: string;
+  buyerIdentity: string;
+  receiveAddress: string; // buyer's STAS receive address (where TX-B delivers)
+  spentPoolTxid: string; // the pool outpoint this buy consumed
+  spentPoolVout: number;
+  buyTxid: string; // TX-A
+  newPool: { txid: string; vout: number; scriptHex: string; reserveSats: number; sold: number };
+  delta: number;
+  cost: number;
+}): Promise<{ ok: boolean; orderId?: string; error?: string }> {
+  if (!/^[0-9a-fA-F]{64}$/.test(input.buyTxid)) return { ok: false, error: 'invalid buy txid' };
+  if (!input.receiveAddress) return { ok: false, error: 'receiveAddress required' };
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const pool = await tx.curvePool.findUnique({ where: { saleId: input.saleId } });
+      if (!pool || pool.variant !== 'stas') return { ok: false, error: 'no stas pool for this sale' };
+      if (pool.poolTxid !== input.spentPoolTxid || pool.poolVout !== input.spentPoolVout) {
+        return { ok: false, error: 'pool has moved — this buy raced another; rebuild against the latest outpoint' };
+      }
+      await tx.curvePool.update({
+        where: { saleId: input.saleId },
+        data: {
+          poolTxid: input.newPool.txid,
+          poolVout: input.newPool.vout,
+          scriptHex: input.newPool.scriptHex,
+          reserveSats: BigInt(Math.floor(input.newPool.reserveSats)),
+          sold: BigInt(Math.floor(input.newPool.sold)),
+          status: input.newPool.sold >= Number(pool.supply) ? 'graduated' : 'live',
+        },
+      });
+      const order = await tx.order.create({
+        data: {
+          saleId: input.saleId,
+          buyerIdentity: input.buyerIdentity,
+          receiveAddress: input.receiveAddress,
+          kind: 'curve_buy',
+          tokens: BigInt(Math.floor(input.delta)),
+          satsPaid: BigInt(Math.floor(input.cost)),
+          state: 'pending', // awaiting operator STAS delivery (TX-B)
+          paymentTxid: input.buyTxid,
+        },
+      });
+      await tx.event.create({ data: { entity: 'Order', entityId: order.id, type: 'stas_reserve_bought', payloadHash: input.buyTxid } });
+      return { ok: true, orderId: order.id };
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * TX-B · operator STAS delivery (backend, operator-signed). Transfers `delta` STAS
+ * from the operator vault to the buyer's receive address, then broadcasts. Called
+ * explicitly after recordStasBuy — never at import/build time.
+ *
+ * Custody split (ADR-028): the STAS inventory lives at the operator's BASE P2PKH
+ * vault (owner = operator flat key), while the fee sats live in the toolbox custody
+ * wallet. So the token input is signed by the operator flat key (operatorSignDigest,
+ * raw ECDSA) and the fee input by the toolbox wallet (getOperatorWallet). The vault
+ * UTXO moves after each delivery (token-change re-locks back to the operator pkh),
+ * so we RESOLVE the current vault on-chain by walking the change chain from the mint
+ * (resolveCurrentPool) — the same walk settlement uses for the pool.
+ */
+export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ ok: boolean; txid?: string; error?: string }> {
+  try {
+    const order = await prisma.order.findUnique({ where: { id: input.orderId } });
+    if (!order || order.kind !== 'curve_buy') return { ok: false, error: 'order not found or not a curve buy' };
+    if (order.txid) return { ok: true, txid: order.txid }; // already delivered (idempotent)
+    if (!order.receiveAddress) return { ok: false, error: 'order has no receive address' };
+    const delta = Number(order.tokens);
+    if (delta <= 0) return { ok: false, error: 'nothing to deliver' };
+
+    const pool = await prisma.curvePool.findUnique({ where: { saleId: order.saleId }, include: { sale: { include: { token: { include: { project: true } } } } } });
+    if (!pool || pool.variant !== 'stas') return { ok: false, error: 'no stas pool for this sale' };
+    const issuanceTxid = pool.sale.token.issuanceTxid;
+    if (!issuanceTxid) return { ok: false, error: 'inventory not minted — no vault to deliver from' };
+
+    // Claim the order (pending → settling) so a double-invoke can't build two
+    // deliveries. Released back to pending on failure below.
+    const claim = await prisma.order.updateMany({ where: { id: order.id, state: 'pending' }, data: { state: 'settling' } });
+    if (claim.count !== 1) return { ok: false, error: `order not deliverable (state ${order.state})` };
+
+    try {
+      const { pubHex, pkh: operatorPkh } = await getOperator();
+
+      // Resolve the CURRENT vault UTXO on-chain (it moves as tokens are delivered).
+      const vault = await resolveCurrentPool(issuanceTxid);
+      if ('error' in vault) throw new Error(`resolve vault: ${vault.error}`);
+      const info = await getOutputInfo(vault.txid, vault.vout);
+      if (!info) throw new Error('could not fetch vault UTXO script/value');
+      if (info.satoshis < delta) throw new Error(`vault holds ${info.satoshis} tokens, need ${delta}`);
+      const beef = await getSourceBeef(vault.txid);
+      if (!beef) throw new Error('could not fetch vault ancestry BEEF (mint may still be confirming)');
+
+      const feeWallet = await getOperatorWallet();
+      const res = await operatorDeliverStas({
+        feeWallet,
+        chain: 'main',
+        source: { txid: vault.txid, vout: vault.vout, scriptHex: info.scriptHex, satoshis: info.satoshis, beef },
+        recipientAddress: order.receiveAddress,
+        amount: delta,
+        vaultChangeHash160: operatorPkh,
+        tokenOwnerPubHex: pubHex,
+        signTokenDigest: operatorSignDigest,
+      });
+      if (!res.ok) throw new Error(res.reason);
+
+      // Broadcast TX1 (funding) first, then TX-B, retrying on "Missing inputs"
+      // while TX1 propagates to the node.
+      if (res.fundingRawTx) await broadcastRawTx(res.fundingRawTx, res.fundingTxid);
+      let bc = await broadcastRawTx(res.rawTx, res.txid);
+      for (let i = 0; i < 4 && !bc.ok && /missing inputs/i.test(bc.error ?? ''); i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        bc = await broadcastRawTx(res.rawTx, res.txid);
+      }
+      if (!bc.ok) throw new Error(`delivery broadcast rejected: ${bc.error}`);
+
+      const deliveryTxid = bc.txid || res.txid;
+      await prisma.order.update({ where: { id: order.id }, data: { state: 'settled', txid: deliveryTxid } });
+      await prisma.event.create({ data: { entity: 'Order', entityId: order.id, type: 'stas_delivered', payloadHash: deliveryTxid } });
+      revalidatePath(`/sale/${pool.sale.token.project.slug}`);
+      return { ok: true, txid: deliveryTxid };
+    } catch (e) {
+      // Release the claim so delivery can be retried.
+      await prisma.order.updateMany({ where: { id: order.id, state: 'settling' }, data: { state: 'pending' } });
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

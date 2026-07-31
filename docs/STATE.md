@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-07-31 — by: ADR-028 Step 1 (deploy + mint) app layer_
+_Last updated: 2026-07-31 — by: ADR-028 Step 2 (buy assembly + operator STAS delivery)_
 
 ## Current phase
 
@@ -49,6 +49,30 @@ byte-for-byte unchanged, verified); `prepareStasMint` returns that operator pubk
 pass through, and its advertised `ownerPkh`/`tokenId` match the on-chain result. typecheck (bsv +
 curve + web) + web build all green. Only the client mint/deploy UI wiring remains for Step 1. See
 ADR-028 Step-1 update.
+**STEP 2 (BUY assembly) — ✅ DONE (2026-07-31):** a stas buy is TWO sequenced txs.
+**TX-A "reserve buy"** (buyer-signed, client-assembled): `packages/curve/src/stasBuyAssembly.ts`
+`buildStasBuyTx` mirrors the proven `buildCurveBuyTx` — `[pool covenant BUY input (0xc3;
+pushes delta,newReserve,preimage + a 1-byte '00' method SELECTOR since StasCurvePool has 2
+methods), buyer payment input (0x41 SIGHASH_ALL)] → [reserve successor @ newReserve]` — but
+carries NO token receipt (delivery is TX-B), so the single output + the buyer's SIGHASH_ALL is
+the anti-shortchange gate (operator can't mis-price → covenant; can't add/divert outputs → buyer
+sig). Successor by the same byte-patch `poolScriptForSold` (proven byte-equal to scrypt-ts
+`getStateScript` in the offline test); validates the assembled covenant input via
+`validateAssembledCovenantInput` (@bsv/sdk) before returning; broadcasts nothing.
+**TX-B "STAS delivery"** (operator-signed, backend): `packages/bsv/src/settle/operatorDeliver.ts`
+`operatorDeliverStas` mirrors `transferStas` but signs the vault token input with the OPERATOR
+FLAT key (`operatorSignDigest`, injected as a callback so the key never enters `packages/bsv`)
+and the fee input with the toolbox wallet — the custody split (STAS inventory at the operator
+base P2PKH vault, fee sats in wallet-toolbox). The vault UTXO moves per delivery, so the current
+vault is resolved on-chain (`resolveCurrentPool(issuanceTxid)`) + from-chain BEEF. **Server
+actions** (`apps/web/lib/stas-actions.ts`): `prepareStasBuy` (latest-outpoint sequencing anchor +
+`curveCost`), `recordStasBuy` (mirror `recordCurveBuy`'s optimistic outpoint guard; Order left
+`pending`, `paymentTxid`=TX-A — no separate DB reservation, the serial pool UTXO IS the concurrency
+model), `deliverStasToBuyer` (claims `pending→settling`, builds TX-B, broadcasts TX1→TX-B
+operator-side via WoC with Missing-inputs retry, stamps `settled`+delivery `txid`). No broadcast at
+import/build/typecheck — delivery fires only on explicit invocation. Green: bsv+curve+web
+typecheck, web build, offline covenant tests 5/5 (added: byte-patch==scrypt-ts successor; assembled
+TX-A validates). **Deferred: SELL + all UI.** See ADR-028 Step-2 updates.
 **Remaining = STAS integration + app wiring:** buy/sell UI + assembly (next steps); deploy (reserve
 covenant + mint supply to operator vault via genesis.ts) SERVER layer done ↑; buy = reserve buy (client) + operator STAS delivery
 (backend); sell = buyer STAS return (client) + operator reserve-refund cosign (backend, back-to-
