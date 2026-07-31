@@ -5,6 +5,7 @@
  * ordered array of {ownerPkh, delta}.
  */
 import { computeBuySpend, computeSellDigest, computeSellUnlock, computeGraduate, genesisPoolScript, type Op } from './ledgerState';
+import { stasGenesisScript } from './stasState';
 
 type Json = Record<string, unknown>;
 const B = (s: unknown): bigint => BigInt(String(s));
@@ -18,6 +19,8 @@ function main() {
 
   if (action === 'genesis') {
     out = { scriptHex: genesisPoolScript(B(i.k), B(i.supply), S(i.payoutPkh)) };
+  } else if (action === 'stas-genesis') {
+    out = { scriptHex: stasGenesisScript(B(i.k), B(i.supply), S(i.operatorPkh)) };
   } else if (action === 'buy') {
     const r = computeBuySpend({ k: B(i.k), supply: B(i.supply), payoutPkh: S(i.payoutPkh), history: history(i.history as any[]), ownerPkh: S(i.ownerPkh), delta: B(i.delta), poolTxid: S(i.poolTxid), poolVout: Number(i.poolVout), reserveBefore: Number(i.reserveBefore), newReserve: Number(i.newReserve) });
     out = { unlockingHex: r.unlockingHex, sourceLockHex: r.sourceLockHex, nextLockingHex: r.nextLockingHex };
