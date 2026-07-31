@@ -1,63 +1,47 @@
 import 'server-only';
-import { Setup } from '@bsv/wallet-toolbox';
-import { PublicKey, type WalletInterface, type WalletProtocol } from '@bsv/sdk';
 
 /**
- * The OPERATOR wallet (ADR-028, Option B). A server-side BSV wallet that (1) co-signs
+ * The OPERATOR key (ADR-028, Option B). A single server-held key that (1) co-signs
  * the reserve covenant's sell branch — the anti-forgery gate — and (2) owns the un-sold
- * STAS inventory (the vault). The private key lives in the wallet's own storage / .env
- * (NEVER in this repo, never logged — golden rule 3); our code only calls its BRC-100
- * sign API, exactly like the browser WalletClient.
- *
- * Setup (one-time, out of band):
- *   1) `pnpm --filter @launchpad/web operator:env`  → prints a starter .env (Setup.makeEnv)
- *   2) fill MY_MAIN_IDENTITY + DEV_KEYS + MAIN_TAAL_API_KEY in apps/web/.env (gitignored)
- *   3) `pnpm --filter @launchpad/web operator:info` → prints the operator address to fund
- *   4) send a little BSV to that address (covers fees)
- * The wallet's UTXO ledger lives in server-wallet.sqlite (gitignored).
+ * STAS inventory (the vault). No wallet-toolbox, no TAAL: UTXO lookups + broadcasts go
+ * through WhatsOnChain like everywhere else in this app. The key lives ONLY in
+ * apps/web/.env as OPERATOR_KEY (gitignored, mode 600); this module reads it to sign
+ * and never logs or returns it. (Generate it with `pnpm --filter @launchpad/web
+ * operator:setup`.)
  */
 
-/** BRC-42 derivation for the operator's curve-gate key. getPublicKey and createSignature
- *  MUST use this identical derivation or the covenant's checkSig fails. */
-const OP_PROTOCOL: WalletProtocol = [2, 'a1b2c3d4e5f6'];
-const OP_DERIVATION = { protocolID: OP_PROTOCOL, keyID: 'curve-operator', counterparty: 'anyone' as const, forSelf: true };
-
-let cached: Promise<WalletInterface> | null = null;
-async function wallet(): Promise<WalletInterface> {
-  if (!cached) {
-    cached = (async () => {
-      const env = Setup.getEnv('main'); // mainnet only (golden rule: no testnet)
-      const setup = await Setup.createWalletSQLite({
-        env,
-        filePath: process.env.OPERATOR_WALLET_DB ?? './server-wallet.sqlite',
-        databaseName: 'operator-wallet',
-      });
-      return setup.wallet as unknown as WalletInterface;
-    })();
-  }
-  return cached;
+async function loadBsv(): Promise<any> {
+  const mod: any = await import('bsv');
+  return mod.default ?? mod;
 }
 
-/** The operator's curve-gate public key + its hash160 (baked into covenants at deploy). */
+async function priv(): Promise<any> {
+  const raw = process.env.OPERATOR_KEY;
+  if (!raw) throw new Error('OPERATOR_KEY not set — run `pnpm --filter @launchpad/web operator:setup`');
+  const bsv = await loadBsv();
+  // accept WIF or 64-char hex
+  return /^[0-9a-fA-F]{64}$/.test(raw.trim()) ? bsv.PrivateKey.fromString(raw.trim()) : bsv.PrivateKey.fromWIF(raw.trim());
+}
+
+/** The operator's public key + hash160 (baked into pools at deploy) + P2PKH address (the vault). */
 export async function getOperator(): Promise<{ pubHex: string; pkh: string; address: string }> {
-  const w = await wallet();
-  const { publicKey } = await w.getPublicKey(OP_DERIVATION as never);
-  const pub = PublicKey.fromString(publicKey);
-  const pkh = Buffer.from(pub.toHash() as number[]).toString('hex');
-  const address = pub.toAddress().toString();
-  return { pubHex: publicKey, pkh, address };
+  const bsv = await loadBsv();
+  const p = await priv();
+  const pub = p.toPublicKey();
+  return {
+    pubHex: pub.toString(),
+    pkh: bsv.crypto.Hash.sha256ripemd160(pub.toBuffer()).toString('hex'),
+    address: pub.toAddress().toString(),
+  };
 }
 
-/** Co-sign a sell: sign sha256sha256(preimage) with the operator key → DER sig hex
- *  (no sighash-type byte — the caller appends it). This is the gate signature. */
+/** Co-sign a sell: sign sha256sha256(preimage) with the operator key → DER sig hex,
+ *  forced low-S (BSV consensus). The caller appends the sighash-type byte. */
 export async function operatorSignDigest(digestHex: string): Promise<string> {
-  const w = await wallet();
-  const digest = Array.from(Buffer.from(digestHex, 'hex')) as number[];
-  const res = await w.createSignature({ ...OP_DERIVATION, hashToDirectlySign: digest } as never);
-  return Buffer.from(res.signature as number[]).toString('hex');
-}
-
-/** The underlying wallet (for STAS vault operations: mint-to, release on buy, receive on sell). */
-export async function operatorWallet(): Promise<WalletInterface> {
-  return wallet();
+  const bsv = await loadBsv();
+  const p = await priv();
+  let sig = bsv.crypto.ECDSA.sign(Buffer.from(digestHex, 'hex'), p);
+  const N = bsv.crypto.Point.getN();
+  if (sig.s.gt(N.div(new bsv.crypto.BN(2)))) sig.s = N.sub(sig.s); // enforce low-S
+  return sig.toDER().toString('hex');
 }

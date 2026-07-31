@@ -9,8 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "operator:env": "node -e \"const {Setup}=require(String.raw`@bsv/wallet-toolbox`);console.log(Setup.makeEnv())\"",
-    "operator:info": "node scripts/operator-info.mjs"
+    "operator:info": "node scripts/operator-setup.mjs",
+    "operator:setup": "node scripts/operator-setup.mjs"
   },
   "dependencies": {
     "@bsv/sdk": "^2.1.9",
@@ -25,7 +25,7 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "@bsv/wallet-toolbox": "^2.1.24"
+    "bsv": "^1.5.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

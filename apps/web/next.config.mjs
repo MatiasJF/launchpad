@@ -17,7 +17,7 @@ const nextConfig = {
   // Keep the heavy Node-oriented STAS libs external on the SERVER (issuance path).
   // @bsv/wallet-toolbox (operator wallet) pulls native better-sqlite3 — must stay
   // external, never bundled.
-  serverExternalPackages: ['bsv', 'stas-js', '@bsv/wallet-toolbox', 'better-sqlite3'],
+  serverExternalPackages: ['bsv', 'stas-js'],
   webpack: (config, { isServer, webpack }) => {
     // Settlement (BSV-003) runs client-side with bsv-js + stas-js, which are
     // Node-oriented — provide the browser polyfills they need.
