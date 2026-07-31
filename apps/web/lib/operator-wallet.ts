@@ -41,7 +41,7 @@ export async function getOperator(): Promise<{ pubHex: string; pkh: string; addr
 export async function operatorSignDigest(digestHex: string): Promise<string> {
   const bsv = await loadBsv();
   const p = await priv();
-  let sig = bsv.crypto.ECDSA.sign(Buffer.from(digestHex, 'hex'), p);
+  const sig = bsv.crypto.ECDSA.sign(Buffer.from(digestHex, 'hex'), p);
   const N = bsv.crypto.Point.getN();
   if (sig.s.gt(N.div(new bsv.crypto.BN(2)))) sig.s = N.sub(sig.s); // enforce low-S
   return sig.toDER().toString('hex');
