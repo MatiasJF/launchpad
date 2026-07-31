@@ -18,7 +18,8 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const CHAIN = 'main';
 const STORAGE_URL = 'https://store-us-1.bsvb.tech';
 const PROTOCOL = [2, '3241645161d8'];
-const amount = Number(process.argv[2] ?? process.env.FUND_SATS ?? 10000);
+const numArg = process.argv.slice(2).find((a) => /^\d+$/.test(a)); // tolerate `-- 10000`
+const amount = Number(numArg ?? process.env.FUND_SATS ?? 10000);
 
 // --- operator key (destination) from .env, never printed ---
 const ENV_PATH = new URL('../.env', import.meta.url);
@@ -34,9 +35,13 @@ const opStore = new StorageClient(opWallet, STORAGE_URL);
 await opStore.makeAvailable(); await sm.addWalletStorageProvider(opStore);
 console.log('operator identity:', kd.identityKey);
 
-// --- connect the LOCAL wallet (your funds) ---
-const local = new WalletClient('auto');
-try { await local.getVersion(); } catch { console.error('❌ Local BSV/Metanet Desktop not reachable'); process.exit(1); }
+// --- connect the LOCAL wallet (your funds) — same substrate fund-metanet uses ---
+const local = new WalletClient('secure-json-api', 'deggen.com');
+try {
+  await local.isAuthenticated({});
+  const { version } = await local.getVersion();
+  console.log('local wallet version:', version);
+} catch (e) { console.error('❌ Local BSV/Metanet Desktop not reachable:', e.message); process.exit(1); }
 
 // 1) free stuck UTXOs
 const { actions = [] } = await local.listActions({ labels: [], limit: 100 }).catch(() => ({ actions: [] }));
