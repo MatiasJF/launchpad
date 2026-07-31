@@ -10,22 +10,24 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "operator:info": "node scripts/operator-setup.mjs",
-    "operator:setup": "node scripts/operator-setup.mjs"
+    "operator:setup": "node scripts/operator-setup.mjs",
+    "operator:balance": "node scripts/operator-balance.mjs"
   },
   "dependencies": {
     "@bsv/sdk": "^2.1.9",
+    "@bsv/wallet-toolbox": "^2.4.20",
     "@launchpad/bsv": "workspace:*",
     "@launchpad/core": "workspace:*",
     "@launchpad/curve": "workspace:*",
     "@launchpad/db": "workspace:*",
+    "bsv": "^1.5.6",
     "buffer": "^6.0.3",
     "next": "^15.0.3",
     "process": "^0.11.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "bsv": "^1.5.6"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

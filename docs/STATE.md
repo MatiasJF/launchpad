@@ -10,10 +10,16 @@ buy, it leaves on sell, curve moves; sells are operator-gated (the only way to h
 + a shared reserve). Cheaper + size-stable per trade (small reserve covenant vs the ledger that
 grows with holders). **Operator = a SERVER KEY** (always-open market) — to be run as a server-side
 wallet (wallet-toolbox), NEVER a raw key in the repo (golden rule 3). **Built + tested so far:**
-Operator wallet DONE (lean, no wallet-toolbox/TAAL): `apps/web/lib/operator-wallet.ts` — a single
-server key in gitignored `apps/web/.env` (OPERATOR_KEY), `getOperator()` + `operatorSignDigest()`
-(bsv-js ECDSA, forced low-S, verified valid). UTXOs/broadcast via WhatsOnChain, so funding is a
-plain P2PKH send (no ceremony). Operator addr `1D86zXnT7hhB7cLYE8NxAd2WZeXqnEcpxF`, pkh
+Operator wallet DONE. Key = single server key in gitignored `apps/web/.env` (OPERATOR_KEY, 64-char
+hex), TWO roles. (a) **Covenant co-sign** — `operatorSignDigest()` in `operator-wallet.ts`: raw
+bsv-js ECDSA over the sighash, forced low-S, verified valid; flat key only. (b) **Custody** (sats/
+STAS, sell-tx fees, broadcast) — `@bsv/wallet-toolbox` (`operator-toolbox.ts` + `getOperatorWallet()`/
+`operatorBalance()`), init against `store-us-1.bsvb.tech`/main = the SAME storage `npx fund-metanet`
+uses, so `fund-metanet --chain main --private-key <OPERATOR_KEY> --satoshis N` funds it directly;
+verify via `pnpm --filter @launchpad/web operator:balance`. (Correction: wallet-toolbox needs NO
+TAAL key — broadcaster auto-configures on init; the earlier "lean WoC to avoid TAAL" reasoning was
+wrong. See ADR-028 update.) Funds land at a BRC-42-derived address in the toolbox basket (tracked
+via the toolbox), NOT the key's base P2PKH addr — so `1D86…` is no longer "the" fund address. pkh
 `84f96c45461ae06a21e06e56d4cb45f8e2a91323` (baked into pools). Reserve-covenant successor derives
 by cheap byte-patching (`poolScriptForSold` — verified genesis→5, 5→10) since state is just `sold`
 — no scrypt-ts per trade (only the deploy genesis needs it, for k/supply/operatorPkh). Buy reuses
@@ -21,8 +27,8 @@ the proven LINEAR buy path (same `buy(delta,newReserve)` sig+sighash); sell reus
 cosign pattern. RESERVE TRADE LAYER PROVEN: StasCurvePool has 2 methods, so the unlock needs a
 1-byte method SELECTOR appended (buy = `00`, sell = `51`); with that, the reserve buy validates in
 @bsv/sdk via the linear path (byte-patch successor + linear unlock + `00`) — confirmed. Genesis
-deploy script via CLI `stas-genesis` (~3.5KB). Operator address (empty — funding tx never
-reached it; address VERIFIED valid, wallet-side broadcast issue) `1D86zXnT7hhB7cLYE8NxAd2WZeXqnEcpxF`.
+deploy script via CLI `stas-genesis` (~3.5KB). Operator funding: switched to `fund-metanet` +
+toolbox custody (above) after plain sends to the base address wouldn't broadcast from the wallet.
 **Remaining = STAS integration + app wiring:** DB StasCurvePool state; deploy (reserve covenant +
 mint supply to operator vault via genesis.ts); buy = reserve buy (client) + operator STAS delivery
 (backend); sell = buyer STAS return (client) + operator reserve-refund cosign (backend, back-to-
@@ -32,7 +38,7 @@ reserve = UTXO value; `buy()` open (ANYONECANPAY|SINGLE), `sell()` operator-gate
 `operatorPkh`, ANYONECANPAY|ALL) with payout capped at the curve refund (operator can authorise/
 refuse, never overpay/redirect). Offline tests 3/3 (`verify-stas.ts`): buy validates, sell
 validates with operator sig, sell rejected with wrong key. **Remaining (multi-session):** (1)
-server operator wallet (wallet-toolbox — the signing infra); (2) STAS inventory: mint full supply
+server operator wallet (wallet-toolbox custody + raw co-sign) — ✅ DONE (above); (2) STAS inventory: mint full supply
 at deploy (`genesis.ts`) into a vault; (3) buy assembly `[reserve buy + buyer payment + STAS vault
 release(operator sig)] → [reserve successor, STAS to buyer]`; (4) sell assembly `[reserve sell
 (operator cosign) + buyer STAS return] → [reserve successor, refund to seller, STAS to vault]`,

@@ -1,7 +1,8 @@
 // One-time operator setup. Ensures apps/web/.env has OPERATOR_KEY (a server signing key),
 // generating a fresh one if absent, and prints ONLY public info (address to fund + pkh).
-// The private key is written to the gitignored .env and never printed. No TAAL, no
-// wallet-toolbox — UTXOs/broadcast go through WhatsOnChain like the rest of the app.
+// The private key is written to the gitignored .env and never printed. The key is used
+// two ways: raw ECDSA to co-sign the reserve covenant, and as the root of the operator's
+// wallet-toolbox custody wallet (fund it with `npx fund-metanet`; check `operator:balance`).
 // Run:  pnpm --filter @launchpad/web operator:setup
 import bsvMod from 'bsv';
 import fs from 'node:fs';
@@ -33,5 +34,7 @@ const pub = bsv.PrivateKey.fromString(keyHex).toPublicKey();
 console.log('\n--- OPERATOR (public info only) ---');
 console.log('pubkey (baked into pools):', pub.toString());
 console.log('pkh                      :', bsv.crypto.Hash.sha256ripemd160(pub.toBuffer()).toString('hex'));
-console.log('FUND / VAULT ADDRESS     :', pub.toAddress().toString());
+console.log('\nFund the operator via wallet-toolbox (NOT a plain send to a base address):');
+console.log('  npx fund-metanet --chain main --private-key <OPERATOR_KEY hex> --satoshis 10000');
+console.log('Then verify:  pnpm --filter @launchpad/web operator:balance');
 process.exit(0);

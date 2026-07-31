@@ -1,19 +1,45 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import 'server-only';
+import { makeOperatorWallet, walletBalanceSats } from './operator-toolbox';
 
 /**
- * The OPERATOR key (ADR-028, Option B). A single server-held key that (1) co-signs
- * the reserve covenant's sell branch — the anti-forgery gate — and (2) owns the un-sold
- * STAS inventory (the vault). No wallet-toolbox, no TAAL: UTXO lookups + broadcasts go
- * through WhatsOnChain like everywhere else in this app. The key lives ONLY in
- * apps/web/.env as OPERATOR_KEY (gitignored, mode 600); this module reads it to sign
- * and never logs or returns it. (Generate it with `pnpm --filter @launchpad/web
- * operator:setup`.)
+ * The OPERATOR key (ADR-028, revised). A single server-held key with two roles:
+ *   (1) CO-SIGN the reserve covenant's sell branch — the anti-forgery gate. This is a
+ *       raw ECDSA signature over the sighash from the flat key whose hash160 is baked
+ *       into the covenant as `operatorPkh`; it needs nothing but the key (below).
+ *   (2) CUSTODY — hold the operator's sats/STAS + pay sell-tx fees + broadcast. This
+ *       runs on `@bsv/wallet-toolbox` (see operator-toolbox.ts): free, open-source, the
+ *       broadcaster auto-configures on init (no API key), and it shares fund-metanet's
+ *       storage so `npx fund-metanet` funds it directly.
+ * The key lives ONLY in apps/web/.env as OPERATOR_KEY (gitignored, mode 600); this
+ * module reads it to sign and never logs or returns it. (Generate it with
+ * `pnpm --filter @launchpad/web operator:setup`.)
  */
 
 async function loadBsv(): Promise<any> {
   const mod: any = await import('bsv');
   return mod.default ?? mod;
+}
+
+function keyHex(): string {
+  const raw = process.env.OPERATOR_KEY?.trim();
+  if (!raw) throw new Error('OPERATOR_KEY not set — run `pnpm --filter @launchpad/web operator:setup`');
+  if (!/^[0-9a-fA-F]{64}$/.test(raw)) throw new Error('OPERATOR_KEY must be 64-char hex');
+  return raw;
+}
+
+// The toolbox wallet is expensive to init (network handshake) — memoize per process.
+let walletPromise: Promise<any> | null = null;
+
+/** The operator's custody wallet (toolbox-backed). Lazily initialized + memoized. */
+export async function getOperatorWallet(): Promise<any> {
+  if (!walletPromise) walletPromise = makeOperatorWallet(keyHex());
+  return walletPromise;
+}
+
+/** Total spendable satoshis the operator currently holds (for funding checks). */
+export async function operatorBalance(): Promise<number> {
+  return walletBalanceSats(await getOperatorWallet());
 }
 
 async function priv(): Promise<any> {
