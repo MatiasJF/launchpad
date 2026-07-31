@@ -4,6 +4,28 @@ _Last updated: 2026-07-30 — by: bonding-curve Phase 0 spike_
 
 ## Current phase
 
+**🏗️ OPTION B — wallet-held STAS curve, operator-gated (2026-07-31, ADR-028).** User chose the
+hybrid over the pure-trustless ledger (ADR-027): buyers get a real STAS token in their wallet on
+buy, it leaves on sell, curve moves; sells are operator-gated (the only way to have wallet tokens
++ a shared reserve). Cheaper + size-stable per trade (small reserve covenant vs the ledger that
+grows with holders). **Operator = a SERVER KEY** (always-open market) — to be run as a server-side
+wallet (wallet-toolbox), NEVER a raw key in the repo (golden rule 3). **Built + tested so far:**
+`StasCurvePool` reserve covenant (`src/contracts/stasCurvePool.ts`) — small, state = `sold`,
+reserve = UTXO value; `buy()` open (ANYONECANPAY|SINGLE), `sell()` operator-gated (checkSig on
+`operatorPkh`, ANYONECANPAY|ALL) with payout capped at the curve refund (operator can authorise/
+refuse, never overpay/redirect). Offline tests 3/3 (`verify-stas.ts`): buy validates, sell
+validates with operator sig, sell rejected with wrong key. **Remaining (multi-session):** (1)
+server operator wallet (wallet-toolbox — the signing infra); (2) STAS inventory: mint full supply
+at deploy (`genesis.ts`) into a vault; (3) buy assembly `[reserve buy + buyer payment + STAS vault
+release(operator sig)] → [reserve successor, STAS to buyer]`; (4) sell assembly `[reserve sell
+(operator cosign) + buyer STAS return] → [reserve successor, refund to seller, STAS to vault]`,
+back-to-genesis verify before cosign; (5) DB (StasCurvePool state + inventory); (6) UI (tokens are
+now wallet STAS); (7) live test. Reserve-covenant successor derivation can byte-patch like the
+LINEAR pool (state is just `sold` — no HashedMap replay needed). The ADR-027 ledger pool stays as
+the pure-trustless variant. ↓ prior phases below
+
+
+
 **✅ BONDING-CURVE AMM · PHASE 2 (BUY + SELL) — PROVEN ON MAINNET (2026-07-31, ADR-027).**
 Full trustless two-way curve works live: buys credit + sells debit an in-covenant
 `HashedMap` ledger; reserve drain-proof, no forgeable token, no platform key. On-chain
