@@ -43,10 +43,12 @@ broadcasts; client signs): `createStasPool` (bakes operator pkh into the reserve
 `prepareStasMint` (plan to issue the full `supply` as STAS to the operator vault — owner =
 `getOperator().pubHex`, redemption = wallet anchor) → `recordStasMint` (persists `Token.issuanceTxid`/
 `stasTokenId`); `getStasPool` state reader. Params `STAS_K=1n`/`STAS_SUPPLY=1000n` (mirror ledger).
-No schema change. typecheck (curve + web) + web build all green. NOTE: `issueStasGenesis` still
-delivers to the signing wallet's owner — the client mint step (deferred UI) must target the operator
-vault (owner override or operator self-issue); `prepareStasMint` already computes the operator-owned
-plan. See ADR-028 Step-1 update.
+No schema change. `issueStasGenesis` (`genesis.ts`) gained a backward-compatible optional
+`ownerPubHex` override so the STAS supply mints straight into the OPERATOR vault (omit → instant-buy
+byte-for-byte unchanged, verified); `prepareStasMint` returns that operator pubkey for the client to
+pass through, and its advertised `ownerPkh`/`tokenId` match the on-chain result. typecheck (bsv +
+curve + web) + web build all green. Only the client mint/deploy UI wiring remains for Step 1. See
+ADR-028 Step-1 update.
 **Remaining = STAS integration + app wiring:** buy/sell UI + assembly (next steps); deploy (reserve
 covenant + mint supply to operator vault via genesis.ts) SERVER layer done ↑; buy = reserve buy (client) + operator STAS delivery
 (backend); sell = buyer STAS return (client) + operator reserve-refund cosign (backend, back-to-

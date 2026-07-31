@@ -45,6 +45,15 @@ export interface GenesisArgs {
   description?: string;
   image?: string;
   website?: string;
+  /**
+   * Optional external OWNER override (compressed pubkey hex, 33 bytes). When set, the
+   * issued STAS output locks to hash160(ownerPubHex) instead of the wallet-derived
+   * `${slug}-owner` key — used by the stas curve (ADR-028) to mint the full supply
+   * straight into the OPERATOR vault while the admin wallet still funds/signs. The
+   * redemption/anchor (tokenId) stays wallet-derived, so provenance is unchanged.
+   * OMIT for the instant-buy path — behaviour is then byte-for-byte identical to before.
+   */
+  ownerPubHex?: string;
 }
 
 export type GenesisResult =
@@ -83,17 +92,28 @@ export async function issueStasGenesis(
   if (!Number.isInteger(args.supply) || args.supply <= 0) return { ok: false, reason: 'supply must be a positive integer' };
   const splittable = args.splittable ?? true;
 
-  // 1. Derive redemption (issuer/anchor) + owner keys via BRC-42.
+  // 1. Derive redemption (issuer/anchor, ALWAYS wallet-derived — the tokenId anchor) via
+  //    BRC-42. The OWNER (STAS recipient) is the wallet-derived `${slug}-owner` UNLESS an
+  //    external override is supplied (ADR-028: mint straight to the operator vault). The owner
+  //    key is never used to sign this genesis (owner signs later transfers), so overriding it
+  //    is safe — the admin wallet still funds + signs the contract/funding inputs.
+  if (args.ownerPubHex !== undefined && !/^0[23][0-9a-fA-F]{64}$/.test(args.ownerPubHex)) {
+    return { ok: false, reason: 'ownerPubHex must be a 33-byte compressed public key hex' };
+  }
   let redemptionPubHex: string, ownerPubHex: string;
   try {
     ({ publicKey: redemptionPubHex } = await wallet.getPublicKey(
       { protocolID: STAS_PROTOCOL_ID, keyID: `${args.slug}-redeem`, counterparty: STAS_COUNTERPARTY } as any,
       ORIGINATOR,
     ));
-    ({ publicKey: ownerPubHex } = await wallet.getPublicKey(
-      { protocolID: STAS_PROTOCOL_ID, keyID: `${args.slug}-owner`, counterparty: STAS_COUNTERPARTY } as any,
-      ORIGINATOR,
-    ));
+    if (args.ownerPubHex) {
+      ownerPubHex = args.ownerPubHex;
+    } else {
+      ({ publicKey: ownerPubHex } = await wallet.getPublicKey(
+        { protocolID: STAS_PROTOCOL_ID, keyID: `${args.slug}-owner`, counterparty: STAS_COUNTERPARTY } as any,
+        ORIGINATOR,
+      ));
+    }
   } catch (err) {
     return { ok: false, reason: `getPublicKey: ${msg(err)}` };
   }

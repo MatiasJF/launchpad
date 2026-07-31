@@ -94,11 +94,14 @@ export async function markStasPoolDeployed(input: {
  * issuance DELIVERED TO THE OPERATOR VAULT (the owner = operator, so the STAS output
  * locks to hash160(operator pubkey) = the vault). Mirrors buildMintPlan: the client
  * passes its wallet-derived REDEMPTION pubkey (the provenance anchor / tokenId); nothing
- * here touches a private key. The client then runs the CONTRACT -> ISSUE genesis + broadcasts,
- * and calls recordStasMint. `owner` is the operator's public key from getOperator().
+ * here touches a private key. The client then runs the CONTRACT -> ISSUE genesis passing the
+ * returned `ownerPubHex` as issueStasGenesis's owner override (so the STAS locks to the operator
+ * vault, NOT the signing wallet's `${slug}-owner`), broadcasts, and calls recordStasMint. The
+ * returned `ownerPubHex` is the operator's public key from getOperator(); `tokenId` stays anchored
+ * to the client's wallet-derived `${slug}-redeem` key, so the client MUST issue under the same slug.
  */
 export async function prepareStasMint(input: { saleId: string; identityPubkey: string; redemptionPubkey: string }): Promise<
-  | { ok: true; symbol: string; supply: number; tokenSatoshis: number; tokenId: string; ownerAddress: string; ownerPkh: string; stasScriptHex: string; estFeeSats: number; totalSatsRequired: number }
+  | { ok: true; symbol: string; supply: number; tokenSatoshis: number; tokenId: string; ownerAddress: string; ownerPkh: string; ownerPubHex: string; stasScriptHex: string; estFeeSats: number; totalSatsRequired: number }
   | { ok: false; error: string }
 > {
   try {
@@ -113,8 +116,10 @@ export async function prepareStasMint(input: { saleId: string; identityPubkey: s
     const supply = Number(pool.supply);
     const { pubHex: operatorPubHex } = await getOperator();
     // owner = operator vault (STAS locks to the operator's pkh); redemption = wallet anchor.
+    // The client passes ownerPubHex to issueStasGenesis's owner override so the on-chain
+    // STAS output matches this plan's ownerPkh/stasScriptHex exactly.
     const plan = planMint({ symbol, supply }, operatorPubHex, input.redemptionPubkey);
-    return { ok: true, ...plan };
+    return { ok: true, ...plan, ownerPubHex: operatorPubHex };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
