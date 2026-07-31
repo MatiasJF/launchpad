@@ -114,6 +114,9 @@ model CurvePool {
   // ledger variant: hash160 of the payout address baked into the covenant at deploy;
   // the reserve is released here at graduation (must stay constant for the pool's life).
   payoutPkh       String?
+  // stas variant (ADR-028): hash160 of the operator key that gates sells + owns the
+  // STAS inventory vault, baked into the reserve covenant at deploy.
+  operatorPkh     String?
   poolTxid        String? // current pool outpoint (moves after each buy)
   poolVout        Int?
   scriptHex       String? // current pool locking script
