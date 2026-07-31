@@ -15,7 +15,7 @@
     "build:service": "tsc -p service/tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.mjs",
-    "test:ledger": "tsc -p service/tsconfig.json && node service/dist/service/verify.js && node service/dist/service/verify-sell.js && node service/dist/service/verify-adversarial.js && node service/dist/service/verify-graduate.js"
+    "test:ledger": "tsc -p service/tsconfig.json && node service/dist/service/verify.js && node service/dist/service/verify-sell.js && node service/dist/service/verify-adversarial.js && node service/dist/service/verify-graduate.js && node service/dist/service/verify-stas.js"
   },
   "dependencies": {
     "@bsv/sdk": "^2.1.9",
