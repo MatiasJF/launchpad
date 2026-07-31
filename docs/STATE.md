@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-07-30 — by: bonding-curve Phase 0 spike_
+_Last updated: 2026-07-31 — by: ADR-028 Step 1 (deploy + mint) app layer_
 
 ## Current phase
 
@@ -34,8 +34,21 @@ txs (a double-spend chain) held all confirmed coins hostage and couldn't be abor
 (`listActions` returns no `reference`); cleared wallet-side (Monitor/resync), then `operator:fund`
 (local wallet signs `noSend` → raw tx broadcast via WoC → internalized) landed it. Scripts:
 `operator:fund`, `operator:balance`, `wallet:clean` (diagnostic).
-**Remaining = STAS integration + app wiring:** DB StasCurvePool state; deploy (reserve covenant +
-mint supply to operator vault via genesis.ts); buy = reserve buy (client) + operator STAS delivery
+**STEP 1 (DEPLOY + MINT) app layer — ✅ DONE (2026-07-31):** two new thin-shell files mirror the
+proven curve/ledger patterns. `apps/web/lib/stas-service.ts` = child-process bridge to CLI
+`stas-genesis` (scrypt-ts out of Next), `stasGenesisScript(k, supply, operatorPkh)`.
+`apps/web/lib/stas-actions.ts` = server actions, deploy + mint each a prepare/record split (nothing
+broadcasts; client signs): `createStasPool` (bakes operator pkh into the reserve covenant, upserts
+`variant='stas'` draft, returns deploy scriptHex) → `markStasPoolDeployed` (records UTXO, live);
+`prepareStasMint` (plan to issue the full `supply` as STAS to the operator vault — owner =
+`getOperator().pubHex`, redemption = wallet anchor) → `recordStasMint` (persists `Token.issuanceTxid`/
+`stasTokenId`); `getStasPool` state reader. Params `STAS_K=1n`/`STAS_SUPPLY=1000n` (mirror ledger).
+No schema change. typecheck (curve + web) + web build all green. NOTE: `issueStasGenesis` still
+delivers to the signing wallet's owner — the client mint step (deferred UI) must target the operator
+vault (owner override or operator self-issue); `prepareStasMint` already computes the operator-owned
+plan. See ADR-028 Step-1 update.
+**Remaining = STAS integration + app wiring:** buy/sell UI + assembly (next steps); deploy (reserve
+covenant + mint supply to operator vault via genesis.ts) SERVER layer done ↑; buy = reserve buy (client) + operator STAS delivery
 (backend); sell = buyer STAS return (client) + operator reserve-refund cosign (backend, back-to-
 genesis verify); UI; live test.
 `StasCurvePool` reserve covenant (`src/contracts/stasCurvePool.ts`) — small, state = `sold`,

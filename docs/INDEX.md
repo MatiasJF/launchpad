@@ -67,6 +67,10 @@ present, not implemented.
 - Runtime pool successor-script derivation (scrypt-ts-free, fixture-proven) → `packages/curve/src/curvePool.ts` (`poolScriptForSold`, `poolCodePart`, `encodeBuyUnlockingHex`) · tests `test/curve-script.test.mjs`
 - Non-custodial curve buy assembly (pool input + buyer payment input signed ALL → successor pool + receipt) → `packages/curve/src/buyAssembly.ts` (`buildCurveBuyTx`, `deployCurvePool`, `CURVE_PARAMS`); mirrors `settle/batch.ts` two-tx pattern
 - Curve server actions (pool create/deploy/state + operator-sequenced record-buy) → `apps/web/lib/curve-actions.ts` (`createCurvePool`, `markCurvePoolDeployed`, `getCurvePoolState`, `recordCurveBuy`)
+- Stas curve (Option B, ADR-028) reserve covenant → sCrypt `packages/curve/src/contracts/stasCurvePool.ts` · genesis-script helper `packages/curve/service/stasState.ts` (`stasGenesisScript`) via CLI action `stas-genesis` (`packages/curve/service/cli.ts`) · offline tests `packages/curve/service/verify-stas.ts`
+- Stas curve service bridge (child-process → CLI `stas-genesis`, scrypt-ts kept out of Next) → `apps/web/lib/stas-service.ts` (`stasGenesisScript(k, supply, operatorPkh)`)
+- Stas curve server actions (deploy reserve covenant + mint STAS supply to operator vault, prepare/record split; Step 1) → `apps/web/lib/stas-actions.ts` (`createStasPool`, `markStasPoolDeployed`, `prepareStasMint`, `recordStasMint`, `getStasPool`)
+- Operator key + custody wallet (co-sign gate + STAS/sats vault) → `apps/web/lib/operator-wallet.ts` (`getOperator`, `getOperatorWallet`, `operatorBalance`, `operatorSignDigest`) · toolbox `apps/web/lib/operator-toolbox.ts`
 - Curve UI → buy card `apps/web/components/CurveBuyCard.tsx` · owner deploy `apps/web/components/CurvePoolDeploy.tsx` · sale-page wiring `app/sale/[slug]/page.tsx` · owner sets type in `components/ProjectManage.tsx` (Presale tab) via `updateSaleEscrow`
 - Buyer claim UI (register settled purchases into wallet) → `apps/web/components/ClaimTokens.tsx` (on sale page)
 - Safe markdown renderer (project descriptions) → `apps/web/components/Markdown.tsx` + `.md` styles in `globals.css`
