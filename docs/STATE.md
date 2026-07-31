@@ -84,7 +84,12 @@ at-least-once — a node-accepts-but-broadcast-reports-failure window could doub
 clean fix = a per-delivery idempotency key tied to the consumed vault outpoint; (b) TX-B liveness is
 the acknowledged ADR-028 operator trust (operator can stall/censor delivery, never overpay/divert);
 (c) inherited: record trusts the client-supplied successor outpoint was broadcast (same as recordCurveBuy).
-**STEP 3 (SELL) — ✅ DONE (2026-07-31):** a stas sell is TWO sequenced txs — the
+**STEP 3 (SELL) — ⚠️ BUILT BUT NOT DRAIN-SAFE (2026-07-31): 3 verifier findings open, do NOT ship/live-test the sell until fixed.**
+(1) CRITICAL double-refund replay — `recordStasSell` has no dedup on the STAS-return txid (`Order.paymentTxid` not unique), TX2 does not consume the returned STAS UTXO, and finalize never checks the return is unspent/unclaimed → a seller returns δ STAS once and finalizes N refunds, draining the reserve. Fix: dedup on the returned outpoint (one refund per return) + verify-unspent-and-unclaimed inside the atomic finalize.
+(2) CRITICAL back-to-genesis is existence-only, not amount-provenance — `verifyStasBackToGenesis` breaks on the FIRST same-tail STAS parent and never sums token amounts, so an attacker merges 1 genuine token with a fabricated same-tail counterfeit (creatable per ADR-024) into a δ-token return and passes → operator refunds δ, reserve drained. This is the exact ancestry-unverifiable asymmetry ADR-025 flagged. Fix: full-ancestry walk — EVERY same-tail STAS input must recurse to the operator's genuine issuance (reject any counterfeit sibling) + verify token-amount conservation; bounded + fail-closed.
+(3) Payee not covenant-bound (operator-trust) — sell() pins the refund AMOUNT + successor but NOT the payout script; a compromised operator can redirect the refund to itself (falsifies ADR-028's "never redirect"; within the softened "compromised key is reserve-critical" note). Cheap non-recompile fix: seller contributes a SIGHASH_ALL input to TX2 so their sig commits the payee. DECISION PENDING.
+Amount-cap, ordering (B2G before cosign), fail-closed, and sold-underflow guards DO hold. Original step-3 build notes below (mechanics are as described; the drain gaps are in the off-chain guards, not the covenant math):
+**STEP 3 (SELL) — build detail (2026-07-31):** a stas sell is TWO sequenced txs — the
 **atomic single tx is INFEASIBLE**, not just undesirable: the deployed `StasCurvePool.sell()`
 is `ANYONECANPAY_ALL` and asserts `hashOutputs == hash256(poolOut ++ payoutOut)` = EXACTLY
 two outputs (successor pool + seller refund), so a 3rd "STAS to vault" output (and the
