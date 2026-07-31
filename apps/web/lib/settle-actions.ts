@@ -1,5 +1,7 @@
 'use server';
 
+import { isStasScript, stasOwnerPkh, stasTail, provenanceWalk } from '@launchpad/curve';
+
 /**
  * Fetch a confirmed output's locking-script hex from WhatsOnChain (server-side,
  * no CORS). Used to reconstruct a STAS `source` UTXO for settlement.
@@ -213,20 +215,6 @@ export async function broadcastRawTx(
   }
 }
 
-/** STAS token output shape: `76a914 <ownerPkh:20> 88ac69 <token tail…>`. */
-function isStasScript(hex: string): boolean {
-  return typeof hex === 'string' && hex.length >= 52 && hex.toLowerCase().startsWith('76a914') && hex.substring(46, 52).toLowerCase() === '88ac69';
-}
-/** Owner pkh of a STAS output (hex). */
-function stasOwnerPkh(hex: string): string {
-  return hex.substring(6, 46).toLowerCase();
-}
-/** The token "tail" after the owner pkh — the tokenId/issuer fingerprint, constant
- *  across every transfer of the same token (only the owner pkh changes). */
-function stasTail(hex: string): string {
-  return hex.substring(52).toLowerCase();
-}
-
 /**
  * Find the STAS output in a tx that is locked to `ownerPkh` and carries exactly
  * `amount` tokens (1 sat = 1 token). Used to locate the seller's STAS-return output
@@ -261,25 +249,58 @@ export async function findStasOutputToPkh(
   return null;
 }
 
+/** Fetch a tx's inputs (prevout outpoints) + outputs (n, script, sats) from WoC. */
+async function fetchTxIO(
+  txid: string,
+): Promise<{ vin: { txid: string; vout: number }[]; vout: { n: number; hex: string; sats: number }[] } | null> {
+  if (!/^[0-9a-fA-F]{64}$/.test(txid)) return null;
+  for (let i = 0; i < 4; i++) {
+    try {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`, { cache: 'no-store' });
+      if (res.ok) {
+        const tx = (await res.json()) as { vin?: { txid?: string; vout?: number }[]; vout?: { n: number; value?: number; scriptPubKey?: { hex?: string } }[] };
+        const vin = (tx.vin ?? []).filter((v) => typeof v.txid === 'string' && typeof v.vout === 'number').map((v) => ({ txid: v.txid as string, vout: v.vout as number }));
+        const vout = (tx.vout ?? []).map((o) => ({ n: o.n, hex: (o.scriptPubKey?.hex ?? '').toLowerCase(), sats: typeof o.value === 'number' ? Math.round(o.value * 1e8) : -1 }));
+        return { vin, vout };
+      }
+    } catch {
+      /* transient — retry */
+    }
+    if (i < 3) await new Promise((r) => setTimeout(r, 1500));
+  }
+  return null;
+}
+
 /**
- * BACK-TO-GENESIS authenticity check (ADR-024/028). Verify that the STAS UTXO at
- * `outpointTxid:outpointVout` is a GENUINE token of the operator's own mint by walking
- * its STAS ancestry back to the operator's known genesis ISSUE tx (`issuanceTxid`).
+ * BACK-TO-GENESIS full-provenance authenticity (ADR-024/028 step-3, hardened). Verify
+ * that the STAS UTXO at `outpointTxid:outpointVout` is a GENUINE token of the operator's
+ * own mint — and that EVERY token in it is backed by genuine issuance, not just one
+ * ancestor. The operator minted the whole supply itself (step 1), so authenticity ==
+ * "the whole amount descends from OUR issuance".
  *
- * The operator minted the whole supply itself (step 1), so authenticity == "descends
- * from OUR issuance". At each hop we require (a) a well-formed STAS script whose token
- * TAIL equals the genuine mint's tail (the tokenId/issuer fingerprint — a counterfeit
- * carries a different redemption pubkey → different tail), and (b) a STAS parent input
- * of the same tail, until we land on `issuanceTxid` (whose parent is the non-STAS
- * contract tx — the genesis boundary). Fail-CLOSED: any fetch failure, tail mismatch,
- * or divergent ancestry returns `authentic: false` so the operator refuses to refund.
- * The operator MUST call this and require `authentic` BEFORE co-signing a sell refund.
+ * Naive existence walks (break on the FIRST genuine ancestor) are exploitable: an
+ * attacker buys 1 genuine token, fabricates a same-tail COUNTERFEIT output for the rest
+ * (mintable from a plain P2PKH with no STAS parent — the ADR-025 asymmetry), merges them
+ * into a δ-token return; a first-match walk sees the 1 genuine ancestor and passes,
+ * refunding δ and draining the reserve. So we require FULL provenance:
+ *   `genuine(tx)` ⇔ tx IS the issuance, OR every same-tail STAS input of tx is itself
+ *   `genuine`, AND tx conserves same-tail tokens (Σ same-tail outputs ≤ Σ same-tail
+ *   inputs — no unbacked/injected tokens). A tx that emits a same-tail output with ZERO
+ *   same-tail STAS inputs (a fabricated mint) is NOT genuine → the whole return is
+ *   rejected. Because STAS conserves amount per tx and every merge input must be genuine,
+ *   the returned amount is fully backed.
+ *
+ * The ancestry is a DAG (merges), so the walk is memoised by txid and BOUNDED by a node
+ * budget; it is FAIL-CLOSED — any fetch gap, a cycle, exceeding the budget (an attacker
+ * may fabricate deep/wide provenance to DoS), tail mismatch, or unbacked ancestry all
+ * return `authentic:false`. An operator legitimately refuses to refund a return whose
+ * provenance it cannot fully verify. Call this and require `authentic` BEFORE co-signing.
  */
 export async function verifyStasBackToGenesis(input: {
   outpointTxid: string;
   outpointVout: number;
   issuanceTxid: string;
-}): Promise<{ authentic: boolean; hops?: number; reason?: string }> {
+}): Promise<{ authentic: boolean; nodes?: number; reason?: string }> {
   const { outpointTxid, outpointVout, issuanceTxid } = input;
   if (!/^[0-9a-fA-F]{64}$/.test(outpointTxid) || !/^[0-9a-fA-F]{64}$/.test(issuanceTxid) || !Number.isInteger(outpointVout) || outpointVout < 0) {
     return { authentic: false, reason: 'invalid txid/vout' };
@@ -289,38 +310,17 @@ export async function verifyStasBackToGenesis(input: {
   if (!genesisScript || !isStasScript(genesisScript)) return { authentic: false, reason: 'could not read a STAS genesis output at issuance:0' };
   const genuineTail = stasTail(genesisScript);
 
-  let curTxid = outpointTxid;
-  let curVout = outpointVout;
-  const MAX_HOPS = 200;
-  for (let hop = 0; hop < MAX_HOPS; hop++) {
-    const script = await getOutputScriptHex(curTxid, curVout);
-    if (!script) return { authentic: false, reason: `could not fetch ${curTxid.slice(0, 10)}…:${curVout}` };
-    if (!isStasScript(script)) return { authentic: false, reason: `not a STAS output at ${curTxid.slice(0, 10)}…:${curVout}` };
-    if (stasTail(script) !== genuineTail) return { authentic: false, reason: `token tail mismatch at ${curTxid.slice(0, 10)}…:${curVout} — counterfeit (different genesis)` };
-    if (curTxid.toLowerCase() === issuanceTxid.toLowerCase()) return { authentic: true, hops: hop };
-
-    // Find a STAS parent input (same tail) and recurse toward genesis.
-    let parent: { txid: string; vout: number } | null = null;
-    try {
-      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${curTxid}`, { cache: 'no-store' });
-      if (!res.ok) return { authentic: false, reason: `could not fetch tx ${curTxid.slice(0, 10)}…` };
-      const tx = (await res.json()) as { vin?: { txid?: string; vout?: number }[] };
-      for (const vin of tx.vin ?? []) {
-        if (!vin.txid || typeof vin.vout !== 'number') continue;
-        const prevScript = await getOutputScriptHex(vin.txid, vin.vout);
-        if (prevScript && isStasScript(prevScript) && stasTail(prevScript) === genuineTail) {
-          parent = { txid: vin.txid, vout: vin.vout };
-          break;
-        }
-      }
-    } catch {
-      return { authentic: false, reason: `network error walking ancestry at ${curTxid.slice(0, 10)}…` };
-    }
-    if (!parent) return { authentic: false, reason: `no genuine STAS parent at ${curTxid.slice(0, 10)}… — ancestry does not reach our issuance` };
-    curTxid = parent.txid;
-    curVout = parent.vout;
-  }
-  return { authentic: false, reason: `ancestry exceeded ${MAX_HOPS} hops without reaching issuance` };
+  // Delegate to the pure, unit-tested full-provenance walk with WoC-backed fetchers.
+  return provenanceWalk(outpointTxid, outpointVout, {
+    issuanceTxid,
+    genuineTail,
+    getOutput: async (txid, vout) => {
+      const info = await getOutputInfo(txid, vout);
+      return info ? { scriptHex: info.scriptHex, sats: info.satoshis } : null;
+    },
+    getTxIO: fetchTxIO,
+    maxNodes: 400,
+  });
 }
 
 /**

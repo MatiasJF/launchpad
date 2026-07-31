@@ -55,7 +55,20 @@ export {
 } from './stasBuyAssembly';
 
 export {
-  buildStasSellRefundTx,
+  buildStasSellTx,
+  cosignStasSellTx,
+  sellRefundMath,
   type StasSellArgs,
   type StasSellResult,
+  type CosignStasSellArgs,
+  type CosignStasSellResult,
 } from './stasSellAssembly';
+
+export {
+  provenanceWalk,
+  isStasScript,
+  stasOwnerPkh,
+  stasTail,
+  type ProvenanceDeps,
+  type ProvenanceVerdict,
+} from './provenance';

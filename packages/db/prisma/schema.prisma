@@ -169,6 +169,11 @@ model Order {
   paymentTxid    String? // buyer's sats payment
   txid           String? // settlement (token delivery) tx
   refundTxid     String?
+  // curve_sell (ADR-028 step-3): the returned-STAS vout + the full returned outpoint
+  // `${returnTxid}:${vout}`. UNIQUE so a single on-chain STAS return can back AT MOST
+  // one sell refund — the anti-replay guard (recordStasSell fails P2002 on a dupe).
+  returnVout          Int?
+  sellReturnOutpoint  String? @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

@@ -16,6 +16,7 @@
     "migrate": "prisma migrate dev",
     "seed": "prisma db seed",
     "studio": "prisma studio",
+    "test": "node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

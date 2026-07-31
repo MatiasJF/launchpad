@@ -70,8 +70,13 @@ value), `poolTxid?`/`poolVout?`/`scriptHex?` (current outpoint — moves each bu
 
 A buy (instant) or contribution (escrow) against a sale.
 Fields: `id`, `saleId → Sale`, `buyerIdentity` (BRC-100 pubkey), `kind`
-(default `instant_buy`), `tokens` (BigInt), `satsPaid` (BigInt), `state`
-(default `pending`), `txid?`, `refundTxid?`, timestamps.
+(default `instant_buy`; also `curve_buy` · `curve_sell`), `tokens` (BigInt),
+`satsPaid` (BigInt), `state` (default `pending`), `paymentTxid?`, `txid?`,
+`refundTxid?`, timestamps.
+`curve_sell` (ADR-028 step-3) replay guard: `returnVout?` (Int) + `sellReturnOutpoint?`
+(`${returnTxid}:${vout}`, **@unique**) — one on-chain STAS return backs at most one sell
+refund (a duplicate insert throws P2002). Migration
+`20260731140000_order_sell_return_outpoint`.
 
 ### Pledge
 
