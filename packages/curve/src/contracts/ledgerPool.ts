@@ -41,12 +41,17 @@ export class LedgerPool extends SmartContract {
   @prop()
   readonly supply: bigint;
 
-  constructor(sold: bigint, ledger: Ledger, k: bigint, supply: bigint) {
+  // Where the reserve is released at graduation (baked in at deploy, immutable).
+  @prop()
+  readonly payoutPkh: PubKeyHash;
+
+  constructor(sold: bigint, ledger: Ledger, k: bigint, supply: bigint, payoutPkh: PubKeyHash) {
     super(...arguments);
     this.sold = sold;
     this.ledger = ledger;
     this.k = k;
     this.supply = supply;
+    this.payoutPkh = payoutPkh;
   }
 
   @method(SigHash.ANYONECANPAY_SINGLE)
@@ -102,5 +107,19 @@ export class LedgerPool extends SmartContract {
     // pay the refund to the seller's payout script
     const payoutOut: ByteString = Utils.buildOutput(payoutScript, refund);
     assert(this.ctx.hashOutputs === hash256(poolOut + payoutOut), 're-lock + payout');
+  }
+
+  /**
+   * Graduation (terminal). Once the curve is fully sold, anyone may spend the pool to
+   * release the whole reserve to the pre-committed payout address — the pool does NOT
+   * re-lock (the curve is over). Real STAS is then minted to holders off-chain from the
+   * final ledger (which is public and immutable at this point). No signature: the
+   * destination is fixed at deploy, so there is nothing to steer.
+   */
+  @method(SigHash.ANYONECANPAY_SINGLE)
+  public graduate() {
+    assert(this.sold === this.supply, 'curve not fully sold');
+    const payout: ByteString = Utils.buildPublicKeyHashOutput(this.payoutPkh, this.ctx.utxo.value);
+    assert(this.ctx.hashOutputs === hash256(payout), 'must release reserve to payout');
   }
 }

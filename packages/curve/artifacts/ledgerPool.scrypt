@@ -5,13 +5,15 @@ contract LedgerPool {
   VarIntReader __scrypt_ts_accessPathReaderForProp__ledger;
   const int k;
   const int supply;
+  const Ripemd160 payoutPkh;
   bytes __scrypt_ts_ctx_hashoutputs;
   int __scrypt_ts_ctx_value;
-  constructor(int sold, HashedMap<Ripemd160,int> ledger, int k, int supply) {
+  constructor(int sold, HashedMap<Ripemd160,int> ledger, int k, int supply, Ripemd160 payoutPkh) {
     this.sold = sold;
     this.ledger = ledger;
     this.k = k;
     this.supply = supply;
+    this.payoutPkh = payoutPkh;
   }
   public function buy(Ripemd160 owner, bool isNew, int oldBal, int delta, int newReserve, SigHashPreimage __scrypt_ts_txPreimage, bytes __scrypt_ts_accessPathForProp__ledger) {
     require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'c3')));
@@ -51,6 +53,14 @@ contract LedgerPool {
     bytes poolOut = this.buildStateOutput(reserveAfter);
     bytes payoutOut = Utils.buildOutput(payoutScript, refund);
     require(this.__scrypt_ts_ctx_hashoutputs == hash256(poolOut + payoutOut));
+  }
+  public function graduate(SigHashPreimage __scrypt_ts_txPreimage) {
+    require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'c3')));
+    this.__scrypt_ts_ctx_hashoutputs = SigHash.hashOutputs(__scrypt_ts_txPreimage);
+    this.__scrypt_ts_ctx_value = SigHash.value(__scrypt_ts_txPreimage);
+    require(this.sold == this.supply);
+    bytes payout = Utils.buildOutput(Utils.buildPublicKeyHashScript(this.payoutPkh), this.__scrypt_ts_ctx_value);
+    require(this.__scrypt_ts_ctx_hashoutputs == hash256(payout));
   }
   function buildStateOutput(int amount) : bytes {  return Utils.buildOutput(this.getStateScript(), amount);}
 }

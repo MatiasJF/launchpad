@@ -5,7 +5,7 @@
 import { Spend, LockingScript, UnlockingScript } from '@bsv/sdk';
 import { computeBuySpend, type Op } from './ledgerState';
 
-const K = 1n, SUPPLY = 1000n, TXID = 'a'.repeat(64);
+const K = 1n, SUPPLY = 1000n, TXID = 'a'.repeat(64), PAYOUT = '33'.repeat(20);
 const curveCost = (sold: bigint, delta: bigint): bigint => (K * delta * (2n * sold + delta + 1n)) / 2n;
 
 function tryBuy(o: { history: Op[]; ownerPkh: string; delta: bigint; reserveBefore: number; newReserveOverride?: number }): { ok: boolean; error?: string } {
@@ -13,7 +13,7 @@ function tryBuy(o: { history: Op[]; ownerPkh: string; delta: bigint; reserveBefo
   const newReserve = o.newReserveOverride ?? o.reserveBefore + Number(curveCost(sold, o.delta));
   let sp;
   try {
-    sp = computeBuySpend({ k: K, supply: SUPPLY, history: o.history, ownerPkh: o.ownerPkh, delta: o.delta, poolTxid: TXID, poolVout: 0, reserveBefore: o.reserveBefore, newReserve });
+    sp = computeBuySpend({ k: K, supply: SUPPLY, payoutPkh: PAYOUT, history: o.history, ownerPkh: o.ownerPkh, delta: o.delta, poolTxid: TXID, poolVout: 0, reserveBefore: o.reserveBefore, newReserve });
   } catch (e: any) { return { ok: false, error: 'service: ' + e.message }; }
   const outputs = [{ satoshis: newReserve, lockingScript: LockingScript.fromHex(sp.nextLockingHex) }];
   const spend = new Spend({ sourceTXID: TXID, sourceOutputIndex: 0, sourceSatoshis: o.reserveBefore, lockingScript: LockingScript.fromHex(sp.sourceLockHex), transactionVersion: 1, otherInputs: [], outputs, inputIndex: 0, unlockingScript: UnlockingScript.fromHex(sp.unlockingHex), inputSequence: 0xffffffff, lockTime: 0 } as any);

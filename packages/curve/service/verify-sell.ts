@@ -8,7 +8,7 @@ import { computeSellSpend, type Op } from './ledgerState';
 import { bsv } from 'scrypt-ts';
 
 const B: any = bsv;
-const K = 1n, SUPPLY = 1000n, TXID = 'a'.repeat(64);
+const K = 1n, SUPPLY = 1000n, TXID = 'a'.repeat(64), PAYOUT = '33'.repeat(20);
 const curveCost = (sold: bigint, a: bigint): bigint => (K * a * (2n * sold + a + 1n)) / 2n;
 
 const priv = B.PrivateKey.fromRandom();
@@ -21,7 +21,7 @@ const signWith = (p: any) => (digestHex: string): string => B.crypto.ECDSA.sign(
 function trySell(o: { history: Op[]; amount: bigint; reserveBefore: number; signer?: any }): { ok: boolean; error?: string } {
   let sp;
   try {
-    sp = computeSellSpend({ k: K, supply: SUPPLY, history: o.history, ownerPkh, ownerPubHex, amount: o.amount, poolTxid: TXID, poolVout: 0, reserveBefore: o.reserveBefore, payoutScriptHex, signHash: signWith(o.signer ?? priv) });
+    sp = computeSellSpend({ k: K, supply: SUPPLY, payoutPkh: PAYOUT, history: o.history, ownerPkh, ownerPubHex, amount: o.amount, poolTxid: TXID, poolVout: 0, reserveBefore: o.reserveBefore, payoutScriptHex, signHash: signWith(o.signer ?? priv) });
   } catch (e: any) { return { ok: false, error: 'service: ' + e.message }; }
   const refund = Number(sp.refund);
   const outputs = [

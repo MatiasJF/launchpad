@@ -38,9 +38,9 @@ const key = (pkh: string) => PubKeyHash(toByteString(pkh));
  * script when the base ledger is empty (the first op) — so it breaks on the 2nd spend.
  * Proven against the real mainnet successors 04f87f04:0 and ca6692f6:0.
  */
-function replay(history: Op[], k: bigint, supply: bigint): LedgerPool {
+function replay(history: Op[], k: bigint, supply: bigint, payoutPkh: string): LedgerPool {
   ensureLoaded();
-  const cur = new LedgerPool(0n, new HashedMap<PubKeyHash, bigint>(), k, supply);
+  const cur = new LedgerPool(0n, new HashedMap<PubKeyHash, bigint>(), k, supply, key(payoutPkh));
   cur.sold = 0n;
   const bal = new Map<string, bigint>();
   for (const op of history) {
@@ -60,26 +60,26 @@ function balanceOf(history: Op[], ownerPkh: string): bigint {
 }
 
 /** The genesis pool locking script (empty history) — deployed to open a pool. */
-export function genesisPoolScript(k: bigint, supply: bigint): string {
-  return replay([], k, supply).lockingScript.toHex();
+export function genesisPoolScript(k: bigint, supply: bigint, payoutPkh: string): string {
+  return replay([], k, supply, payoutPkh).lockingScript.toHex();
 }
 
 export interface BuySpend { unlockingHex: string; sourceLockHex: string; nextLockingHex: string }
 
 /** Build the pool-input unlock for a BUY crediting `ownerPkh` by `delta` (ANYONECANPAY|SINGLE). */
 export function computeBuySpend(args: {
-  k: bigint; supply: bigint; history: Op[]; ownerPkh: string; delta: bigint;
+  k: bigint; supply: bigint; payoutPkh: string; history: Op[]; ownerPkh: string; delta: bigint;
   poolTxid: string; poolVout: number; reserveBefore: number; newReserve: number;
 }): BuySpend {
-  const { k, supply, history, ownerPkh, delta, poolTxid, poolVout, reserveBefore, newReserve } = args;
+  const { k, supply, payoutPkh, history, ownerPkh, delta, poolTxid, poolVout, reserveBefore, newReserve } = args;
   const oldBal = balanceOf(history, ownerPkh);
   const isNew = oldBal === 0n;
 
-  const cur = replay(history, k, supply);
+  const cur = replay(history, k, supply, payoutPkh);
   const sourceLockHex = cur.lockingScript.toHex();
 
   // successor: mutate an independent replayed instance exactly as the covenant does
-  const succ = replay(history, k, supply);
+  const succ = replay(history, k, supply, payoutPkh);
   succ.ledger.set(key(ownerPkh), oldBal + delta);
   succ.sold = succ.sold + delta;
   const nextLockingHex = String((succ as any).getStateScript());
@@ -95,20 +95,20 @@ export function computeBuySpend(args: {
 }
 
 interface SellArgs {
-  k: bigint; supply: bigint; history: Op[]; ownerPkh: string; amount: bigint;
+  k: bigint; supply: bigint; payoutPkh: string; history: Op[]; ownerPkh: string; amount: bigint;
   poolTxid: string; poolVout: number; reserveBefore: number; payoutScriptHex: string;
 }
 
 function buildSellTx(args: SellArgs) {
-  const { k, supply, history, ownerPkh, amount, poolTxid, poolVout, reserveBefore, payoutScriptHex } = args;
+  const { k, supply, payoutPkh, history, ownerPkh, amount, poolTxid, poolVout, reserveBefore, payoutScriptHex } = args;
   const oldBal = balanceOf(history, ownerPkh);
   if (amount > oldBal) throw new Error('insufficient balance');
   const B: any = bsv;
 
-  const cur = replay(history, k, supply);
+  const cur = replay(history, k, supply, payoutPkh);
   const sourceLockHex = cur.lockingScript.toHex();
 
-  const succ = replay(history, k, supply);
+  const succ = replay(history, k, supply, payoutPkh);
   succ.ledger.set(key(ownerPkh), oldBal - amount);
   succ.sold = succ.sold - amount;
   const nextLockingHex = String((succ as any).getStateScript());
@@ -154,4 +154,29 @@ export function computeSellUnlock(args: SellArgs & { ownerPubHex: string; sigDer
 export function computeSellSpend(args: SellArgs & { ownerPubHex: string; signHash: (digestHex: string) => string }): SellSpend {
   const d = computeSellDigest(args);
   return computeSellUnlock({ ...args, sigDerHex: args.signHash(d.digestHex) });
+}
+
+export interface GraduateSpend { unlockingHex: string; sourceLockHex: string; payoutScriptHex: string; reserve: number }
+
+/**
+ * GRADUATION (terminal): once sold == supply, release the whole reserve to the
+ * committed payout. No re-lock, no signature. Real STAS is minted to holders
+ * off-chain from the final ledger afterwards.
+ */
+export function computeGraduate(args: {
+  k: bigint; supply: bigint; payoutPkh: string; history: Op[];
+  poolTxid: string; poolVout: number; reserveBefore: number;
+}): GraduateSpend {
+  const { k, supply, payoutPkh, history, poolTxid, poolVout, reserveBefore } = args;
+  const B: any = bsv;
+  const cur = replay(history, k, supply, payoutPkh);
+  const sourceLockHex = cur.lockingScript.toHex();
+  const payoutScriptHex: string = B.Script.buildPublicKeyHashOut(B.Address.fromPublicKeyHash(Buffer.from(payoutPkh, 'hex'))).toHex();
+
+  const tx = new B.Transaction();
+  tx.addInput(new B.Transaction.Input({ prevTxId: poolTxid, outputIndex: poolVout, script: new B.Script() }), B.Script.fromHex(sourceLockHex), reserveBefore);
+  tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(payoutScriptHex), satoshis: reserveBefore }));
+  (cur as any).to = { tx, inputIndex: 0 };
+  const usc = (cur as any).getUnlockingScript((self: any) => { self.graduate(); });
+  return { unlockingHex: usc.toHex(), sourceLockHex, payoutScriptHex, reserve: reserveBefore };
 }

@@ -4,43 +4,32 @@
  * Next.js. BigInts cross as decimal strings; the pool's op HISTORY crosses as an
  * ordered array of {ownerPkh, delta}.
  */
-import { computeBuySpend, computeSellDigest, computeSellUnlock, genesisPoolScript, type Op } from './ledgerState';
+import { computeBuySpend, computeSellDigest, computeSellUnlock, computeGraduate, genesisPoolScript, type Op } from './ledgerState';
 
 type Json = Record<string, unknown>;
 const B = (s: unknown): bigint => BigInt(String(s));
+const S = (s: unknown): string => String(s);
 const history = (raw: any[]): Op[] => (raw ?? []).map((o) => ({ ownerPkh: String(o.ownerPkh), delta: String(o.delta) }));
 
 function main() {
   const action = process.argv[2];
-  const input: Json = JSON.parse(process.argv[3] ?? '{}');
+  const i: Json = JSON.parse(process.argv[3] ?? '{}');
   let out: Json;
 
   if (action === 'genesis') {
-    out = { scriptHex: genesisPoolScript(B(input.k), B(input.supply)) };
+    out = { scriptHex: genesisPoolScript(B(i.k), B(i.supply), S(i.payoutPkh)) };
   } else if (action === 'buy') {
-    const r = computeBuySpend({
-      k: B(input.k), supply: B(input.supply), history: history(input.history as any[]),
-      ownerPkh: String(input.ownerPkh), delta: B(input.delta),
-      poolTxid: String(input.poolTxid), poolVout: Number(input.poolVout),
-      reserveBefore: Number(input.reserveBefore), newReserve: Number(input.newReserve),
-    });
+    const r = computeBuySpend({ k: B(i.k), supply: B(i.supply), payoutPkh: S(i.payoutPkh), history: history(i.history as any[]), ownerPkh: S(i.ownerPkh), delta: B(i.delta), poolTxid: S(i.poolTxid), poolVout: Number(i.poolVout), reserveBefore: Number(i.reserveBefore), newReserve: Number(i.newReserve) });
     out = { unlockingHex: r.unlockingHex, sourceLockHex: r.sourceLockHex, nextLockingHex: r.nextLockingHex };
   } else if (action === 'sell-digest') {
-    const r = computeSellDigest({
-      k: B(input.k), supply: B(input.supply), history: history(input.history as any[]),
-      ownerPkh: String(input.ownerPkh), amount: B(input.amount),
-      poolTxid: String(input.poolTxid), poolVout: Number(input.poolVout),
-      reserveBefore: Number(input.reserveBefore), payoutScriptHex: String(input.payoutScriptHex),
-    });
+    const r = computeSellDigest({ k: B(i.k), supply: B(i.supply), payoutPkh: S(i.payoutPkh), history: history(i.history as any[]), ownerPkh: S(i.ownerPkh), amount: B(i.amount), poolTxid: S(i.poolTxid), poolVout: Number(i.poolVout), reserveBefore: Number(i.reserveBefore), payoutScriptHex: S(i.payoutScriptHex) });
     out = { digestHex: r.digestHex, sourceLockHex: r.sourceLockHex, nextLockingHex: r.nextLockingHex, payoutScriptHex: r.payoutScriptHex, refund: r.refund.toString(), reserveAfter: r.reserveAfter };
   } else if (action === 'sell-unlock') {
-    const r = computeSellUnlock({
-      k: B(input.k), supply: B(input.supply), history: history(input.history as any[]),
-      ownerPkh: String(input.ownerPkh), ownerPubHex: String(input.ownerPubHex), amount: B(input.amount),
-      poolTxid: String(input.poolTxid), poolVout: Number(input.poolVout),
-      reserveBefore: Number(input.reserveBefore), payoutScriptHex: String(input.payoutScriptHex), sigDerHex: String(input.sigDerHex),
-    });
+    const r = computeSellUnlock({ k: B(i.k), supply: B(i.supply), payoutPkh: S(i.payoutPkh), history: history(i.history as any[]), ownerPkh: S(i.ownerPkh), ownerPubHex: S(i.ownerPubHex), amount: B(i.amount), poolTxid: S(i.poolTxid), poolVout: Number(i.poolVout), reserveBefore: Number(i.reserveBefore), payoutScriptHex: S(i.payoutScriptHex), sigDerHex: S(i.sigDerHex) });
     out = { unlockingHex: r.unlockingHex, sourceLockHex: r.sourceLockHex, nextLockingHex: r.nextLockingHex, refund: r.refund.toString() };
+  } else if (action === 'graduate') {
+    const r = computeGraduate({ k: B(i.k), supply: B(i.supply), payoutPkh: S(i.payoutPkh), history: history(i.history as any[]), poolTxid: S(i.poolTxid), poolVout: Number(i.poolVout), reserveBefore: Number(i.reserveBefore) });
+    out = { unlockingHex: r.unlockingHex, sourceLockHex: r.sourceLockHex, payoutScriptHex: r.payoutScriptHex, reserve: r.reserve };
   } else {
     process.stderr.write(`unknown action: ${action}\n`);
     process.exit(2); return;
