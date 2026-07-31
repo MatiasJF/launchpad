@@ -261,7 +261,11 @@ export async function getBuyerClaimableOrders(buyerIdentity: string): Promise<
 > {
   if (!buyerIdentity) return [];
   const orders = await prisma.order.findMany({
-    where: { buyerIdentity, state: 'settled', txid: { not: null } },
+    // Only STAS-delivering orders are claimable. Bonding-curve orders (curve_buy /
+    // curve_sell) are NOT STAS deliveries — the holder's tokens live inside the pool
+    // covenant's ledger (ADR-027), so there is nothing to internalize into the wallet
+    // until graduation mints real STAS. Excluding them stops them showing as claimable.
+    where: { buyerIdentity, state: 'settled', txid: { not: null }, kind: { notIn: ['curve_buy', 'curve_sell'] } },
     include: { sale: { include: { token: { include: { project: true } } } } },
     orderBy: { updatedAt: 'desc' },
   });
