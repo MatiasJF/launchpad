@@ -4,10 +4,24 @@ import { prisma } from '@launchpad/db';
 import { revalidatePath } from 'next/cache';
 import { planMint } from '@launchpad/bsv/issue';
 import { operatorDeliverStas } from '@launchpad/bsv/settle';
+import { buildStasSellRefundTx } from '@launchpad/curve';
 import { isProjectOwner } from './account-actions';
 import { getOperator, getOperatorWallet, operatorSignDigest } from './operator-wallet';
 import { stasGenesisScript } from './stas-service';
-import { resolveCurrentPool, getOutputInfo, getSourceBeef, broadcastRawTx } from './settle-actions';
+import { resolveCurrentPool, getOutputInfo, getSourceBeef, broadcastRawTx, verifyStasBackToGenesis, findStasOutputToPkh } from './settle-actions';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadBsv(): Promise<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mod: any = await import('bsv');
+  return mod.default ?? mod;
+}
+
+/** Build the P2PKH locking-script hex for a mainnet address (the seller refund output). */
+async function p2pkhScriptHexForAddress(address: string): Promise<string> {
+  const bsv = await loadBsv();
+  return bsv.Script.buildPublicKeyHashOut(bsv.Address.fromString(address)).toHex();
+}
 
 /** Exact linear-curve cost to move `sold` by delta (mirrors StasCurvePool.buy). */
 function curveCost(k: bigint, sold: bigint, delta: bigint): bigint {
@@ -361,6 +375,223 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
       return { ok: true, txid: deliveryTxid };
     } catch (e) {
       // Release the claim so delivery can be retried.
+      await prisma.order.updateMany({ where: { id: order.id, state: 'settling' }, data: { state: 'pending' } });
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 3 · SELL (ADR-028). A stas sell is TWO sequenced txs (see stasSellAssembly.ts
+// for WHY it is not atomic — the deployed covenant's ANYONECANPAY_ALL sell pins EXACTLY
+// two outputs [successor pool, seller refund], leaving no room for the STAS-return
+// output in the same tx):
+//   TX1 "STAS return"  (holder-signed, client/wallet — DEFERRED UI): the holder
+//        transfers `delta` STAS to the operator vault pkh (a plain wallet STAS send).
+//   TX2 "reserve refund" (operator-cosigned, backend): finalizeStasSell verifies the
+//        returned STAS is GENUINE (back-to-genesis), then co-signs the covenant sell to
+//        pay the curve refund to the seller and advance the pool (sold -= delta).
+// Ordering follows the ADR-028 step-3 fallback: the holder returns STAS FIRST, then the
+// operator refunds — so the operator never pays out without receiving genuine inventory.
+// The added trust vs. the (infeasible) atomic form: (a) the operator must be LIVE to
+// broadcast the refund (same liveness trust as the buy's TX-B delivery); and (b) the
+// operator supplies output 1, so payee-correctness relies on the operator refunding to
+// the SELLER's recorded address (the covenant caps the AMOUNT but does not bind the
+// payee). See DECISIONS.md ADR-028 step-3.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sequence a stas sell against the LATEST StasCurvePool outpoint and return the current
+ * pool state + the operator VAULT pkh (where the holder returns `delta` STAS in TX1) +
+ * the curve refund preview. Mirrors prepareStasBuy: this is the sequencing anchor — the
+ * refund is FINALISED against the pool's actual `sold` at cosign time, so the preview may
+ * shift if other trades land first.
+ */
+export async function prepareStasSell(input: { saleId: string; sellerIdentity: string; delta: number; sellerRefundAddress: string }): Promise<
+  | { ok: true; pool: { txid: string; vout: number; scriptHex: string; reserveSats: number; sold: number; k: number; supply: number }; vaultPkh: string; refund: number; delta: number }
+  | { ok: false; error: string }
+> {
+  try {
+    if (!Number.isInteger(input.delta) || input.delta <= 0) return { ok: false, error: 'delta must be a positive integer' };
+    if (!input.sellerRefundAddress) return { ok: false, error: 'sellerRefundAddress required' };
+    const p = await prisma.curvePool.findUnique({ where: { saleId: input.saleId }, include: { sale: { include: { token: true } } } });
+    if (!p || p.variant !== 'stas') return { ok: false, error: 'no stas pool for this sale' };
+    if (p.status !== 'live' || !p.poolTxid || p.poolVout == null || !p.scriptHex) return { ok: false, error: 'pool is not live yet' };
+    if (!p.sale.token.issuanceTxid) return { ok: false, error: 'inventory not minted — nothing to sell back' };
+    const sold = Number(p.sold);
+    if (input.delta > sold) return { ok: false, error: 'sells more than the curve has outstanding' };
+    // sanity: the refund address must be a valid mainnet address the covenant can pay.
+    try {
+      await p2pkhScriptHexForAddress(input.sellerRefundAddress);
+    } catch {
+      return { ok: false, error: 'invalid seller refund address' };
+    }
+    const refund = Number(curveCost(p.k, BigInt(sold - input.delta), BigInt(input.delta)));
+    const { pkh: vaultPkh } = await getOperator();
+    return {
+      ok: true,
+      pool: { txid: p.poolTxid, vout: p.poolVout, scriptHex: p.scriptHex, reserveSats: Number(p.reserveSats), sold, k: Number(p.k), supply: Number(p.supply) },
+      vaultPkh,
+      refund,
+      delta: input.delta,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Record a broadcast STAS return (TX1): create the `curve_sell` Order (state `pending`,
+ * awaiting the operator refund). The holder has already transferred `delta` STAS to the
+ * operator vault; `returnTxid` is that tx. The pool is NOT advanced here — it moves in
+ * TX2 (finalizeStasSell), which is where the covenant sell actually spends the reserve.
+ * Nothing here is trusted blindly: finalizeStasSell re-verifies the returned STAS
+ * on-chain (amount + locked-to-vault + back-to-genesis) before refunding.
+ */
+export async function recordStasSell(input: {
+  saleId: string;
+  sellerIdentity: string;
+  sellerRefundAddress: string; // where the covenant refund is paid (output 1)
+  returnTxid: string; // TX1 — the holder's STAS return to the operator vault
+  delta: number;
+}): Promise<{ ok: boolean; orderId?: string; error?: string }> {
+  if (!/^[0-9a-fA-F]{64}$/.test(input.returnTxid)) return { ok: false, error: 'invalid STAS-return txid' };
+  if (!input.sellerRefundAddress) return { ok: false, error: 'sellerRefundAddress required' };
+  if (!Number.isInteger(input.delta) || input.delta <= 0) return { ok: false, error: 'delta must be a positive integer' };
+  try {
+    const pool = await prisma.curvePool.findUnique({ where: { saleId: input.saleId } });
+    if (!pool || pool.variant !== 'stas') return { ok: false, error: 'no stas pool for this sale' };
+    if (input.delta > Number(pool.sold)) return { ok: false, error: 'sells more than the curve has outstanding' };
+    const refundPreview = Number(curveCost(pool.k, BigInt(Number(pool.sold) - input.delta), BigInt(input.delta)));
+    const order = await prisma.order.create({
+      data: {
+        saleId: input.saleId,
+        buyerIdentity: input.sellerIdentity,
+        receiveAddress: input.sellerRefundAddress, // covenant refund payee (output 1)
+        kind: 'curve_sell',
+        tokens: BigInt(Math.floor(input.delta)),
+        satsPaid: BigInt(Math.floor(refundPreview)), // finalised at cosign against actual `sold`
+        state: 'pending', // awaiting operator refund (TX2)
+        paymentTxid: input.returnTxid, // the holder's STAS return
+      },
+    });
+    await prisma.event.create({ data: { entity: 'Order', entityId: order.id, type: 'stas_sell_returned', payloadHash: input.returnTxid } });
+    return { ok: true, orderId: order.id };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * TX2 · operator reserve-refund co-sign (backend). Verifies the returned STAS is genuine
+ * (back-to-genesis) and exactly `delta` locked to the vault, then co-signs the covenant
+ * SELL to pay the curve refund to the seller and advance the pool. Called explicitly
+ * after recordStasSell — never at import/build time. The operator co-sign + broadcast
+ * fire ONLY inside this server action.
+ *
+ * INVARIANTS enforced here: (1) back-to-genesis MUST pass before the operator co-signs —
+ * no refund for counterfeit STAS; (2) the returned STAS amount == delta and is locked to
+ * the operator vault; (3) the covenant caps the refund at the curve price and pins the
+ * successor (the assembly module re-validates the covenant input in @bsv/sdk before
+ * broadcast); (4) the pool advances only if it still sits at the outpoint the refund was
+ * built against (optimistic guard, mirrors recordCurveBuy); (5) sold never underflows.
+ */
+export async function finalizeStasSell(input: { orderId: string }): Promise<{ ok: boolean; txid?: string; error?: string }> {
+  try {
+    const order = await prisma.order.findUnique({ where: { id: input.orderId } });
+    if (!order || order.kind !== 'curve_sell') return { ok: false, error: 'order not found or not a curve sell' };
+    if (order.refundTxid) return { ok: true, txid: order.refundTxid }; // already refunded (idempotent)
+    if (!order.receiveAddress) return { ok: false, error: 'order has no refund address' };
+    if (!order.paymentTxid) return { ok: false, error: 'order has no STAS-return txid' };
+    const delta = Number(order.tokens);
+    if (delta <= 0) return { ok: false, error: 'nothing to refund' };
+
+    const pool = await prisma.curvePool.findUnique({ where: { saleId: order.saleId }, include: { sale: { include: { token: { include: { project: true } } } } } });
+    if (!pool || pool.variant !== 'stas') return { ok: false, error: 'no stas pool for this sale' };
+    if (pool.status !== 'live' || !pool.poolTxid || pool.poolVout == null || !pool.scriptHex) return { ok: false, error: 'pool is not live' };
+    const issuanceTxid = pool.sale.token.issuanceTxid;
+    if (!issuanceTxid) return { ok: false, error: 'inventory not minted — no genesis to verify against' };
+    if (delta > Number(pool.sold)) return { ok: false, error: 'sells more than the curve has outstanding' };
+
+    // Claim the order (pending → settling) so a double-invoke can't build two refunds.
+    const claim = await prisma.order.updateMany({ where: { id: order.id, state: 'pending' }, data: { state: 'settling' } });
+    if (claim.count !== 1) return { ok: false, error: `order not refundable (state ${order.state})` };
+
+    try {
+      const { pubHex, pkh: operatorPkh } = await getOperator();
+
+      // (1) Locate the returned STAS output: exactly `delta` tokens locked to the vault.
+      const returned = await findStasOutputToPkh(order.paymentTxid, operatorPkh, delta);
+      if (!returned) throw new Error(`no STAS return of ${delta} to the vault found in ${order.paymentTxid.slice(0, 12)}… — refusing refund`);
+
+      // (2) BACK-TO-GENESIS — MUST pass before co-signing. No refund for counterfeit STAS.
+      const auth = await verifyStasBackToGenesis({ outpointTxid: order.paymentTxid, outpointVout: returned.vout, issuanceTxid });
+      if (!auth.authentic) throw new Error(`returned STAS failed back-to-genesis (${auth.reason}) — refusing refund`);
+
+      // (3) Build the covenant refund (TX2) against the LATEST pool outpoint. The refund
+      // is the curve refund at the pool's actual `sold`; the covenant caps + pins it.
+      const spentPoolTxid = pool.poolTxid;
+      const spentPoolVout = pool.poolVout;
+      const sellerRefundScriptHex = await p2pkhScriptHexForAddress(order.receiveAddress);
+      const feeWallet = await getOperatorWallet();
+      const res = await buildStasSellRefundTx({
+        feeWallet,
+        chain: 'main',
+        pool: { txid: pool.poolTxid, vout: pool.poolVout, scriptHex: pool.scriptHex, reserveSats: Number(pool.reserveSats), sold: Number(pool.sold), k: Number(pool.k), supply: Number(pool.supply) },
+        delta,
+        sellerRefundScriptHex,
+        operatorPubHex: pubHex,
+        signCovenant: operatorSignDigest,
+      });
+      if (!res.ok) throw new Error(res.reason);
+
+      // Broadcast the fee-funding tx first, then TX2, retrying on "Missing inputs" while
+      // the funding propagates (mirrors deliverStasToBuyer).
+      if (res.fundingRawTx) await broadcastRawTx(res.fundingRawTx, res.fundingTxid);
+      let bc = await broadcastRawTx(res.rawTx, res.txid);
+      for (let i = 0; i < 4 && !bc.ok && /missing inputs/i.test(bc.error ?? ''); i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        bc = await broadcastRawTx(res.rawTx, res.txid);
+      }
+      if (!bc.ok) throw new Error(`refund broadcast rejected: ${bc.error}`);
+      const refundTxid = bc.txid || res.txid;
+
+      // (4) Advance the pool ONLY if it still sits at the outpoint we built against
+      // (optimistic guard, mirrors recordCurveBuy). (5) sold -= delta (never underflows —
+      // guarded above). Stamp the order settled with the refund tx.
+      const done = await prisma.$transaction(async (txn) => {
+        const cur = await txn.curvePool.findUnique({ where: { saleId: order.saleId } });
+        if (!cur || cur.poolTxid !== spentPoolTxid || cur.poolVout !== spentPoolVout) {
+          return { advanced: false as const };
+        }
+        await txn.curvePool.update({
+          where: { saleId: order.saleId },
+          data: {
+            poolTxid: res.newPool.txid,
+            poolVout: res.newPool.vout,
+            scriptHex: res.newPool.scriptHex,
+            reserveSats: BigInt(Math.floor(res.newPool.reserveSats)),
+            sold: BigInt(Math.floor(res.newPool.sold)),
+            status: 'live',
+          },
+        });
+        await txn.order.update({ where: { id: order.id }, data: { state: 'settled', refundTxid, txid: refundTxid, satsPaid: BigInt(Math.floor(res.refund)) } });
+        await txn.event.create({ data: { entity: 'Order', entityId: order.id, type: 'stas_sell_refunded', payloadHash: refundTxid } });
+        return { advanced: true as const };
+      });
+      if (!done.advanced) {
+        // The refund broadcast but the pool moved under us (a raced trade). The tx would
+        // not have spent the current pool, so it will not confirm. Surface for the
+        // operator to reconcile rather than corrupt tracked state.
+        await prisma.order.updateMany({ where: { id: order.id, state: 'settling' }, data: { state: 'pending' } });
+        return { ok: false, error: 'pool moved during refund — a raced trade advanced it; retry the sell' };
+      }
+      revalidatePath(`/sale/${pool.sale.token.project.slug}`);
+      return { ok: true, txid: refundTxid };
+    } catch (e) {
+      // Release the claim so the refund can be retried.
       await prisma.order.updateMany({ where: { id: order.id, state: 'settling' }, data: { state: 'pending' } });
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }

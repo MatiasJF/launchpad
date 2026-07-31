@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-07-31 — by: ADR-028 Step 2 (buy assembly + operator STAS delivery)_
+_Last updated: 2026-07-31 — by: ADR-028 Step 3 (sell: operator-cosigned reserve refund + back-to-genesis)_
 
 ## Current phase
 
@@ -84,7 +84,50 @@ at-least-once — a node-accepts-but-broadcast-reports-failure window could doub
 clean fix = a per-delivery idempotency key tied to the consumed vault outpoint; (b) TX-B liveness is
 the acknowledged ADR-028 operator trust (operator can stall/censor delivery, never overpay/divert);
 (c) inherited: record trusts the client-supplied successor outpoint was broadcast (same as recordCurveBuy).
-**Deferred: SELL + all UI.** See ADR-028 Step-2 updates.
+**STEP 3 (SELL) — ✅ DONE (2026-07-31):** a stas sell is TWO sequenced txs — the
+**atomic single tx is INFEASIBLE**, not just undesirable: the deployed `StasCurvePool.sell()`
+is `ANYONECANPAY_ALL` and asserts `hashOutputs == hash256(poolOut ++ payoutOut)` = EXACTLY
+two outputs (successor pool + seller refund), so a 3rd "STAS to vault" output (and the
+holder's STAS input, which needs its own STAS continuation output) can't ride in the same
+tx; the offline interpreter confirms the covenant rejects it. Recompiling the covenant was
+out of scope (breaks verified Step-1/2). So: **TX1 "STAS return"** (holder-signed wallet STAS
+transfer of `delta` to the operator vault pkh — client, DEFERRED UI) + **TX2 "reserve refund"**
+(operator-cosigned). **TX2 assembly** = `packages/curve/src/stasSellAssembly.ts`
+`buildStasSellRefundTx`, mirroring `verify-stas.ts`'s canonical `buildSell`: `[pool SELL input
+(0xc1; unlock pushes delta,payoutScript,operatorPub,operatorSig,preimage + the 1-byte '51' SELL
+selector), operator fee input (0x41, consumed WHOLE as the miner fee — no change output, the
+covenant pins 2 outputs)] → [reserve successor @ reserveBefore−refund, seller refund P2PKH @ the
+curve refund]`. Successor by the same byte-patch `poolScriptForSold` (proven byte-equal to
+scrypt-ts for the sell direction). The runtime sell-unlock encoder `encodeSellUnlockingHex`
+(curvePool.ts, scrypt-ts-free) is proven **byte-identical to the compiled sell ABI**; the
+assembled covenant input re-validates in @bsv/sdk before broadcast. Operator co-signs
+`sha256sha256(preimage)` with the flat key (`operatorSignDigest`, byte 0xc1) via an injected
+`signCovenant` callback (key never enters `packages/curve`). **BACK-TO-GENESIS before cosign is
+the anti-forgery rule** — there was NO existing B2G helper (ADR-024's "authentic" was a WoC
+explorer read, not code), so `settle-actions.ts` gained `verifyStasBackToGenesis` (walks the
+returned STAS's ancestry via WoC to the operator's OWN issuance, requiring a well-formed STAS
+script + matching **token tail** fingerprint at every hop + a same-tail parent, until it lands on
+`issuanceTxid`; **fail-closed** — any gap → no refund) + `findStasOutputToPkh` (locates the
+seller's `delta`-token output to the vault, so a wrong amount/destination is caught). **Server
+actions** (`stas-actions.ts`): `prepareStasSell` (sequencing anchor — latest outpoint + refund
+preview + operator vault pkh), `recordStasSell` (creates `curve_sell` Order `pending`,
+`paymentTxid`=TX1; does NOT advance the pool), `finalizeStasSell` (claims `pending→settling`;
+finds the returned STAS; runs B2G; builds TX2 against the latest outpoint; broadcasts fee-funding
+then TX2 with the Missing-inputs retry; advances the pool `sold−=delta`, `reserveSats=reserveAfter`,
+`poolTxid→successor` under the SAME optimistic outpoint guard as `recordCurveBuy`; stamps the
+Order `settled`+`refundTxid`). Operator cosign+broadcast fire ONLY inside `finalizeStasSell` —
+nothing at import/build/typecheck. **INVARIANTS proven (offline 10/10, +5 sell):** covenant caps
+the refund + pins the successor — operator SKIM (seller underpaid) and WRONG operator key both
+REJECTED, honest accepted, encoder byte-matches the compiled ABI. sold can't underflow (guarded
+at prepare/record/finalize). **Trust caveat vs. the infeasible atomic form (documented):** holder
+returns STAS FIRST then operator refunds, so (a) the operator must be LIVE to broadcast the refund
+(= Step-2 TX-B liveness trust) and (b) the operator supplies output 1, so the refund reaches the
+seller only because finalize pays the seller's RECORDED address — the covenant caps the amount but
+does not cryptographically bind the payee (the atomic form would have, via the holder's
+SIGHASH_ALL). Consistent with the ADR-028 operator model (can stall/censor, never overpay/drain).
+Green: bsv+curve+web typecheck, web build, offline covenant tests 10/10. **Deferred: TX1 holder
+STAS-return wallet assembly + all sell UI + live mainnet test.** See ADR-028 Step-3 updates.
+**Deferred: all UI.** See ADR-028 Step-2/Step-3 updates.
 **Remaining = STAS integration + app wiring:** buy/sell UI + assembly (next steps); deploy (reserve
 covenant + mint supply to operator vault via genesis.ts) SERVER layer done ↑; buy = reserve buy (client) + operator STAS delivery
 (backend); sell = buyer STAS return (client) + operator reserve-refund cosign (backend, back-to-

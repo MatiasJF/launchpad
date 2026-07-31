@@ -21,6 +21,7 @@ export {
   buildBuySpend,
   validateBuy,
   encodeBuyUnlockingHex,
+  encodeSellUnlockingHex,
   poolScriptForSold,
   poolCodePart,
   CURVE_SCOPE,
@@ -52,3 +53,9 @@ export {
   type StasBuyArgs,
   type StasBuyResult,
 } from './stasBuyAssembly';
+
+export {
+  buildStasSellRefundTx,
+  type StasSellArgs,
+  type StasSellResult,
+} from './stasSellAssembly';

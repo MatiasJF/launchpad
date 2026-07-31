@@ -114,6 +114,38 @@ export function encodeBuyUnlockingHex(delta: bigint, newReserve: bigint | number
   ]).toString('hex');
 }
 
+/** Little-endian bytes of a hex string. */
+function hexToBytes(hex: string): number[] {
+  return Array.from(Buffer.from(hex, 'hex'));
+}
+
+/**
+ * Encode a SELL's unlocking script (StasCurvePool.sell, ADR-028) in the covenant
+ * method's declaration order: `<delta> <payoutScript> <operatorPub> <operatorSig>
+ * <preimage>`. The caller appends the 1-byte SELL method selector ('51'); the
+ * covenant is a 2-method contract so the selector dispatches sell vs buy. The
+ * operator signature (checkSig gate) is a DER sig + its sighash byte (0xc1); the
+ * preimage is the OP_PUSH_TX ctx the covenant reads for hashOutputs. Number args
+ * use minimal pushes, byte-string args (script/pubkey/sig) plain data pushes —
+ * byte-identical to scrypt-ts `getUnlockingScript(s => s.sell(...))`, verified in
+ * the offline test so the runtime encoder can never drift from the compiled ABI.
+ */
+export function encodeSellUnlockingHex(
+  delta: bigint,
+  payoutScriptHex: string,
+  operatorPubHex: string,
+  operatorSigHex: string,
+  preimage: number[],
+): string {
+  return Buffer.from([
+    ...pushInt(delta),
+    ...push(hexToBytes(payoutScriptHex)),
+    ...push(hexToBytes(operatorPubHex)),
+    ...push(hexToBytes(operatorSigHex)),
+    ...push(preimage),
+  ]).toString('hex');
+}
+
 export interface BuySpendArgs {
   poolLockHex: string; // covenant script at current `sold`
   reserveBefore: number; // covenant UTXO satoshi value

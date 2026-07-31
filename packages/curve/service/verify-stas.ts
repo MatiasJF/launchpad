@@ -6,7 +6,7 @@
 import { StasCurvePool } from '../src/contracts/stasCurvePool';
 import { PubKeyHash, PubKey, Sig, toByteString, bsv } from 'scrypt-ts';
 import { Spend, LockingScript, UnlockingScript } from '@bsv/sdk';
-import { poolScriptForSold, encodeBuyUnlockingHex } from '../src/curvePool';
+import { poolScriptForSold, encodeBuyUnlockingHex, encodeSellUnlockingHex } from '../src/curvePool';
 import { validateAssembledCovenantInput } from '../src/covenant';
 import artifact from '../artifacts/stasCurvePool.json';
 (StasCurvePool as any).loadArtifact(artifact as any);
@@ -102,6 +102,67 @@ function buildSell(signer: any) {
 
   const chk = validateAssembledCovenantInput(tx.toString(), { scriptHex: curHex, satoshis: reserveBefore }, 0);
   check('assembled TX-A pool input validates (byte-patch + linear unlock + 00)', chk.ok, chk.error ?? '');
+}
+
+// ASSEMBLED SELL (step 3): the runtime encoder (encodeSellUnlockingHex, scrypt-ts-free)
+// must byte-match the compiled sell ABI, the assembled 2-output refund tx must validate
+// via @bsv/sdk, and an operator SKIM (seller refund underpaid) must be REJECTED. This is
+// exactly what buildStasSellRefundTx assembles (minus the operator fee input, which the
+// covenant input doesn't depend on under ANYONECANPAY|ALL).
+// Build a REAL two-input/two-output sell tx with the runtime encoder (no scrypt-ts).
+// `skim` underpays the seller refund by 1 sat (kept back in the reserve).
+function assembleSell(signer: any, opts: { skim?: boolean } = {}) {
+  const cur = pool(10n);
+  const delta = 4n;
+  const reserveBefore = 546 + Number(curveCost(0n, 10n));
+  const newSold = 10n - delta;
+  const refund = Number(curveCost(newSold, delta));
+  const reserveAfter = reserveBefore - refund + (opts.skim ? 1 : 0);
+  const payoutVal = refund - (opts.skim ? 1 : 0);
+  const curHex = cur.lockingScript.toHex();
+  const nextHex = poolScriptForSold(curHex, newSold); // byte-patch (not scrypt-ts)
+
+  const tx = new B.Transaction();
+  tx.addInput(new B.Transaction.Input({ prevTxId: TXID, outputIndex: 0, script: new B.Script() }), B.Script.fromHex(curHex), reserveBefore);
+  // a dummy operator fee input (irrelevant to the pool input under ANYONECANPAY)
+  tx.addInput(new B.Transaction.Input({ prevTxId: 'c'.repeat(64), outputIndex: 0, script: new B.Script() }), B.Script.fromHex(payoutScriptHex), 200);
+  tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(nextHex), satoshis: reserveAfter }));
+  tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(payoutScriptHex), satoshis: payoutVal }));
+
+  const preimage = B.Transaction.sighash.sighashPreimage(tx, 0xc1, 0, B.Script.fromHex(curHex), new B.crypto.BN(reserveBefore));
+  const digest = B.crypto.Hash.sha256sha256(preimage);
+  const der = B.crypto.ECDSA.sign(Buffer.from(digest), signer).toDER().toString('hex');
+  const sig = der + 'c1';
+  const uscHand = encodeSellUnlockingHex(delta, payoutScriptHex, opPub.toString(), sig, Array.from(preimage) as number[]) + '51';
+  tx.inputs[0].setScript(B.Script.fromHex(uscHand));
+  return { cur, delta, curHex, reserveBefore, sig, preimage, uscHand, rawTx: tx.toString(), nextHex, newSold, tx };
+}
+{
+  const s = assembleSell(opPriv);
+  // sanity: byte-patched successor == scrypt-ts getStateScript successor (sell direction)
+  const realNextHex = String((pool(s.newSold) as any).getStateScript());
+  check('poolScriptForSold matches scrypt-ts successor (sell direction)', s.nextHex === realNextHex, `patched=${s.nextHex.slice(-16)} real=${realNextHex.slice(-16)}`);
+  // byte-equality of the runtime encoder against the compiled sell ABI (honest tx only —
+  // getUnlockingScript runs the covenant assertions, which reject a skim/bad-sig tx).
+  (s.cur as any).to = { tx: s.tx, inputIndex: 0 };
+  const uscScrypt = String((s.cur as any).getUnlockingScript((sc: any) => sc.sell(s.delta, toByteString(payoutScriptHex), PubKey(toByteString(opPub.toString())), Sig(toByteString(s.sig)))).toHex());
+  check('encodeSellUnlockingHex byte-matches compiled sell ABI (delta,payout,pub,sig,preimage,51)', s.uscHand === uscScrypt, `hand=${s.uscHand.slice(0, 24)}… scrypt=${uscScrypt.slice(0, 24)}…`);
+  const chk = validateAssembledCovenantInput(s.rawTx, { scriptHex: s.curHex, satoshis: s.reserveBefore }, 0);
+  check('assembled sell input validates (encodeSell + operator sig + 51)', chk.ok, chk.error ?? '');
+}
+{
+  // operator SKIM: seller refund underpaid by 1 — the covenant pins hashOutputs to
+  // (poolOut ++ payoutOut) at the EXACT curve refund, so this is REJECTED even with a
+  // valid operator signature.
+  const s = assembleSell(opPriv, { skim: true });
+  const chk = validateAssembledCovenantInput(s.rawTx, { scriptHex: s.curHex, satoshis: s.reserveBefore }, 0);
+  check('assembled sell REJECTED when operator skims the seller refund', chk.ok === false, chk.error ?? '');
+}
+{
+  // wrong operator key on the ASSEMBLED tx: the operatorPkh / checkSig gate rejects.
+  const s = assembleSell(B.PrivateKey.fromRandom());
+  const chk = validateAssembledCovenantInput(s.rawTx, { scriptHex: s.curHex, satoshis: s.reserveBefore }, 0);
+  check('assembled sell REJECTED with wrong operator key', chk.ok === false, chk.error ?? '');
 }
 
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);

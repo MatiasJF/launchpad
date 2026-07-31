@@ -213,6 +213,116 @@ export async function broadcastRawTx(
   }
 }
 
+/** STAS token output shape: `76a914 <ownerPkh:20> 88ac69 <token tail…>`. */
+function isStasScript(hex: string): boolean {
+  return typeof hex === 'string' && hex.length >= 52 && hex.toLowerCase().startsWith('76a914') && hex.substring(46, 52).toLowerCase() === '88ac69';
+}
+/** Owner pkh of a STAS output (hex). */
+function stasOwnerPkh(hex: string): string {
+  return hex.substring(6, 46).toLowerCase();
+}
+/** The token "tail" after the owner pkh — the tokenId/issuer fingerprint, constant
+ *  across every transfer of the same token (only the owner pkh changes). */
+function stasTail(hex: string): string {
+  return hex.substring(52).toLowerCase();
+}
+
+/**
+ * Find the STAS output in a tx that is locked to `ownerPkh` and carries exactly
+ * `amount` tokens (1 sat = 1 token). Used to locate the seller's STAS-return output
+ * (the tokens they sent to the operator vault) before refunding. Returns its vout +
+ * script, or null. Server-side WoC read (no CORS).
+ */
+export async function findStasOutputToPkh(
+  txid: string,
+  ownerPkh: string,
+  amount: number,
+): Promise<{ vout: number; scriptHex: string; satoshis: number } | null> {
+  if (!/^[0-9a-fA-F]{64}$/.test(txid) || !/^[0-9a-fA-F]{40}$/.test(ownerPkh)) return null;
+  for (let i = 0; i < 4; i++) {
+    try {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`, { cache: 'no-store' });
+      if (res.ok) {
+        const tx = (await res.json()) as { vout?: { n: number; value?: number; scriptPubKey?: { hex?: string } }[] };
+        for (const o of tx.vout ?? []) {
+          const hex = (o.scriptPubKey?.hex ?? '').toLowerCase();
+          const sats = typeof o.value === 'number' ? Math.round(o.value * 1e8) : -1;
+          if (isStasScript(hex) && stasOwnerPkh(hex) === ownerPkh.toLowerCase() && sats === Math.floor(amount)) {
+            return { vout: o.n, scriptHex: hex, satoshis: sats };
+          }
+        }
+        return null; // tx fetched, no matching STAS output
+      }
+    } catch {
+      /* transient — retry */
+    }
+    if (i < 3) await new Promise((r) => setTimeout(r, 1500));
+  }
+  return null;
+}
+
+/**
+ * BACK-TO-GENESIS authenticity check (ADR-024/028). Verify that the STAS UTXO at
+ * `outpointTxid:outpointVout` is a GENUINE token of the operator's own mint by walking
+ * its STAS ancestry back to the operator's known genesis ISSUE tx (`issuanceTxid`).
+ *
+ * The operator minted the whole supply itself (step 1), so authenticity == "descends
+ * from OUR issuance". At each hop we require (a) a well-formed STAS script whose token
+ * TAIL equals the genuine mint's tail (the tokenId/issuer fingerprint — a counterfeit
+ * carries a different redemption pubkey → different tail), and (b) a STAS parent input
+ * of the same tail, until we land on `issuanceTxid` (whose parent is the non-STAS
+ * contract tx — the genesis boundary). Fail-CLOSED: any fetch failure, tail mismatch,
+ * or divergent ancestry returns `authentic: false` so the operator refuses to refund.
+ * The operator MUST call this and require `authentic` BEFORE co-signing a sell refund.
+ */
+export async function verifyStasBackToGenesis(input: {
+  outpointTxid: string;
+  outpointVout: number;
+  issuanceTxid: string;
+}): Promise<{ authentic: boolean; hops?: number; reason?: string }> {
+  const { outpointTxid, outpointVout, issuanceTxid } = input;
+  if (!/^[0-9a-fA-F]{64}$/.test(outpointTxid) || !/^[0-9a-fA-F]{64}$/.test(issuanceTxid) || !Number.isInteger(outpointVout) || outpointVout < 0) {
+    return { authentic: false, reason: 'invalid txid/vout' };
+  }
+  // The genuine token tail comes from the operator's own genesis STAS output (issue:0).
+  const genesisScript = await getOutputScriptHex(issuanceTxid, 0);
+  if (!genesisScript || !isStasScript(genesisScript)) return { authentic: false, reason: 'could not read a STAS genesis output at issuance:0' };
+  const genuineTail = stasTail(genesisScript);
+
+  let curTxid = outpointTxid;
+  let curVout = outpointVout;
+  const MAX_HOPS = 200;
+  for (let hop = 0; hop < MAX_HOPS; hop++) {
+    const script = await getOutputScriptHex(curTxid, curVout);
+    if (!script) return { authentic: false, reason: `could not fetch ${curTxid.slice(0, 10)}…:${curVout}` };
+    if (!isStasScript(script)) return { authentic: false, reason: `not a STAS output at ${curTxid.slice(0, 10)}…:${curVout}` };
+    if (stasTail(script) !== genuineTail) return { authentic: false, reason: `token tail mismatch at ${curTxid.slice(0, 10)}…:${curVout} — counterfeit (different genesis)` };
+    if (curTxid.toLowerCase() === issuanceTxid.toLowerCase()) return { authentic: true, hops: hop };
+
+    // Find a STAS parent input (same tail) and recurse toward genesis.
+    let parent: { txid: string; vout: number } | null = null;
+    try {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${curTxid}`, { cache: 'no-store' });
+      if (!res.ok) return { authentic: false, reason: `could not fetch tx ${curTxid.slice(0, 10)}…` };
+      const tx = (await res.json()) as { vin?: { txid?: string; vout?: number }[] };
+      for (const vin of tx.vin ?? []) {
+        if (!vin.txid || typeof vin.vout !== 'number') continue;
+        const prevScript = await getOutputScriptHex(vin.txid, vin.vout);
+        if (prevScript && isStasScript(prevScript) && stasTail(prevScript) === genuineTail) {
+          parent = { txid: vin.txid, vout: vin.vout };
+          break;
+        }
+      }
+    } catch {
+      return { authentic: false, reason: `network error walking ancestry at ${curTxid.slice(0, 10)}…` };
+    }
+    if (!parent) return { authentic: false, reason: `no genuine STAS parent at ${curTxid.slice(0, 10)}… — ancestry does not reach our issuance` };
+    curTxid = parent.txid;
+    curVout = parent.vout;
+  }
+  return { authentic: false, reason: `ancestry exceeded ${MAX_HOPS} hops without reaching issuance` };
+}
+
 /**
  * Fetch the source tx's ancestry BEEF from WhatsOnChain (server-side, no CORS).
  * For a CONFIRMED tx this bundles a merkle proof (BUMP) — a self-sufficient SPV
