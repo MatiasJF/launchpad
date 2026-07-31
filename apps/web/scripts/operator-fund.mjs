@@ -67,13 +67,35 @@ const rawHex = Transaction.fromAtomicBEEF(action.tx).toHex();
 console.log('\ntxid       :', action.txid);
 console.log('RAW TX HEX :', rawHex);
 
-// 4) push via WhatsOnChain (broadcaster independent of the local wallet)
-try {
+// 4) push via WhatsOnChain — the funding tx spends UNCONFIRMED ancestors (your wallet's
+//    un-broadcast chain), so push every unconfirmed ancestor first (BEEF has them all),
+//    parents-first, then the funding tx. WoC's single-tx endpoint needs each parent present.
+async function wocPush(hex, id) {
   const res = await fetch(`https://api.whatsonchain.com/v1/bsv/${CHAIN}/tx/raw`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ txhex: rawHex }),
-  });
-  console.log('WoC broadcast:', res.status, (await res.text()).trim());
-} catch (e) { console.log('WoC broadcast error (will still internalize):', e.message); }
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ txhex: hex }),
+  }).catch((e) => ({ ok: false, status: 'ERR', text: async () => e.message }));
+  const body = (await res.text()).trim();
+  const ok = res.ok || /already|known/i.test(body); // already-in-mempool is fine
+  console.log(`  ${ok ? '✓' : '✗'} ${id} -> ${res.status} ${body}`);
+  return ok;
+}
+function collectUnconfirmed(tx, out, seen) {
+  for (const inp of tx.inputs) {
+    const src = inp.sourceTransaction;
+    if (!src || src.merklePath) continue; // undefined or confirmed boundary -> stop
+    collectUnconfirmed(src, out, seen);   // parents before child
+    const id = src.id('hex');
+    if (!seen.has(id)) { seen.add(id); out.push(src); }
+  }
+  return out;
+}
+const rootTx = Transaction.fromAtomicBEEF(action.tx);
+const chain = collectUnconfirmed(rootTx, [], new Set());
+console.log(`\nbroadcasting ${chain.length} unconfirmed ancestor(s) + funding tx via WoC:`);
+let allOk = true;
+for (const a of chain) allOk = (await wocPush(a.toHex(), a.id('hex'))) && allOk;
+allOk = (await wocPush(rootTx.toHex(), rootTx.id('hex'))) && allOk;
+console.log(allOk ? '✅ broadcast chain OK' : '⚠️  broadcast had failures (see above)');
 
 // 5) internalize into the operator wallet so it tracks the UTXO
 try {
