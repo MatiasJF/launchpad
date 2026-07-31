@@ -1,0 +1,86 @@
+meta:
+  title: "BSV Launchpad — Bonding-Curve Lifecycle"
+  subtitle: "How buy, sell and graduation work"
+  event: "Internal draft — not for distribution"
+  date: "July 2026"
+
+cover:
+  eyebrow: "BSV Launchpad"
+  title: "A trustless token curve on the BSV Blockchain"
+  subtitle: "Buy and sell against an on-chain reserve — no custody, no forgeable token"
+
+thanks:
+  title: "Thank you"
+  org: "BSV Association"
+
+hero_stats:
+  - icon: coins
+    value: "1 UTXO"
+    label: "the whole pool lives on-chain"
+  - icon: refresh-cw
+    value: "Two-way"
+    label: "buy and sell on the curve"
+  - icon: shield-check
+    value: "Drain-proof"
+    label: "no operator key, no indexer"
+  - icon: badge-check
+    value: "STAS"
+    label: "real tokens at graduation"
+
+intro: >
+  <strong>A bonding curve is an automated market maker: a single on-chain pool that
+  quotes its own price.</strong> The more tokens sold, the higher the price; sell back
+  and the price falls. Buyers pay sats into the pool's reserve and receive a balance;
+  sellers return their balance for sats. Everything — the reserve, the price rule and
+  every holder's balance — lives inside one covenant UTXO on the BSV Blockchain.
+
+intro_extra: >
+  It is <strong>non-custodial and operator-free</strong>: the platform never holds keys
+  or funds and never quotes a price. Buyers fund their own trades; sellers sign their
+  own withdrawals; the covenant enforces the price. When the curve completes, the pool
+  <strong>graduates</strong> — minting real, wallet-held STAS tokens to every holder and
+  settling the reserve.
+
+sections:
+  - kind: pillars
+    column: 1
+    title: "The lifecycle"
+    items:
+      - icon: coins
+        title: "Buy along the curve"
+        bullets:
+          - "Pay sats — the price rises as supply sells."
+          - "Your balance is credited inside the pool's ledger."
+      - icon: refresh-cw
+        title: "Sell back anytime"
+        bullets:
+          - "Sign to authorise — the pool pays you the refund."
+          - "Price falls back down the same curve."
+      - icon: trending-up
+        title: "Price set on-chain"
+        bullets:
+          - "A fixed formula in the covenant, not an operator quote."
+          - "Every trade re-prices the pool automatically."
+      - icon: badge-check
+        title: "Graduate to STAS"
+        bullets:
+          - "On completion, holders receive real STAS tokens."
+          - "The reserve is settled and the token trades freely."
+
+  - kind: table
+    column: 2
+    title: "Stage by stage"
+    columns: ["Stage", "What happens on-chain"]
+    rows:
+      - ["Deploy", "Owner seeds the reserve; the pool covenant goes live"]
+      - ["Buy", "Sats into the reserve; your key is credited in the ledger"]
+      - ["Sell", "You sign; the covenant debits you and pays the refund"]
+      - ["Reserve", "Grows on buys, shrinks on sells — always one UTXO"]
+      - ["Ownership", "A ledger entry, proven by your signature"]
+      - ["Verify", "Anyone replays the pool's tx history to check it"]
+      - ["Graduation", "Curve completes → mint STAS to holders + settle reserve"]
+
+callout: "<strong>Buy, sell, and graduate — a two-way market with the reserve locked on-chain, no custodian, and no token anyone can forge.</strong>"
+
+footer:
+  contact: "BSV Association · bsvassociation.org"

@@ -1,0 +1,86 @@
+meta:
+  title: "BSV Launchpad — Inside the Curve Covenant"
+  subtitle: "How the on-chain ledger works, and what sCrypt does"
+  event: "Internal draft — not for distribution"
+  date: "July 2026"
+
+cover:
+  eyebrow: "BSV Launchpad · Engineering"
+  title: "Balances inside the covenant"
+  subtitle: "An OP_PUSH_TX covenant that holds the reserve and the ledger — and can't be drained"
+
+thanks:
+  title: "Thank you"
+  org: "BSV Association"
+
+hero_stats:
+  - icon: database
+    value: "In-covenant"
+    label: "the ledger IS the UTXO's state"
+  - icon: fingerprint
+    value: "Signature"
+    label: "proves who owns what"
+  - icon: lock
+    value: "OP_PUSH_TX"
+    label: "the spend constrains itself"
+  - icon: shield-check
+    value: "No forgery"
+    label: "no token exists to forge"
+
+intro: >
+  <strong>The pool is one covenant UTXO: its satoshi balance is the reserve, and its
+  locking script carries a ledger of every holder's balance.</strong> BSV has no global
+  mutable state, so the covenant carries its own — and forces each spend to re-lock the
+  successor pool with the state correctly updated. This is the trick that lets a script
+  behave like a stateful contract on a pure-UTXO chain.
+
+intro_extra: >
+  Balances live <strong>inside</strong> the covenant as a HashedMap (owner → amount), so
+  there is no separate, forgeable token object. A buy credits an entry; a sell requires
+  the holder's signature and debits it. Because nothing spendable leaves the pool, a
+  forged token can't be sold back to drain the reserve — the safety property that makes
+  this trustless with <strong>no operator key and no indexer</strong>.
+
+sections:
+  - kind: pillars
+    column: 1
+    title: "What the covenant enforces"
+    items:
+      - icon: lock
+        title: "Self-replication"
+        bullets:
+          - "The spender pushes this transaction's own preimage."
+          - "Tx.checkPreimage proves it — so the covenant reads its own tx."
+      - icon: database
+        title: "The ledger is state"
+        bullets:
+          - "A HashedMap of owner-hash → balance, committed in the script."
+          - "Buys set +delta; sells set −amount; a Merkle proof per touch."
+      - icon: scale
+        title: "The curve is math"
+        bullets:
+          - "Cost and refund computed in Script, exact integer arithmetic."
+          - "Every rounding falls in the pool's favour — never drainable."
+      - icon: fingerprint
+        title: "Sells need a signature"
+        bullets:
+          - "checkSig against the holder's key authorises the debit."
+          - "You can only ever move your own balance."
+
+  - kind: table
+    column: 2
+    title: "sCrypt → on-chain effect"
+    columns: ["sCrypt piece", "What it does on-chain"]
+    rows:
+      - ["Tx.checkPreimage", "Proves the pushed bytes are THIS transaction"]
+      - ["@state HashedMap", "Holder balances committed inside the pool script"]
+      - ["hash256(outputs)", "Forces the spend to re-lock the successor pool"]
+      - ["ledger.set / canGet", "Update one balance with a Merkle access proof"]
+      - ["checkSig(sig, pub)", "Only the balance owner can debit it (sell)"]
+      - ["k·Δ·(2s+Δ+1)/2", "Exact curve cost — the /2 never truncates"]
+      - ["ANYONECANPAY", "Lets the trader attach their own funding input"]
+
+callout: "<strong>No separate token means nothing to forge. The reserve is drain-proof by construction — enforced entirely on-chain, with no platform key and no trusted indexer.</strong>"
+
+footer:
+  contact: "BSV Association · bsvassociation.org"
