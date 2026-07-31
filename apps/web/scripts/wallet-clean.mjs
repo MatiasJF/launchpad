@@ -46,16 +46,31 @@ const cleanSats = fromConfirmed.reduce((s, o) => s + Number(o.satoshis ?? 0), 0)
 console.log(`\n=== ${totalOutputs ?? outputs.length} outputs · ${spendable.length} spendable = ${sats} sats ===`);
 console.log(`  of which sit on CONFIRMED txs (clean to respend): ${fromConfirmed.length} = ${cleanSats} sats`);
 
-// --- abort dead actions ---
+// --- abort dead actions (fixed-point: dead txs depend on each other; a parent can't
+//     abort while a child still reserves its output, so loop until nothing more aborts) ---
 if (DO_ABORT) {
-  console.log(`\n=== aborting ${dead.length} dead action(s) ===`);
-  let ok = 0;
-  for (const a of dead) {
-    try { await w.abortAction({ reference: a.reference }); ok++; console.log(`  ✓ aborted ${a.txid} (${a.status})`); }
-    catch (e) { console.log(`  ✗ ${a.txid} (${a.status}): ${e.message}`); }
-    await sleep(150);
+  console.log(`\n=== aborting ${dead.length} dead action(s) — multi-pass ===`);
+  let pending = [...dead];
+  let aborted = 0;
+  for (let pass = 1; pending.length; pass++) {
+    const next = [];
+    let progressed = false;
+    console.log(`\n  pass ${pass} — ${pending.length} to abort`);
+    for (const a of pending) {
+      try { await w.abortAction({ reference: a.reference }); aborted++; progressed = true; console.log(`    ✓ ${a.txid} (${a.status})`); }
+      catch (e) { console.log(`    ✗ ${a.txid} (${a.status}): ${String(e.message).slice(0, 80)}`); next.push(a); }
+      await sleep(150);
+    }
+    pending = next;
+    if (!progressed) { console.log('\n  ⚠️  a full pass aborted nothing more — stopping'); break; }
   }
-  console.log(`aborted ${ok}/${dead.length}. Re-run operator:fund afterwards.`);
+  console.log(`\naborted ${aborted}/${dead.length}.`);
+  if (pending.length) console.log(`⚠️  ${pending.length} could not be aborted (status not abortable) — may need a wallet-side resync.`);
+
+  const after = await w.listOutputs({ basket: 'default', limit: 1000 }).catch(() => ({ outputs: [] }));
+  const sp = (after.outputs ?? []).filter((o) => o.spendable);
+  console.log(`\nspendable now: ${sp.length} outputs = ${sp.reduce((s, o) => s + Number(o.satoshis ?? 0), 0)} sats`);
+  console.log('If that shows sats, re-run: pnpm --filter @launchpad/web operator:fund -- 10000');
 } else {
   console.log('\n(inspect only — re-run with `abort` to clear the dead actions)');
 }
