@@ -111,6 +111,9 @@ model CurvePool {
   // ledger variant only: JSON [{ownerPkh, amount}] mirroring the covenant's HashedMap
   // so the operator can rebuild the map to prove each spend (the ledger is public).
   ledgerBalances  String?
+  // ledger variant: hash160 of the payout address baked into the covenant at deploy;
+  // the reserve is released here at graduation (must stay constant for the pool's life).
+  payoutPkh       String?
   poolTxid        String? // current pool outpoint (moves after each buy)
   poolVout        Int?
   scriptHex       String? // current pool locking script

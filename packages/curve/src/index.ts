@@ -30,6 +30,7 @@ export {
 export {
   buildLedgerBuyTx,
   buildLedgerSellTx,
+  buildLedgerGraduateTx,
   type LedgerPoolUtxo,
   type LedgerTxResult,
 } from './ledgerTx';

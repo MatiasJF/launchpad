@@ -111,3 +111,35 @@ export async function buildLedgerSellTx(args: {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) };
   }
 }
+
+/** GRADUATION: spend the fully-sold pool with the server unlock + a wallet fee input,
+ *  releasing the whole reserve to the committed payout (terminal — no re-lock). */
+export async function buildLedgerGraduateTx(args: {
+  wallet: WalletInterface; chain: 'main' | 'test';
+  pool: LedgerPoolUtxo; unlockingHex: string; payoutScriptHex: string; reserve: number;
+  feeSats?: number; originator?: string;
+}): Promise<LedgerTxResult> {
+  const { wallet, chain, pool, unlockingHex, payoutScriptHex, reserve, feeSats = 250, originator = ORIGINATOR } = args;
+  try {
+    const funding = await createTokenFundingOutput({ wallet, chain, satoshis: feeSats, originator, description: 'curve graduation fee' });
+    const bsv = await loadBsv();
+    const tx = new bsv.Transaction();
+    tx.addInput(new bsv.Transaction.Input({ prevTxId: pool.txid, outputIndex: pool.vout, script: new bsv.Script() }), bsv.Script.fromHex(pool.scriptHex), pool.reserveBefore);
+    tx.addInput(new bsv.Transaction.Input({ prevTxId: funding.txid, outputIndex: funding.vout, script: new bsv.Script() }), bsv.Script.fromHex(funding.scriptHex), funding.satoshis);
+    tx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(payoutScriptHex), satoshis: reserve }));
+
+    tx.inputs[0].setScript(bsv.Script.fromHex(unlockingHex));
+    const fundUnlock = await signP2pkhInput({ wallet, bsv, tx, inputIndex: 1, derivationPrefix: funding.derivationPrefix, derivationSuffix: funding.derivationSuffix, sourceScriptHex: funding.scriptHex, sourceSatoshis: funding.satoshis, sighashType: SIGHASH_FUND, originator });
+    tx.inputs[1].setScript(bsv.Script.fromHex(fundUnlock));
+
+    const rawTx: string = tx.toString();
+    const txid = Transaction.fromHex(rawTx).id('hex');
+    const check = validateAssembledCovenantInput(rawTx, { scriptHex: pool.scriptHex, satoshis: pool.reserveBefore }, 0);
+    if (!check.ok) return { ok: false, reason: `pool input failed interpreter check: ${check.error}` };
+    let paymentRawTx = '';
+    try { if (funding.beef?.length) paymentRawTx = Transaction.fromAtomicBEEF(funding.beef).toHex(); } catch { paymentRawTx = ''; }
+    return { ok: true, rawTx, txid, paymentTxid: funding.txid, paymentRawTx };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+}

@@ -6,7 +6,7 @@ import { Button, StatusPill } from './ui';
 import { ShieldCheck } from './ui/icons';
 import { useWallet } from './WalletProvider';
 import { broadcastRawTx } from '../lib/settle-actions';
-import { getLedgerPool, prepareLedgerBuy, recordLedgerBuy, prepareLedgerSell, finalizeLedgerSell, recordLedgerSell } from '../lib/ledger-actions';
+import { getLedgerPool, prepareLedgerBuy, recordLedgerBuy, prepareLedgerSell, finalizeLedgerSell, recordLedgerSell, prepareLedgerGraduate, recordLedgerGraduate } from '../lib/ledger-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
 
@@ -154,6 +154,32 @@ export function LedgerTradeCard({ s }: { s: SaleCardVM }) {
     finally { setBusy(false); }
   }
 
+  const soldOut = pool != null && pool.sold >= pool.supply;
+
+  async function doGraduate() {
+    setBusy(true); setError(null);
+    try {
+      await connect();
+      const { getWalletClient } = await import('@launchpad/bsv/wallet');
+      const { buildLedgerGraduateTx } = await import('@launchpad/curve');
+      const wallet = await getWalletClient();
+      const prep = await prepareLedgerGraduate({ saleId: s.saleId });
+      if (!prep.ok) throw new Error(prep.error);
+      const built = await buildLedgerGraduateTx({
+        wallet: wallet as never, chain: 'main',
+        pool: { txid: prep.poolTxid, vout: prep.poolVout, scriptHex: prep.sourceLockHex, reserveBefore: prep.reserveBefore },
+        unlockingHex: prep.unlockingHex, payoutScriptHex: prep.payoutScriptHex, reserve: prep.reserve,
+      });
+      if (!built.ok || !built.rawTx || !built.txid) throw new Error(built.reason ?? 'graduation build failed');
+      const bc = await broadcastWithParent(built.paymentRawTx, built.paymentTxid, built.rawTx, built.txid);
+      if (!bc.ok) throw new Error(`graduation broadcast rejected: ${bc.error}`);
+      const rec = await recordLedgerGraduate({ saleId: s.saleId, spentPoolTxid: prep.poolTxid, spentPoolVout: prep.poolVout, graduateTxid: bc.txid || built.txid });
+      if (!rec.ok) throw new Error(rec.error);
+      setTxid(bc.txid || built.txid); await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+
   return (
     <div className="card flex flex-col gap-5 p-6">
       <div className="flex items-center justify-between">
@@ -190,9 +216,18 @@ export function LedgerTradeCard({ s }: { s: SaleCardVM }) {
         <span className="text-fg">{quote.toLocaleString('en-US')} sats</span>
       </div>
 
-      <Button onClick={tab === 'buy' ? doBuy : doSell} disabled={!open || busy || delta <= 0} block>
-        {busy ? 'Working…' : !open ? 'Not open' : tab === 'buy' ? `Buy ${delta} ${s.ticker}` : `Sell ${delta} ${s.ticker}`}
+      <Button onClick={tab === 'buy' ? doBuy : doSell} disabled={!open || busy || delta <= 0 || soldOut} block>
+        {busy ? 'Working…' : soldOut ? 'Curve sold out' : !open ? 'Not open' : tab === 'buy' ? `Buy ${delta} ${s.ticker}` : `Sell ${delta} ${s.ticker}`}
       </Button>
+
+      {soldOut && (
+        <div className="rounded-md border border-teal/40 bg-teal/5 p-3">
+          <p className="mb-2 text-sm text-teal">The curve is fully sold — it can now graduate: the reserve is released to the project payout, and holders receive real STAS.</p>
+          <Button onClick={doGraduate} disabled={busy} variant="secondary" block>
+            {busy ? 'Graduating…' : 'Graduate — release reserve'}
+          </Button>
+        </div>
+      )}
 
       {txid && <a href={`https://whatsonchain.com/tx/${txid}`} target="_blank" rel="noreferrer" className="break-all font-mono text-xs text-teal underline underline-offset-2">{txid}</a>}
       {error && <p className="text-sm text-danger">{error}</p>}
