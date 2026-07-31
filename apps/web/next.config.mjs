@@ -15,7 +15,9 @@ const nextConfig = {
   // Compile the workspace packages from source (they ship raw TS).
   transpilePackages: ['@launchpad/core', '@launchpad/bsv', '@launchpad/db'],
   // Keep the heavy Node-oriented STAS libs external on the SERVER (issuance path).
-  serverExternalPackages: ['bsv', 'stas-js'],
+  // @bsv/wallet-toolbox (operator wallet) pulls native better-sqlite3 — must stay
+  // external, never bundled.
+  serverExternalPackages: ['bsv', 'stas-js', '@bsv/wallet-toolbox', 'better-sqlite3'],
   webpack: (config, { isServer, webpack }) => {
     // Settlement (BSV-003) runs client-side with bsv-js + stas-js, which are
     // Node-oriented — provide the browser polyfills they need.

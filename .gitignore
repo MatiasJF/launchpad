@@ -18,3 +18,8 @@ out/
 
 # os / editor
 .DS_Store
+
+# operator wallet (server key + UTXO ledger) — never commit
+*.sqlite
+*.sqlite-journal
+server-wallet.sqlite*
