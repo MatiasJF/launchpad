@@ -30,21 +30,26 @@ export interface Op { ownerPkh: string; delta: string }
 
 const key = (pkh: string) => PubKeyHash(toByteString(pkh));
 
-/** Replay the history (clone-then-set from genesis) to the current pool instance. */
+/**
+ * Replay the history to the current pool instance by DIRECT in-place mutation from
+ * genesis — the same way the covenant produces each successor (mutate, then
+ * getStateScript). A per-op clone-then-new-instance replay instead embeds the prior
+ * ledger inline as a constructor arg (genesis form), which only matches the on-chain
+ * script when the base ledger is empty (the first op) — so it breaks on the 2nd spend.
+ * Proven against the real mainnet successors 04f87f04:0 and ca6692f6:0.
+ */
 function replay(history: Op[], k: bigint, supply: bigint): LedgerPool {
   ensureLoaded();
-  let cur = new LedgerPool(0n, new HashedMap<PubKeyHash, bigint>(), k, supply);
+  const cur = new LedgerPool(0n, new HashedMap<PubKeyHash, bigint>(), k, supply);
+  cur.sold = 0n;
   const bal = new Map<string, bigint>();
   for (const op of history) {
-    const clone: Ledger = new HashedMap<PubKeyHash, bigint>(cur.ledger as any);
-    const next = new LedgerPool(0n, clone, k, supply);
     const d = BigInt(op.delta);
-    next.sold = cur.sold + d;
     const id = op.ownerPkh.toLowerCase();
     const nb = (bal.get(id) ?? 0n) + d;
     bal.set(id, nb);
-    next.ledger.set(key(op.ownerPkh), nb);
-    cur = next;
+    cur.ledger.set(key(op.ownerPkh), nb);
+    cur.sold = cur.sold + d;
   }
   return cur;
 }
