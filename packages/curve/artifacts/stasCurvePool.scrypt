@@ -1,0 +1,44 @@
+
+contract StasCurvePool {
+  @state int sold;
+  const int k;
+  const int supply;
+  const Ripemd160 operatorPkh;
+  bytes __scrypt_ts_ctx_hashoutputs;
+  int __scrypt_ts_ctx_value;
+  constructor(int sold, int k, int supply, Ripemd160 operatorPkh) {
+    this.sold = sold;
+    this.k = k;
+    this.supply = supply;
+    this.operatorPkh = operatorPkh;
+  }
+  public function buy(int delta, int newReserve, SigHashPreimage __scrypt_ts_txPreimage) {
+    require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'c3')));
+    this.__scrypt_ts_ctx_hashoutputs = SigHash.hashOutputs(__scrypt_ts_txPreimage);
+    this.__scrypt_ts_ctx_value = SigHash.value(__scrypt_ts_txPreimage);
+    require(delta > 0);
+    require(this.sold + delta <= this.supply);
+    int cost = (this.k * delta * (2 * this.sold + delta + 1)) / 2;
+    require(newReserve >= this.__scrypt_ts_ctx_value + cost);
+    this.sold += delta;
+    bytes out = this.buildStateOutput(newReserve);
+    require(this.__scrypt_ts_ctx_hashoutputs == hash256(out));
+  }
+  public function sell(int delta, bytes payoutScript, PubKey operatorPub, Sig operatorSig, SigHashPreimage __scrypt_ts_txPreimage) {
+    require(Tx.checkPreimageSigHashType(__scrypt_ts_txPreimage, SigHashType(b'c1')));
+    this.__scrypt_ts_ctx_hashoutputs = SigHash.hashOutputs(__scrypt_ts_txPreimage);
+    this.__scrypt_ts_ctx_value = SigHash.value(__scrypt_ts_txPreimage);
+    require(hash160(operatorPub) == this.operatorPkh);
+    require(checkSig(operatorSig, operatorPub));
+    require(delta > 0);
+    require(delta <= this.sold);
+    int newSold = this.sold - delta;
+    int refund = (this.k * delta * (2 * newSold + delta + 1)) / 2;
+    this.sold = newSold;
+    int reserveAfter = this.__scrypt_ts_ctx_value - refund;
+    bytes poolOut = this.buildStateOutput(reserveAfter);
+    bytes payoutOut = Utils.buildOutput(payoutScript, refund);
+    require(this.__scrypt_ts_ctx_hashoutputs == hash256(poolOut + payoutOut));
+  }
+  function buildStateOutput(int amount) : bytes {  return Utils.buildOutput(this.getStateScript(), amount);}
+}

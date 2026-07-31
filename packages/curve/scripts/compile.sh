@@ -71,7 +71,7 @@ JS
 ( cd "$BUILD" && node dump-locks.js )
 
 mkdir -p "$HERE/artifacts"
-for f in counter.json counter.scrypt locks.json linearCurvePool.json linearCurvePool.scrypt curve-locks.json ledgerPool.json ledgerPool.scrypt; do
+for f in counter.json counter.scrypt locks.json linearCurvePool.json linearCurvePool.scrypt curve-locks.json ledgerPool.json ledgerPool.scrypt stasCurvePool.json stasCurvePool.scrypt; do
   cp "$BUILD/artifacts/$f" "$HERE/artifacts/$f" 2>/dev/null || true
 done
 echo "✓ artifacts refreshed in packages/curve/artifacts/"
