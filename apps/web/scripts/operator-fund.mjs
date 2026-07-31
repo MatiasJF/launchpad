@@ -70,14 +70,18 @@ console.log('RAW TX HEX :', rawHex);
 // 4) push via WhatsOnChain — the funding tx spends UNCONFIRMED ancestors (your wallet's
 //    un-broadcast chain), so push every unconfirmed ancestor first (BEEF has them all),
 //    parents-first, then the funding tx. WoC's single-tx endpoint needs each parent present.
-async function wocPush(hex, id) {
-  const res = await fetch(`https://api.whatsonchain.com/v1/bsv/${CHAIN}/tx/raw`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ txhex: hex }),
-  }).catch((e) => ({ ok: false, status: 'ERR', text: async () => e.message }));
-  const body = (await res.text()).trim();
-  const ok = res.ok || /already|known/i.test(body); // already-in-mempool is fine
-  console.log(`  ${ok ? '✓' : '✗'} ${id} -> ${res.status} ${body}`);
-  return ok;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function wocPush(hex) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const res = await fetch(`https://api.whatsonchain.com/v1/bsv/${CHAIN}/tx/raw`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ txhex: hex }),
+    }).catch((e) => ({ status: 0, ok: false, text: async () => String(e.message) }));
+    const body = (await res.text()).trim().replace(/\s+/g, ' ').slice(0, 70);
+    if (res.status === 429) { await sleep(3000); continue; }         // rate-limited -> back off + retry
+    if (res.ok || /already|known/i.test(body)) return { done: true, status: res.status, body };
+    return { done: false, status: res.status, body };                 // real reject (e.g. Missing inputs)
+  }
+  return { done: false, status: 429, body: 'rate-limited (gave up)' };
 }
 function collectUnconfirmed(tx, out, seen) {
   for (const inp of tx.inputs) {
@@ -91,11 +95,22 @@ function collectUnconfirmed(tx, out, seen) {
 }
 const rootTx = Transaction.fromAtomicBEEF(action.tx);
 const chain = collectUnconfirmed(rootTx, [], new Set());
-console.log(`\nbroadcasting ${chain.length} unconfirmed ancestor(s) + funding tx via WoC:`);
-let allOk = true;
-for (const a of chain) allOk = (await wocPush(a.toHex(), a.id('hex'))) && allOk;
-allOk = (await wocPush(rootTx.toHex(), rootTx.id('hex'))) && allOk;
-console.log(allOk ? '✅ broadcast chain OK' : '⚠️  broadcast had failures (see above)');
+let pending = [...chain, rootTx].map((t) => ({ hex: t.toHex(), id: t.id('hex') }));
+console.log(`\nflushing ${pending.length} unconfirmed tx(s) via WoC (throttled, multi-pass):`);
+for (let pass = 1; pending.length; pass++) {
+  const next = [];
+  let progressed = false;
+  console.log(`\n  pass ${pass} — ${pending.length} pending`);
+  for (const t of pending) {
+    const r = await wocPush(t.hex);
+    console.log(`    ${r.done ? '✓' : '✗'} ${t.id} -> ${r.status} ${r.body}`);
+    if (r.done) progressed = true; else next.push(t);
+    await sleep(450); // ~2 req/s, under WoC's free-tier limit
+  }
+  pending = next;
+  if (!progressed) { console.log('\n  ⚠️  a full pass landed nothing new — stopping'); break; }
+}
+console.log(pending.length ? `\n⚠️  ${pending.length} tx(s) still unbroadcast` : '\n✅ entire chain broadcast — funding tx is live');
 
 // 5) internalize into the operator wallet so it tracks the UTXO
 try {
