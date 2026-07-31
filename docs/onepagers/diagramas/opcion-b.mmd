@@ -1,0 +1,12 @@
+flowchart TB
+  T["OPCION B - STAS en tu billetera + operador (modelo hibrido)"]:::title
+  T --> B1
+  B1["1 - COMPRAS"]:::step --> B2["El operador te MINTEA un STAS real a tu billetera<br/>y sube la reserva del contrato - el precio SUBE"]:::pool
+  B2 --> B3["2 - VENDES: devuelves tu STAS"]:::step --> B4["El operador verifica que sea autentico (back-to-genesis)<br/>y autoriza el pago"]:::op
+  B4 --> B5["El contrato te paga desde la reserva - el precio BAJA"]:::pool
+  B5 --> B6["Tienes STAS real desde la 1a compra - el operador solo autoriza o rechaza,<br/>NUNCA puede robar la reserva"]:::note
+  classDef title fill:#12245e,stroke:#12245e,color:#ffffff,font-weight:bold;
+  classDef step fill:#ede9fb,stroke:#7a5cf0,color:#2a1a6e;
+  classDef pool fill:#e8eefc,stroke:#2b57d6,color:#12245e;
+  classDef op fill:#fff2d9,stroke:#d69a2b,color:#5e4512,font-weight:bold;
+  classDef note fill:#f3f4f6,stroke:#9ca3af,color:#374151;

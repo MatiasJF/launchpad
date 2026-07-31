@@ -1,0 +1,12 @@
+flowchart TB
+  T["OPCION A - Libro contable dentro del contrato (100% sin confianza)"]:::title
+  T --> A1
+  A1["1 - COMPRAS: pagas sats"]:::step --> A2["El contrato acredita tu saldo DENTRO de si mismo<br/>(no recibes token en tu billetera) - el precio SUBE"]:::pool
+  A2 --> A3["2 - VENDES: firmas para autorizar"]:::step --> A4["El contrato te paga desde la reserva<br/>y baja tu saldo - el precio BAJA"]:::pool
+  A4 --> A5["3 - GRADUACION (al completar la curva):<br/>el contrato mintea STAS reales a las billeteras"]:::grad
+  A5 --> A6["Sin operador - sin indexador - la reserva es imposible de vaciar"]:::note
+  classDef title fill:#12245e,stroke:#12245e,color:#ffffff,font-weight:bold;
+  classDef step fill:#ede9fb,stroke:#7a5cf0,color:#2a1a6e;
+  classDef pool fill:#e8eefc,stroke:#2b57d6,color:#12245e;
+  classDef grad fill:#d9f2ec,stroke:#0f9d78,color:#0b4a3a,font-weight:bold;
+  classDef note fill:#f3f4f6,stroke:#9ca3af,color:#374151;
