@@ -10,6 +10,15 @@ buy, it leaves on sell, curve moves; sells are operator-gated (the only way to h
 + a shared reserve). Cheaper + size-stable per trade (small reserve covenant vs the ledger that
 grows with holders). **Operator = a SERVER KEY** (always-open market) — to be run as a server-side
 wallet (wallet-toolbox), NEVER a raw key in the repo (golden rule 3). **Built + tested so far:**
+Operator wallet DONE (lean, no wallet-toolbox/TAAL): `apps/web/lib/operator-wallet.ts` — a single
+server key in gitignored `apps/web/.env` (OPERATOR_KEY), `getOperator()` + `operatorSignDigest()`
+(bsv-js ECDSA, forced low-S, verified valid). UTXOs/broadcast via WhatsOnChain, so funding is a
+plain P2PKH send (no ceremony). Operator addr `1D86zXnT7hhB7cLYE8NxAd2WZeXqnEcpxF`, pkh
+`84f96c45461ae06a21e06e56d4cb45f8e2a91323` (baked into pools). Reserve-covenant successor derives
+by cheap byte-patching (`poolScriptForSold` — verified genesis→5, 5→10) since state is just `sold`
+— no scrypt-ts per trade (only the deploy genesis needs it, for k/supply/operatorPkh). Buy reuses
+the proven LINEAR buy path (same `buy(delta,newReserve)` sig+sighash); sell reuses the operator-
+cosign pattern.
 `StasCurvePool` reserve covenant (`src/contracts/stasCurvePool.ts`) — small, state = `sold`,
 reserve = UTXO value; `buy()` open (ANYONECANPAY|SINGLE), `sell()` operator-gated (checkSig on
 `operatorPkh`, ANYONECANPAY|ALL) with payout capped at the curve refund (operator can authorise/
