@@ -27,8 +27,13 @@ the proven LINEAR buy path (same `buy(delta,newReserve)` sig+sighash); sell reus
 cosign pattern. RESERVE TRADE LAYER PROVEN: StasCurvePool has 2 methods, so the unlock needs a
 1-byte method SELECTOR appended (buy = `00`, sell = `51`); with that, the reserve buy validates in
 @bsv/sdk via the linear path (byte-patch successor + linear unlock + `00`) — confirmed. Genesis
-deploy script via CLI `stas-genesis` (~3.5KB). Operator funding: switched to `fund-metanet` +
-toolbox custody (above) after plain sends to the base address wouldn't broadcast from the wallet.
+deploy script via CLI `stas-genesis` (~3.5KB). **Operator FUNDED** (2026-07-31): 10,000 sats live in
+the toolbox wallet, UTXO `ff88621b8a45f94bf502c23cc3539fe5b3a72402c5a54a796dee8410d5c0bc16.0`
+(WoC 200). Funding was blocked for a while by a corrupted BSV Desktop state — 15 `unproven` dead
+txs (a double-spend chain) held all confirmed coins hostage and couldn't be aborted via BRC-100
+(`listActions` returns no `reference`); cleared wallet-side (Monitor/resync), then `operator:fund`
+(local wallet signs `noSend` → raw tx broadcast via WoC → internalized) landed it. Scripts:
+`operator:fund`, `operator:balance`, `wallet:clean` (diagnostic).
 **Remaining = STAS integration + app wiring:** DB StasCurvePool state; deploy (reserve covenant +
 mint supply to operator vault via genesis.ts); buy = reserve buy (client) + operator STAS delivery
 (backend); sell = buyer STAS return (client) + operator reserve-refund cosign (backend, back-to-
