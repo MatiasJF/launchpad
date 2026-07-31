@@ -18,7 +18,15 @@ plain P2PKH send (no ceremony). Operator addr `1D86zXnT7hhB7cLYE8NxAd2WZeXqnEcpx
 by cheap byte-patching (`poolScriptForSold` — verified genesis→5, 5→10) since state is just `sold`
 — no scrypt-ts per trade (only the deploy genesis needs it, for k/supply/operatorPkh). Buy reuses
 the proven LINEAR buy path (same `buy(delta,newReserve)` sig+sighash); sell reuses the operator-
-cosign pattern.
+cosign pattern. RESERVE TRADE LAYER PROVEN: StasCurvePool has 2 methods, so the unlock needs a
+1-byte method SELECTOR appended (buy = `00`, sell = `51`); with that, the reserve buy validates in
+@bsv/sdk via the linear path (byte-patch successor + linear unlock + `00`) — confirmed. Genesis
+deploy script via CLI `stas-genesis` (~3.5KB). Operator address (empty — funding tx never
+reached it; address VERIFIED valid, wallet-side broadcast issue) `1D86zXnT7hhB7cLYE8NxAd2WZeXqnEcpxF`.
+**Remaining = STAS integration + app wiring:** DB StasCurvePool state; deploy (reserve covenant +
+mint supply to operator vault via genesis.ts); buy = reserve buy (client) + operator STAS delivery
+(backend); sell = buyer STAS return (client) + operator reserve-refund cosign (backend, back-to-
+genesis verify); UI; live test.
 `StasCurvePool` reserve covenant (`src/contracts/stasCurvePool.ts`) — small, state = `sold`,
 reserve = UTXO value; `buy()` open (ANYONECANPAY|SINGLE), `sell()` operator-gated (checkSig on
 `operatorPkh`, ANYONECANPAY|ALL) with payout capped at the curve refund (operator can authorise/
