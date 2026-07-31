@@ -16,8 +16,19 @@ script) — verified byte-equal to real successors 04f87f04/ca6692f6; (2) holder
 use the p2pkhInput-proven derivation (counterparty 'anyone' + forSelf) so getPublicKey
 == createSignature. Also: curve orders excluded from claimable-STAS (ledger tokens
 aren't wallet STAS until graduation). **NOTE:** curve "tokens" are ledger entries, NOT
-wallet-held STAS — that conversion is Phase 3 (graduation). **Next: Phase 3 graduation**
-(mint real STAS to holders at curve completion). Detail ↓
+wallet-held STAS — that conversion is Phase 3 (graduation).
+
+**🏗️ PHASE 3 GRADUATION — reserve-release built + tested (2026-07-31, ADR-027).** LedgerPool
+gains `payoutPkh` (immutable) + a terminal `graduate()` method: once `sold == supply`, spend
+the pool to release the whole reserve to the committed payout P2PKH (no re-lock, no sig).
+Full flow built: service `computeGraduate` + CLI, server actions `prepareLedgerGraduate`/
+`recordLedgerGraduate`, client `buildLedgerGraduateTx`, and a "Graduate — release reserve"
+control in the trade card when sold out. `payoutPkh` derived from the project payout address,
+stored on CurvePool (+ migration). 16/16 ledger tests (incl. graduate accepts-when-sold-out /
+rejects-early) + web build green. **Remaining for Phase 3:** (1) mint real STAS to holders from
+the final ledger (reuse `genesis.ts` + `batchTransferStas`) — the actual token delivery; (2) a
+cheap live test needs a small-supply pool (supply is hardcoded 1000 = ~500k sats to sell out —
+make supply configurable at deploy to test graduation on mainnet cheaply). Detail ↓
 
 **🏗️ BONDING-CURVE AMM · PHASE 2 (SELL-BACK) — design + feasibility PROVEN, building (2026-07-30, ADR-027).**
 Research (grounded in the real DSTAS swap SDK) proved independent receipt UTXOs CAN'T
