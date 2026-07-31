@@ -38,16 +38,17 @@ function run<T>(action: string, input: Record<string, unknown>): Promise<T> {
   });
 }
 
-export interface LedgerBalance { ownerPkh: string; amount: string }
+/** One prior pool op (buy delta > 0, sell delta < 0), ordered oldest-first. */
+export interface LedgerOp { ownerPkh: string; delta: string }
 
-/** The genesis pool script to deploy (sold=0, empty ledger). */
+/** The genesis pool script to deploy (empty history). */
 export function ledgerGenesisScript(input: { k: string; supply: string }): Promise<{ scriptHex: string }> {
   return run('genesis', input);
 }
 
 /** BUY: full pool-input unlock (ANYONECANPAY|SINGLE — caller adds the payment input). */
 export function buildLedgerBuy(input: {
-  sold: string; k: string; supply: string; balances: LedgerBalance[];
+  k: string; supply: string; history: LedgerOp[];
   ownerPkh: string; delta: string; poolTxid: string; poolVout: number;
   reserveBefore: number; newReserve: number;
 }): Promise<{ unlockingHex: string; sourceLockHex: string; nextLockingHex: string }> {
@@ -56,7 +57,7 @@ export function buildLedgerBuy(input: {
 
 /** SELL step 1: the digest the holder's wallet signs + successor/payout/refund. */
 export function ledgerSellDigest(input: {
-  sold: string; k: string; supply: string; balances: LedgerBalance[];
+  k: string; supply: string; history: LedgerOp[];
   ownerPkh: string; amount: string; poolTxid: string; poolVout: number;
   reserveBefore: number; payoutScriptHex: string;
 }): Promise<{ digestHex: string; sourceLockHex: string; nextLockingHex: string; payoutScriptHex: string; refund: string; reserveAfter: number }> {
@@ -65,7 +66,7 @@ export function ledgerSellDigest(input: {
 
 /** SELL step 2: build the unlock from the holder's DER signature. */
 export function ledgerSellUnlock(input: {
-  sold: string; k: string; supply: string; balances: LedgerBalance[];
+  k: string; supply: string; history: LedgerOp[];
   ownerPkh: string; ownerPubHex: string; amount: string; poolTxid: string; poolVout: number;
   reserveBefore: number; payoutScriptHex: string; sigDerHex: string;
 }): Promise<{ unlockingHex: string; sourceLockHex: string; nextLockingHex: string; refund: string }> {
