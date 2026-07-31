@@ -4,6 +4,21 @@ _Last updated: 2026-07-30 — by: bonding-curve Phase 0 spike_
 
 ## Current phase
 
+**✅ BONDING-CURVE AMM · PHASE 2 (BUY + SELL) — PROVEN ON MAINNET (2026-07-31, ADR-027).**
+Full trustless two-way curve works live: buys credit + sells debit an in-covenant
+`HashedMap` ledger; reserve drain-proof, no forgeable token, no platform key. On-chain
+round-trips: buy `ca6692f6` / `0954a7c2`, sell `62ab6894` (−1) / `6cea3e69` (−5) —
+`sold` and `reserve` tracked correctly, holder-signed debits verified by the covenant.
+Two deep bugs fixed during live testing: (1) spend-after-first-op needs the state
+service to REPLAY the ordered op history via DIRECT in-place mutation (scrypt-ts
+HashedMap is history-dependent; clone-then-new embeds the prior ledger inline = wrong
+script) — verified byte-equal to real successors 04f87f04/ca6692f6; (2) holder key must
+use the p2pkhInput-proven derivation (counterparty 'anyone' + forSelf) so getPublicKey
+== createSignature. Also: curve orders excluded from claimable-STAS (ledger tokens
+aren't wallet STAS until graduation). **NOTE:** curve "tokens" are ledger entries, NOT
+wallet-held STAS — that conversion is Phase 3 (graduation). **Next: Phase 3 graduation**
+(mint real STAS to holders at curve completion). Detail ↓
+
 **🏗️ BONDING-CURVE AMM · PHASE 2 (SELL-BACK) — design + feasibility PROVEN, building (2026-07-30, ADR-027).**
 Research (grounded in the real DSTAS swap SDK) proved independent receipt UTXOs CAN'T
 be trustless + reserve-safe (a forged AMM receipt sold back drains real sats; authenticity
