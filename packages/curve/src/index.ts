@@ -55,13 +55,9 @@ export {
 } from './stasBuyAssembly';
 
 export {
-  buildStasSellTx,
-  cosignStasSellTx,
-  sellRefundMath,
+  buildStasSellRefundTx,
   type StasSellArgs,
   type StasSellResult,
-  type CosignStasSellArgs,
-  type CosignStasSellResult,
 } from './stasSellAssembly';
 
 export {

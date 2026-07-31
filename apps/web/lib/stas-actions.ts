@@ -2,10 +2,9 @@
 
 import { prisma } from '@launchpad/db';
 import { revalidatePath } from 'next/cache';
-import { Transaction } from '@bsv/sdk';
 import { planMint } from '@launchpad/bsv/issue';
 import { operatorDeliverStas } from '@launchpad/bsv/settle';
-import { cosignStasSellTx, sellRefundMath, poolScriptForSold } from '@launchpad/curve';
+import { buildStasSellRefundTx } from '@launchpad/curve';
 import { isProjectOwner } from './account-actions';
 import { getOperator, getOperatorWallet, operatorSignDigest } from './operator-wallet';
 import { stasGenesisScript } from './stas-service';
@@ -385,24 +384,28 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STEP 3 · SELL (ADR-028, hardened). A stas sell is TWO sequenced txs (see
-// stasSellAssembly.ts for WHY it is not atomic — the covenant's ANYONECANPAY_ALL sell
-// pins EXACTLY two outputs [successor pool, seller refund], no room for the STAS return):
+// STEP 3 · SELL (ADR-028). A stas sell is TWO sequenced txs (see stasSellAssembly.ts
+// for WHY it is not atomic — the covenant's ANYONECANPAY_ALL sell pins EXACTLY two
+// outputs [successor pool, seller refund], no room for the STAS return):
 //   TX1 "STAS return"  (holder-signed, client/wallet — DEFERRED UI): the holder
 //        transfers `delta` STAS to the operator vault pkh.
-//   TX2 "reserve refund" (seller-built + operator-cosigned): the SELLER builds TX2 and
-//        signs a 0x41 fee input (binding output 1 = their refund); the OPERATOR co-signs
-//        ONLY the covenant input after its checks, and broadcasts.
-// Three adversarial fixes are enforced here:
+//   TX2 "reserve refund" (operator-built + operator-cosigned): the operator funds the fee
+//        input, co-signs the covenant input, and pays output 1 = the seller's recorded
+//        address at the curve refund, then broadcasts.
+// TRUST MODEL (honest): the covenant CAPS the refund at the curve price + pins the
+// successor, and — with FIX 1/FIX 2 below — the sell is DRAIN-PROOF against malicious
+// USERS (no oversell, no counterfeit, no double-refund). It does NOT cryptographically
+// bind the payee: the operator supplies output 1, and a COMPROMISED operator key can
+// redirect it — but a compromised operator key can already drain the whole reserve via
+// forged sell-branch spends, so this is the already-accepted "operator key is reserve-
+// critical" trust, not a new exposure. Two fixes harden against malicious users:
 //   FIX 1 (replay) — the returned STAS OUTPOINT is UNIQUE evidence: `sellReturnOutpoint`
 //     (@unique) blocks a second curve_sell order on the same return AT RECORD TIME, and
 //     finalize re-checks the return is still UNSPENT on-chain before refunding.
-//   FIX 2 (provenance) — back-to-genesis is now a FULL-provenance walk (every same-tail
-//     input must reach genuine issuance; amount-conserved; bounded; fail-closed), so a
+//   FIX 2 (provenance) — back-to-genesis is a FULL-provenance walk (every same-tail input
+//     must reach genuine issuance; amount-conserved; bounded; fail-closed), so a
 //     [1 genuine + fabricated counterfeit] merge is rejected. In settle-actions.ts.
-//   FIX 3 (payee) — the seller's 0x41 fee input commits output 1, so the operator can no
-//     longer redirect the refund; finalize also re-checks output 1 == the seller's
-//     recorded address. Residual: liveness still rests on the operator broadcasting.
+// Residual: liveness still rests on the operator broadcasting the refund.
 // See DECISIONS.md ADR-028 step-3.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -513,23 +516,21 @@ export async function recordStasSell(input: {
 }
 
 /**
- * TX2 · operator reserve-refund co-sign (backend). The SELLER has built TX2 and signed a
- * 0x41 fee input (binding output 1 = their refund); this action runs the anti-fraud checks
- * and co-signs ONLY the covenant input, then broadcasts. Called explicitly after
- * recordStasSell — never at import/build time. Cosign + broadcast fire ONLY here.
+ * TX2 · operator reserve-refund (backend). The operator funds the fee input, co-signs the
+ * covenant input, and pays output 1 = the seller's recorded `receiveAddress` at the curve
+ * refund, then broadcasts. Called explicitly after recordStasSell — never at import/build
+ * time. Cosign + broadcast fire ONLY here.
  *
  * INVARIANTS: (FIX 1) the returned STAS outpoint is unique (record-time @unique) AND still
  * UNSPENT on-chain here — no double-refund. (FIX 2) FULL-provenance back-to-genesis MUST
- * pass — no refund for counterfeit/partly-fabricated STAS. (FIX 3) the seller's 0x41 input
- * binds output 1, and we additionally re-check output 1 == the seller's recorded address;
- * the operator cannot redirect the refund. Plus: the covenant caps the amount + pins the
- * successor (@bsv/sdk re-check inside cosignStasSellTx); the pool advances only under the
- * optimistic outpoint guard (mirrors recordCurveBuy); sold never underflows.
+ * pass — no refund for counterfeit/partly-fabricated STAS. The covenant CAPS the refund +
+ * pins the successor (@bsv/sdk re-check inside buildStasSellRefundTx), so a malicious USER
+ * cannot oversell/overpay; the pool advances only under the optimistic outpoint guard
+ * (mirrors recordCurveBuy); sold never underflows. The payee is NOT covenant-bound — the
+ * operator pays the seller's recorded address (a compromised operator key is already
+ * reserve-critical; see the trust note above and DECISIONS.md ADR-028 step-3).
  */
-export async function finalizeStasSell(input: { orderId: string; sellerSignedRawTx: string; feeFundingRawTx?: string }): Promise<{ ok: boolean; txid?: string; error?: string }> {
-  if (!input.sellerSignedRawTx || !/^[0-9a-fA-F]+$/.test(input.sellerSignedRawTx) || input.sellerSignedRawTx.length % 2 !== 0) {
-    return { ok: false, error: 'sellerSignedRawTx (the seller-built, fee-signed TX2) required' };
-  }
+export async function finalizeStasSell(input: { orderId: string }): Promise<{ ok: boolean; txid?: string; error?: string }> {
   try {
     const order = await prisma.order.findUnique({ where: { id: input.orderId } });
     if (!order || order.kind !== 'curve_sell') return { ok: false, error: 'order not found or not a curve sell' };
@@ -565,41 +566,16 @@ export async function finalizeStasSell(input: { orderId: string; sellerSignedRaw
       const auth = await verifyStasBackToGenesis({ outpointTxid: order.paymentTxid, outpointVout: returnVout, issuanceTxid });
       if (!auth.authentic) throw new Error(`returned STAS failed back-to-genesis (${auth.reason}) — refusing refund`);
 
-      // Verify the SELLER-BUILT TX2 pays exactly the curve refund to the seller's recorded
-      // address and re-locks the successor — against the LATEST pool outpoint (optimistic
-      // sequencing; if the pool moved, the seller re-signs). FIX 3: output 1 must be the
-      // seller's address (also cryptographically bound by their 0x41 sig).
+      // Build TX2 (operator-funded fee, operator cosign) against the LATEST pool outpoint;
+      // output 1 = the seller's recorded address at the curve refund the covenant enforces.
       const spentPoolTxid = pool.poolTxid;
       const spentPoolVout = pool.poolVout;
-      const reserveBefore = Number(pool.reserveSats);
-      const sold = Number(pool.sold);
-      const { refund, reserveAfter, newSold } = sellRefundMath(Number(pool.k), sold, reserveBefore, delta);
-      if (reserveAfter < 1) throw new Error('refund would drain the reserve below 1');
-      const successorScriptHex = poolScriptForSold(pool.scriptHex, BigInt(newSold));
-      const sellerRefundScriptHex = (await p2pkhScriptHexForAddress(order.receiveAddress)).toLowerCase();
-
-      const parsed = Transaction.fromHex(input.sellerSignedRawTx);
-      if (parsed.inputs.length !== 2) throw new Error('TX2 must have exactly 2 inputs');
-      if (parsed.outputs.length !== 2) throw new Error('TX2 must have exactly 2 outputs');
-      const in0 = parsed.inputs[0];
-      const out0 = parsed.outputs[0];
-      const out1 = parsed.outputs[1];
-      if (!in0 || !out0 || !out1) throw new Error('TX2 is malformed (missing inputs/outputs)');
-      if ((in0.sourceTXID ?? '').toLowerCase() !== spentPoolTxid.toLowerCase() || in0.sourceOutputIndex !== spentPoolVout) {
-        throw new Error('TX2 covenant input is not the latest pool outpoint — the pool moved; re-sign the sell');
-      }
-      if (out0.lockingScript.toHex().toLowerCase() !== successorScriptHex.toLowerCase() || out0.satoshis !== reserveAfter) {
-        throw new Error('TX2 output 0 is not the correct reserve successor');
-      }
-      if (out1.lockingScript.toHex().toLowerCase() !== sellerRefundScriptHex || out1.satoshis !== refund) {
-        throw new Error('TX2 output 1 is not the seller refund at the curve price');
-      }
-
-      // Operator co-signs ONLY the covenant input.
-      const res = await cosignStasSellTx({
-        sellerSignedRawTx: input.sellerSignedRawTx,
-        poolScriptHex: pool.scriptHex,
-        reserveBefore,
+      const sellerRefundScriptHex = await p2pkhScriptHexForAddress(order.receiveAddress);
+      const feeWallet = await getOperatorWallet();
+      const res = await buildStasSellRefundTx({
+        feeWallet,
+        chain: 'main',
+        pool: { txid: pool.poolTxid, vout: pool.poolVout, scriptHex: pool.scriptHex, reserveSats: Number(pool.reserveSats), sold: Number(pool.sold), k: Number(pool.k), supply: Number(pool.supply) },
         delta,
         sellerRefundScriptHex,
         operatorPubHex: pubHex,
@@ -607,9 +583,9 @@ export async function finalizeStasSell(input: { orderId: string; sellerSignedRaw
       });
       if (!res.ok) throw new Error(res.reason);
 
-      // Broadcast the seller fee-funding tx first (if supplied), then TX2, retrying on
-      // "Missing inputs" while the funding propagates (mirrors deliverStasToBuyer).
-      if (input.feeFundingRawTx && /^[0-9a-fA-F]+$/.test(input.feeFundingRawTx)) await broadcastRawTx(input.feeFundingRawTx);
+      // Broadcast the fee-funding tx first, then TX2, retrying on "Missing inputs" while the
+      // funding propagates (mirrors deliverStasToBuyer).
+      if (res.fundingRawTx) await broadcastRawTx(res.fundingRawTx, res.fundingTxid);
       let bc = await broadcastRawTx(res.rawTx, res.txid);
       for (let i = 0; i < 4 && !bc.ok && /missing inputs/i.test(bc.error ?? ''); i++) {
         await new Promise((r) => setTimeout(r, 2000));
@@ -628,21 +604,21 @@ export async function finalizeStasSell(input: { orderId: string; sellerSignedRaw
         await txn.curvePool.update({
           where: { saleId: order.saleId },
           data: {
-            poolTxid: res.txid,
-            poolVout: 0,
-            scriptHex: successorScriptHex,
-            reserveSats: BigInt(Math.floor(reserveAfter)),
-            sold: BigInt(Math.floor(newSold)),
+            poolTxid: res.newPool.txid,
+            poolVout: res.newPool.vout,
+            scriptHex: res.newPool.scriptHex,
+            reserveSats: BigInt(Math.floor(res.newPool.reserveSats)),
+            sold: BigInt(Math.floor(res.newPool.sold)),
             status: 'live',
           },
         });
-        await txn.order.update({ where: { id: order.id }, data: { state: 'settled', refundTxid, txid: refundTxid, satsPaid: BigInt(Math.floor(refund)) } });
+        await txn.order.update({ where: { id: order.id }, data: { state: 'settled', refundTxid, txid: refundTxid, satsPaid: BigInt(Math.floor(res.refund)) } });
         await txn.event.create({ data: { entity: 'Order', entityId: order.id, type: 'stas_sell_refunded', payloadHash: refundTxid } });
         return { advanced: true as const };
       });
       if (!done.advanced) {
         await prisma.order.updateMany({ where: { id: order.id, state: 'settling' }, data: { state: 'pending' } });
-        return { ok: false, error: 'pool moved during refund — a raced trade advanced it; re-sign the sell' };
+        return { ok: false, error: 'pool moved during refund — a raced trade advanced it; retry the sell' };
       }
       revalidatePath(`/sale/${pool.sale.token.project.slug}`);
       return { ok: true, txid: refundTxid };

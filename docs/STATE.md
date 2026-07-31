@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-07-31 — by: ADR-028 Step 3 re-verified (replay + B2G drains CLOSED; payee-bind FIX-3 refuted → decision pending)_
+_Last updated: 2026-07-31 — by: ADR-028 Step 3 FINAL (replay + full-provenance B2G CLOSED; FIX-3 payee-bind REVERTED → honest operator-trust)_
 
 ## Current phase
 
@@ -128,43 +128,41 @@ at prepare/record/finalize). **Trust caveat vs. the infeasible atomic form (docu
 returns STAS FIRST then operator refunds, so (a) the operator must be LIVE to broadcast the refund
 (= Step-2 TX-B liveness trust) and (b) the operator supplies output 1, so the refund reaches the
 seller only because finalize pays the seller's RECORDED address — the covenant caps the amount but
-does not cryptographically bind the payee (the atomic form would have, via the holder's
-SIGHASH_ALL). Consistent with the ADR-028 operator model (can stall/censor, never overpay/drain).
+does not cryptographically bind the payee (no SIGHASH_ALL trick fixes this — see the FINAL block
+below; a compromised operator key is reserve-critical regardless). Consistent with the ADR-028
+operator model (can stall/censor; a compromised key is reserve-critical).
 Green: bsv+curve+web typecheck, web build, offline covenant tests 10/10. See ADR-028 Step-3 updates.
-**STEP 3 SELL — ✅ DRAIN-SAFE vs malicious users (FIX-1/FIX-2 re-verified); ⚠️ payee-redirect open (operator-trust, FIX-3 refuted) (2026-07-31):** adversarial review found THREE real
-reserve-drain holes in the first cut; all fixed + proven. **FIX 1 (double-refund replay):** a
-single on-chain STAS return could spawn N `curve_sell` orders (no dedup; TX2 doesn't consume the
-return). Now the RETURNED STAS OUTPOINT is unique evidence — `Order.sellReturnOutpoint` (@unique,
-migration `20260731140000_order_sell_return_outpoint`) blocks a 2nd order on the same return AT
-RECORD TIME (P2002), and `finalizeStasSell` re-checks the return is still UNSPENT on-chain
-(`isOutputUnspent`) before refunding. **FIX 2 (existence-only B2G):** the walk broke on the FIRST
-same-tail ancestor and never summed amounts — exploit: 1 genuine token + a fabricated same-tail
-counterfeit (mintable from a plain P2PKH, the ADR-025 asymmetry) merged into a δ-return passed and
-drained δ. Replaced with a FULL-provenance walk (`packages/curve/src/provenance.ts` `provenanceWalk`,
-pure + injectable → unit-tested): EVERY same-tail input must itself reach genuine issuance, amount
-is conserved (no injected tokens), the DAG is memoised + node-BOUNDED + FAIL-CLOSED. **FIX 3 (payee
-not bound) — ⚠️ ATTEMPTED, INEFFECTIVE, re-verifier REFUTED it (decision pending):** FIX-3 added a
-seller SIGHASH_ALL fee input to TX2 to lock output-1. But the covenant is ANYONECANPAY_ALL and only
-checks the OPERATOR sig + amount + successor — it does NOT require the seller's input to be present.
-A compromised operator (which holds the mandatory co-sign key) simply authors a FRESH 2-output TX2'
-without the seller input, pays itself, and broadcasts it (double-spending the seller's honest TX2).
-The `out1==seller` / `inputs.length==2` checks are app-level, bypassed by a key-holder. So redirect
-is NOT cryptographically closed. **Reframing that makes this moot:** the only party who can produce a
-valid sell is the operator, and a compromised operator key can already drain the ENTIRE reserve via
-fake sell-branch spends (no STAS return needed) — redirect is a strict subset of ADR-028's already-
-accepted "compromised operator key is reserve-critical." Payee-binding would need a covenant recompile
-and STILL wouldn't stop reserve drain by a compromised key, so it isn't worth it. **Decision pending:**
-likely REVERT FIX-3 (back to operator-funded fee; operator pays the recorded seller address) + honest
-docs (covenant caps the amount, does NOT bind the payee; a compromised operator can redirect/drain =
-the accepted operator-trust model). The two ATTACKER-exploitable drains (FIX-1, FIX-2 — no operator
-key needed) ARE closed + re-verified; the payee item requires the operator's own key. Minor
-defense-in-depth follow-up: one-line outpoint de-dup in `provenanceWalk` (non-exploitable — consensus
-already forbids the double-spend it guards). **Proven (FIX-1 + FIX-2 re-verified could-not-refute):** offline covenant/logic tests **17/17** (added: full-genuine
-PASSES · genuine+counterfeit merge REJECTED · fabricated-no-parent REJECTED · inflation REJECTED ·
-node-budget FAIL-CLOSED · honest payee both-inputs-valid · operator redirect REJECTED), DB
+**STEP 3 SELL — ✅ DRAIN-SAFE vs malicious USERS (FIX-1 + FIX-2); payee = accepted operator-trust (FIX-3 REVERTED) (2026-07-31):** adversarial review found three issues; the two attacker-exploitable
+reserve drains are CLOSED, and the payee item was reframed as the already-accepted operator-trust.
+**FIX 1 (double-refund replay) — CLOSED:** a single on-chain STAS return could spawn N `curve_sell`
+orders (no dedup; TX2 doesn't consume the return). Now the RETURNED STAS OUTPOINT is unique evidence
+— `Order.sellReturnOutpoint` (@unique, migration `20260731140000_order_sell_return_outpoint`) blocks
+a 2nd order on the same return AT RECORD TIME (P2002), and `finalizeStasSell` re-checks the return is
+still UNSPENT on-chain (`isOutputUnspent`) before refunding. **FIX 2 (existence-only B2G) — CLOSED:**
+the walk broke on the FIRST same-tail ancestor and never summed amounts — exploit: 1 genuine token +
+a fabricated same-tail counterfeit (mintable from a plain P2PKH, the ADR-025 asymmetry) merged into a
+δ-return passed and drained δ. Replaced with a FULL-provenance walk (`packages/curve/src/provenance.ts`
+`provenanceWalk`, pure + injectable → unit-tested): EVERY same-tail input must itself reach genuine
+issuance, amount is conserved (no injected tokens), input outpoints are de-duped, the DAG is memoised
++ node-BOUNDED + FAIL-CLOSED. **FIX 3 (payee-bind) — REVERTED (ineffective + moot).** The attempted
+seller-SIGHASH_ALL binding does NOT work: the covenant is ANYONECANPAY_ALL and requires only the
+OPERATOR sig, so a compromised operator authors a fresh 2-output TX2 WITHOUT the seller input and pays
+itself; the `out1==seller`/`inputs.length==2` app-level checks are bypassed by a key-holder. And it is
+MOOT: a compromised operator key can already drain the ENTIRE reserve via forged sell-branch spends
+(no STAS return needed), so payee-redirect is a strict subset of the already-accepted "operator key is
+reserve-critical" trust. Reverted to the simple OPERATOR-FUNDED refund (`buildStasSellRefundTx`:
+operator funds the fee input, co-signs the covenant, pays output-1 = the seller's recorded
+`receiveAddress` at the curve refund). **Honest trust model:** the covenant CAPS the refund amount +
+pins the successor and — with FIX-1/FIX-2 — the sell is drain-proof vs malicious USERS (no oversell,
+counterfeit, or double-refund); it does NOT cryptographically bind the payee; a compromised operator
+key can redirect/drain = the accepted operator-trust. Kept the one-line outpoint-dedup in
+`provenanceWalk` as cheap defense-in-depth. **Proven:** offline covenant/logic tests **17/17**
+(full-genuine PASSES · genuine+counterfeit merge REJECTED · fabricated-no-parent REJECTED · inflation
+REJECTED · node-budget FAIL-CLOSED · duplicate-outpoint double-count REJECTED · operator-only refund
+pays output-1 = the recorded address @ curve refund · skim REJECTED · wrong-operator-key REJECTED), DB
 replay-guard test **1/1** (`packages/db/test/sell-replay-guard.test.mjs`, P2002 on dupe outpoint),
 bsv+curve+web typecheck, web build. Migration applied + client regenerated. **Deferred: TX1 holder
-STAS-return + seller-fee-funding wallet assembly (client) + all sell UI + live mainnet test.**
+STAS-return wallet assembly (client) + all sell UI + live mainnet test.**
 **Deferred: all UI.** See ADR-028 Step-2/Step-3 updates.
 **Remaining = STAS integration + app wiring:** buy/sell UI + assembly (next steps); deploy (reserve
 covenant + mint supply to operator vault via genesis.ts) SERVER layer done ↑; buy = reserve buy (client) + operator STAS delivery

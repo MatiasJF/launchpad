@@ -150,6 +150,11 @@ function assembleSell(signer: any, opts: { skim?: boolean } = {}) {
   check('encodeSellUnlockingHex byte-matches compiled sell ABI (delta,payout,pub,sig,preimage,51)', s.uscHand === uscScrypt, `hand=${s.uscHand.slice(0, 24)}… scrypt=${uscScrypt.slice(0, 24)}…`);
   const chk = validateAssembledCovenantInput(s.rawTx, { scriptHex: s.curHex, satoshis: s.reserveBefore }, 0);
   check('assembled sell input validates (encodeSell + operator sig + 51)', chk.ok, chk.error ?? '');
+  // operator-only refund: output 1 == the operator-supplied recorded payout script (the
+  // seller's receiveAddress in production), at the curve refund.
+  const parsed = new B.Transaction(s.rawTx);
+  const refund = Number(curveCost(s.newSold, s.delta));
+  check('assembled sell pays output-1 = the operator-supplied recorded address @ curve refund', parsed.outputs[1].script.toHex() === payoutScriptHex && parsed.outputs[1].satoshis === refund, `out1=${parsed.outputs[1].script.toHex().slice(0, 16)}…`);
 }
 {
   // operator SKIM: seller refund underpaid by 1 — the covenant pins hashOutputs to
@@ -166,8 +171,8 @@ function assembleSell(signer: any, opts: { skim?: boolean } = {}) {
   check('assembled sell REJECTED with wrong operator key', chk.ok === false, chk.error ?? '');
 }
 
-// FIX 2 + FIX 3 tests use async (provenanceWalk) — CommonJS forbids top-level await, so
-// wrap them (and the final tally) in an async IIFE. The sync tests above already ran.
+// FIX 2 tests use async (provenanceWalk) — CommonJS forbids top-level await, so wrap them
+// (and the final tally) in an async IIFE. The sync tests above already ran.
 void (async () => {
 // ── FIX 2 (adversarial): FULL-provenance back-to-genesis. A δ-return made of
 // [1 genuine ancestor + a fabricated same-tail counterfeit] must be REJECTED; a fully-
@@ -221,69 +226,25 @@ void (async () => {
   check('B2G: chain deeper than the node budget FAILS CLOSED', bounded.authentic === false, bounded.reason ?? '');
 }
 
-// ── FIX 3 (adversarial): SELLER SIGHASH_ALL payee binding. The seller signs a 0x41 fee
-// input committing output 1 (their refund). An honest tx validates both inputs; if the
-// operator REDIRECTS output 1 after the seller signs (re-cosigning the covenant with a
-// matching payoutScript so the covenant itself passes), the seller's 0x41 sig is
-// invalidated → the fee input REJECTS the tx.
-function signLocalP2pkh(tx: any, inputIndex: number, prevScriptHex: string, prevSats: number, priv: any, sighashType: number): string {
-  const preimage = B.Transaction.sighash.sighashPreimage(tx, sighashType, inputIndex, B.Script.fromHex(prevScriptHex), new B.crypto.BN(prevSats));
-  const digest = B.crypto.Hash.sha256sha256(preimage);
-  const sig = B.crypto.ECDSA.sign(Buffer.from(digest), priv);
-  const N = B.crypto.Point.getN();
-  if (sig.s.gt(N.div(new B.crypto.BN(2)))) sig.s = N.sub(sig.s);
-  const sigHex = sig.toDER().toString('hex') + sighashType.toString(16).padStart(2, '0');
-  return B.Script.fromASM(`${sigHex} ${priv.toPublicKey().toString()}`).toHex();
-}
-function buildFix3(redirect: boolean) {
-  const cur = pool(10n);
-  const delta = 4n;
-  const reserveBefore = 546 + Number(curveCost(0n, 10n));
-  const newSold = 10n - delta;
-  const refund = Number(curveCost(newSold, delta));
-  const reserveAfter = reserveBefore - refund;
-  const curHex = cur.lockingScript.toHex();
-  const nextHex = poolScriptForSold(curHex, newSold);
-  const sellerPriv = B.PrivateKey.fromRandom();
-  const sellerScript: string = B.Script.buildPublicKeyHashOut(sellerPriv.toPublicKey().toAddress()).toHex();
-  const opScript: string = B.Script.buildPublicKeyHashOut(opPub.toAddress()).toHex();
-  const feeSats = 200;
-
-  const tx = new B.Transaction();
-  tx.addInput(new B.Transaction.Input({ prevTxId: TXID, outputIndex: 0, script: new B.Script() }), B.Script.fromHex(curHex), reserveBefore);
-  tx.addInput(new B.Transaction.Input({ prevTxId: 'e'.repeat(64), outputIndex: 0, script: new B.Script() }), B.Script.fromHex(sellerScript), feeSats);
-  tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(nextHex), satoshis: reserveAfter }));
-  tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(sellerScript), satoshis: refund })); // honest: refund → seller
-
-  // SELLER signs the fee input over ALL — committing output 1 = seller.
-  const feeUnlock = signLocalP2pkh(tx, 1, sellerScript, feeSats, sellerPriv, 0x41);
-
-  // ATTACK: operator redirects output 1 to itself AFTER the seller signed.
-  let payoutScriptHexForCovenant = sellerScript;
-  if (redirect) {
-    tx.outputs[1] = new B.Transaction.Output({ script: B.Script.fromHex(opScript), satoshis: refund });
-    payoutScriptHexForCovenant = opScript; // operator adjusts the covenant arg so ITS branch passes
-  }
-
-  // Operator co-signs the covenant input (over the CURRENT outputs).
-  const preimage = B.Transaction.sighash.sighashPreimage(tx, 0xc1, 0, B.Script.fromHex(curHex), new B.crypto.BN(reserveBefore));
-  const der = B.crypto.ECDSA.sign(Buffer.from(B.crypto.Hash.sha256sha256(preimage)), opPriv).toDER().toString('hex');
-  const unlock0 = encodeSellUnlockingHex(delta, payoutScriptHexForCovenant, opPub.toString(), der + 'c1', Array.from(preimage) as number[]) + '51';
-  tx.inputs[0].setScript(B.Script.fromHex(unlock0));
-  tx.inputs[1].setScript(B.Script.fromHex(feeUnlock));
-
-  const rawTx = tx.toString();
-  const covenantOk = validateAssembledCovenantInput(rawTx, { scriptHex: curHex, satoshis: reserveBefore }, 0).ok;
-  const feeOk = validateAssembledCovenantInput(rawTx, { scriptHex: sellerScript, satoshis: feeSats }, 1).ok;
-  return { covenantOk, feeOk };
-}
+// B2G defense-in-depth: a tx that lists the SAME same-tail input outpoint twice must not
+// double-count its token amount (provenanceWalk de-dups input outpoints). A genuine 10-token
+// input listed twice into a 20-token output is caught as inflation → REJECTED.
 {
-  const honest = buildFix3(false);
-  check('payee: honest seller-signed TX2 validates BOTH inputs (covenant + fee)', honest.covenantOk && honest.feeOk, `covenant=${honest.covenantOk} fee=${honest.feeOk}`);
-  const attack = buildFix3(true);
-  // The covenant may still pass (operator adjusted its arg) but the seller's 0x41 fee sig
-  // is invalidated by the redirected output — so the tx as a whole is REJECTED.
-  check('payee: operator redirect of output 1 REJECTED (seller 0x41 sig invalidated)', attack.feeOk === false, `fee=${attack.feeOk} covenant=${attack.covenantOk}`);
+  const TAIL = 'cd'.repeat(24);
+  const P1 = '44'.repeat(20), VAULT = '55'.repeat(20);
+  const st = (pkh: string) => `76a914${pkh}88ac69${TAIL}`;
+  const ISS = '7'.repeat(64), DUP = '8'.repeat(64);
+  const outs: Record<string, { scriptHex: string; sats: number }> = {
+    [`${ISS}:0`]: { scriptHex: st(VAULT), sats: 10 },
+    [`${DUP}:0`]: { scriptHex: st(P1), sats: 20 },
+  };
+  const io: Record<string, { vin: { txid: string; vout: number }[]; vout: { n: number; hex: string; sats: number }[] }> = {
+    // lists ISS:0 twice → naive summing would count 20 inputSats; dedup counts 10.
+    [DUP]: { vin: [{ txid: ISS, vout: 0 }, { txid: ISS, vout: 0 }], vout: [{ n: 0, hex: st(P1), sats: 20 }] },
+  };
+  const deps = { issuanceTxid: ISS, genuineTail: TAIL, getOutput: async (t: string, v: number) => outs[`${t}:${v}`] ?? null, getTxIO: async (t: string) => io[t] ?? null, maxNodes: 400 };
+  const dup = await provenanceWalk(DUP, 0, deps);
+  check('B2G: duplicate-outpoint double-count REJECTED (input dedup)', dup.authentic === false, `got authentic=${dup.authentic}`);
 }
 
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);

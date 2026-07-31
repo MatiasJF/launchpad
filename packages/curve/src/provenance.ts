@@ -85,7 +85,12 @@ export async function provenanceWalk(rootTxid: string, rootVout: number, deps: P
 
     let inputSats = 0;
     const parents: string[] = [];
+    const seenInputs = new Set<string>(); // dedup outpoints: a (non-broadcastable)
+    // duplicate-outpoint tx must not double-count the same input's token amount.
     for (const vin of io.vin) {
+      const key = `${vin.txid.toLowerCase()}:${vin.vout}`;
+      if (seenInputs.has(key)) continue;
+      seenInputs.add(key);
       const prev = await deps.getOutput(vin.txid, vin.vout);
       if (!prev) { inProgress.delete(txid); return null; } // gap → fail-closed
       if (isStasScript(prev.scriptHex) && stasTail(prev.scriptHex) === genuineTail) {
