@@ -7,6 +7,7 @@ import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
 import { updateProjectMeta, updateSaleSchedule, deleteProject, updateSaleEscrow } from '../lib/actions';
 import { CurvePoolDeploy } from './CurvePoolDeploy';
+import { StasPoolManage } from './StasPoolManage';
 import { getPledgesForAssembly, markAssemblyBroadcast } from '../lib/escrow-actions';
 import { getBatchForSale, markOrdersSettled } from '../lib/order-actions';
 import { broadcastRawTx, resolveCurrentPool, getOutputInfo, getSourceBeef } from '../lib/settle-actions';
@@ -571,8 +572,19 @@ export function ProjectManage({ p }: { p: ManageVM }) {
             </div>
 
             {p.sale?.type === 'bonding_curve' && p.sale.id && (
-              <div className="mt-6">
-                {p.sale.curvePool?.status === 'live' ? (
+              <div className="mt-6 flex flex-col gap-4">
+                {p.sale.curvePool?.variant === 'stas' ? (
+                  // Wallet-STAS variant (ADR-028): deploy + mint + live state all in one control.
+                  <StasPoolManage
+                    saleId={p.sale.id}
+                    slug={p.slug}
+                    ticker={p.token?.ticker ?? ''}
+                    name={p.name}
+                    description={p.description}
+                    logoUrl={p.logoUrl}
+                    website={p.website}
+                  />
+                ) : p.sale.curvePool?.status === 'live' ? (
                   <div className="rounded-md border border-line bg-elevated/40 p-4 font-mono text-xs text-muted">
                     ✓ Pool live · sold {p.sale.curvePool.sold.toLocaleString('en-US')} / {p.sale.curvePool.supply.toLocaleString('en-US')} ·
                     reserve {p.sale.curvePool.reserveSats.toLocaleString('en-US')} sats
@@ -591,7 +603,20 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                     )}
                   </div>
                 ) : (
-                  <CurvePoolDeploy saleId={p.sale.id} />
+                  // No pool yet — offer both the trustless (ledger/linear) and wallet-STAS variants.
+                  <>
+                    <CurvePoolDeploy saleId={p.sale.id} />
+                    <div className="text-center font-mono text-[0.7rem] uppercase tracking-[0.08em] text-faint">— or —</div>
+                    <StasPoolManage
+                      saleId={p.sale.id}
+                      slug={p.slug}
+                      ticker={p.token?.ticker ?? ''}
+                      name={p.name}
+                      description={p.description}
+                      logoUrl={p.logoUrl}
+                      website={p.website}
+                    />
+                  </>
                 )}
               </div>
             )}

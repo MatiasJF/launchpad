@@ -41,18 +41,24 @@ function curveCost(k: bigint, sold: bigint, delta: bigint): bigint {
  * nothing here broadcasts; the client wallet signs, then records.
  */
 
-// Phase-1 curve params for the stas variant. Baked into the reserve covenant at genesis
-// (k = price slope, supply = max tokens the curve sells). Mirrors the ledger variant's
-// hardcoded params; the full `supply` is minted as STAS into the operator vault.
-const STAS_K = 1n;
-const STAS_SUPPLY = 1000n;
+// Default curve params for the stas variant — a TINY demo pool so a full mainnet
+// buy+sell round-trip is CHEAP to test (ADR-028 step-4 decision). k + supply are
+// baked into the reserve covenant at genesis (k = price slope, supply = max tokens
+// the curve sells) AND the whole `supply` is minted as STAS into the operator vault,
+// so a large supply = a large sat lock. The owner overrides these at deploy; these
+// are just the defaults. Bounded to keep a demo mint from locking real money.
+const STAS_K_DEFAULT = 1n;
+const STAS_SUPPLY_DEFAULT = 5n;
+const STAS_SUPPLY_MAX = 1000n; // guard: don't let a typo mint a 1e6-sat vault
 
 /**
  * Owner-gated: create/refresh the stas CurvePool row (draft) + return the genesis reserve-
  * covenant script the owner's wallet deploys (a createAction output of `seedReserveSats`
- * locked to this script). Mirrors createLedgerPool.
+ * locked to this script). Mirrors createLedgerPool. `k` + `supply` are CONFIGURABLE at
+ * deploy (default a tiny demo pool) so a mainnet round-trip is cheap — they bake into the
+ * reserve covenant AND set how much STAS is minted into the vault.
  */
-export async function createStasPool(input: { saleId: string; identityPubkey: string; seedReserveSats: number }): Promise<{ ok: boolean; scriptHex?: string; error?: string }> {
+export async function createStasPool(input: { saleId: string; identityPubkey: string; seedReserveSats: number; k?: number; supply?: number }): Promise<{ ok: boolean; scriptHex?: string; error?: string }> {
   try {
     const sale = await prisma.sale.findUnique({ where: { id: input.saleId }, include: { token: { include: { project: true } } } });
     if (!sale) return { ok: false, error: 'sale not found' };
@@ -62,12 +68,16 @@ export async function createStasPool(input: { saleId: string; identityPubkey: st
     const existing = await prisma.curvePool.findUnique({ where: { saleId: input.saleId } });
     if (existing && existing.status === 'live') return { ok: false, error: 'pool already live' };
 
+    const k = input.k != null && Number.isInteger(input.k) && input.k >= 1 ? BigInt(input.k) : STAS_K_DEFAULT;
+    let supply = input.supply != null && Number.isInteger(input.supply) && input.supply >= 1 ? BigInt(input.supply) : STAS_SUPPLY_DEFAULT;
+    if (supply > STAS_SUPPLY_MAX) supply = STAS_SUPPLY_MAX;
+
     const { pkh: operatorPkh } = await getOperator();
-    const scriptHex = await stasGenesisScript(STAS_K, STAS_SUPPLY, operatorPkh);
+    const scriptHex = await stasGenesisScript(k, supply, operatorPkh);
     await prisma.curvePool.upsert({
       where: { saleId: input.saleId },
-      create: { saleId: input.saleId, variant: 'stas', k: STAS_K, supply: STAS_SUPPLY, seedReserveSats: BigInt(Math.floor(input.seedReserveSats)), operatorPkh, status: 'draft' },
-      update: { variant: 'stas', seedReserveSats: BigInt(Math.floor(input.seedReserveSats)), operatorPkh },
+      create: { saleId: input.saleId, variant: 'stas', k, supply, seedReserveSats: BigInt(Math.floor(input.seedReserveSats)), operatorPkh, status: 'draft' },
+      update: { variant: 'stas', k, supply, seedReserveSats: BigInt(Math.floor(input.seedReserveSats)), operatorPkh },
     });
     return { ok: true, scriptHex };
   } catch (e) {
@@ -191,6 +201,37 @@ export async function getStasPool(saleId: string): Promise<
       reserveSats: Number(p.reserveSats), seedReserveSats: Number(p.seedReserveSats), sold: Number(p.sold),
       k: p.k.toString(), supply: p.supply.toString(), operatorPkh: p.operatorPkh,
       stasTokenId: p.sale.token.stasTokenId, issuanceTxid: p.sale.token.issuanceTxid,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * List a seller's SPENDABLE STAS deliveries for a sale (settled curve_buy orders, each a
+ * STAS output at `deliveryTxid:0` owned by the buyer) + their net held balance. The sell's
+ * TX1 spends one of these deliveries: the client resolves its CURRENT unspent outpoint by
+ * walking the change chain on-chain (resolveCurrentPool) — a delivery whose STAS was partly
+ * sold already leaves change back to the same holder pkh. Used to seed the sell card and pick
+ * a source big enough for `delta`. `held` = Σ settled buys − Σ (pending|settled) sells.
+ */
+export async function getSellerStasDeliveries(input: { saleId: string; sellerIdentity: string }): Promise<
+  { ok: true; held: number; deliveries: { orderId: string; txid: string; tokens: number }[] } | { ok: false; error: string }
+> {
+  try {
+    const buys = await prisma.order.findMany({
+      where: { saleId: input.saleId, buyerIdentity: input.sellerIdentity, kind: 'curve_buy', state: 'settled', txid: { not: null } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const sells = await prisma.order.findMany({
+      where: { saleId: input.saleId, buyerIdentity: input.sellerIdentity, kind: 'curve_sell', state: { in: ['pending', 'settling', 'settled'] } },
+    });
+    const bought = buys.reduce((n, o) => n + Number(o.tokens), 0);
+    const sold = sells.reduce((n, o) => n + Number(o.tokens), 0);
+    return {
+      ok: true,
+      held: Math.max(0, bought - sold),
+      deliveries: buys.map((o) => ({ orderId: o.id, txid: o.txid as string, tokens: Number(o.tokens) })),
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -417,7 +458,7 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
  * shift if other trades land first.
  */
 export async function prepareStasSell(input: { saleId: string; sellerIdentity: string; delta: number; sellerRefundAddress: string }): Promise<
-  | { ok: true; pool: { txid: string; vout: number; scriptHex: string; reserveSats: number; sold: number; k: number; supply: number }; vaultPkh: string; refund: number; delta: number }
+  | { ok: true; pool: { txid: string; vout: number; scriptHex: string; reserveSats: number; sold: number; k: number; supply: number }; vaultPkh: string; vaultAddress: string; refund: number; delta: number }
   | { ok: false; error: string }
 > {
   try {
@@ -436,11 +477,12 @@ export async function prepareStasSell(input: { saleId: string; sellerIdentity: s
       return { ok: false, error: 'invalid seller refund address' };
     }
     const refund = Number(curveCost(p.k, BigInt(sold - input.delta), BigInt(input.delta)));
-    const { pkh: vaultPkh } = await getOperator();
+    const { pkh: vaultPkh, address: vaultAddress } = await getOperator();
     return {
       ok: true,
       pool: { txid: p.poolTxid, vout: p.poolVout, scriptHex: p.scriptHex, reserveSats: Number(p.reserveSats), sold, k: Number(p.k), supply: Number(p.supply) },
       vaultPkh,
+      vaultAddress,
       refund,
       delta: input.delta,
     };

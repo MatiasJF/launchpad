@@ -8,6 +8,7 @@ import { BuyCard } from '../../../components/BuyCard';
 import { ContributeCard } from '../../../components/ContributeCard';
 import { CurveBuyCard } from '../../../components/CurveBuyCard';
 import { LedgerTradeCard } from '../../../components/LedgerTradeCard';
+import { StasTradeCard } from '../../../components/StasTradeCard';
 import { ClaimTokens } from '../../../components/ClaimTokens';
 import { Markdown } from '../../../components/Markdown';
 import { StatusPill, Tabs } from '../../../components/ui';
@@ -116,7 +117,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           <aside>
             {s.type === 'bonding_curve' ? (
               s.curve && s.curve.status === 'live' ? (
-                s.curve.variant === 'ledger' ? <LedgerTradeCard s={s} /> : <CurveBuyCard s={s} />
+                s.curve.variant === 'stas' ? <StasTradeCard s={s} /> : s.curve.variant === 'ledger' ? <LedgerTradeCard s={s} /> : <CurveBuyCard s={s} />
               ) : (
                 <div className="card p-6 text-sm text-muted">
                   This bonding-curve sale isn’t open yet — the project owner needs to deploy the pool (from their manage

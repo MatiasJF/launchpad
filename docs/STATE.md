@@ -163,6 +163,37 @@ pays output-1 = the recorded address @ curve refund · skim REJECTED · wrong-op
 replay-guard test **1/1** (`packages/db/test/sell-replay-guard.test.mjs`, P2002 on dupe outpoint),
 bsv+curve+web typecheck, web build. Migration applied + client regenerated. **Deferred: TX1 holder
 STAS-return wallet assembly (client) + all sell UI + live mainnet test.**
+**STEP 4 (UI + CLIENT WIRING) — ✅ DONE (2026-08-01):** the deferred money-touching client
+assembly + the admin/buyer/seller UI + sale-page wiring are built; a real mainnet round-trip is now
+possible. **New components (`apps/web/components/`):** `StasPoolManage.tsx` (owner: deploy +
+mint, mirrors CurvePoolDeploy + IssueButton) and `StasTradeCard.tsx` (buyer + seller two-tab card,
+mirrors LedgerTradeCard). **Buy round-trip (client-wired):** `prepareStasBuy` → `buildStasBuyTx`
+(buyer funds+signs the SIGHASH_ALL payment input of TX-A) → broadcast TX1(payment)→TX-A with the
+Missing-inputs retry → `recordStasBuy` (returns orderId) → `deliverStasToBuyer(orderId)` (operator
+TX-B) → the delivered STAS is registered into the buyer's wallet (`receiveStasToken`, a nicety —
+the STAS is on-chain regardless); the delivery txid is surfaced. **Sell round-trip (client-wired):**
+`prepareStasSell` (returns the operator `vaultAddress` — NEW field) → the seller's live STAS UTXO is
+resolved on-chain by `resolveCurrentPool(deliveryTxid)` (reuses the change-walk; picks a delivery
+covering `delta`) → **TX1** = an ordinary client `transferStas` of `delta` to the vault (owner
+derivation `{protocolID: STAS_PROTOCOL, keyID: slug, counterparty:'self', forSelf:false}` — the SAME
+key the buy delivered to; change STAS back to self) → broadcast funding→TX1 → `recordStasSell(returnTxid)`
+→ `finalizeStasSell(orderId)` (operator provenance-checks + refunds sats at the curve price, TX2);
+the refund txid is surfaced. **Deploy+mint (admin):** `StasPoolManage` exposes **configurable small
+`k` + `supply`** (default TINY demo pool supply=5, k=1 — so a full mainnet buy+sell round-trip is
+cheap; `createStasPool` now takes `k`/`supply`, capped at supply≤1000, replacing the hardcoded
+`STAS_SUPPLY=1000n`) → deploy (owner wallet `createAction` seeds the reserve covenant) → mint (owner
+wallet CONTRACT→ISSUE genesis with the operator `ownerPubHex` override so the supply locks to the
+vault). **Sale-page conditional:** renders `StasTradeCard` when `sale.type==='bonding_curve'` AND the
+live pool `variant==='stas'`; ledger/linear variants keep their cards. **ProjectManage:** the
+bonding-curve deploy area renders `StasPoolManage` for the stas variant (and offers it alongside
+`CurvePoolDeploy` when no pool exists yet). **New server-action surface (`stas-actions.ts`):
+`getSellerStasDeliveries(saleId, sellerIdentity)`** (a seller's settled `curve_buy` deliveries + net
+held balance, to seed the sell card + pick a source). **Thin shell:** components orchestrate wallet +
+server actions only; all tx math stays in `packages/curve` / `packages/bsv` / `stas-actions`. **No
+auto-broadcast** — every broadcast is inside an explicit button handler or an operator server action.
+Green: web typecheck, web build, verify-stas 17/17 (backend not regressed). See ADR-028 Step-4 update.
+**Deferred: the live mainnet round-trip itself** (needs the running operator wallet + a funded BSV
+Desktop; the user runs it).
 **Deferred: all UI.** See ADR-028 Step-2/Step-3 updates.
 **Remaining = STAS integration + app wiring:** buy/sell UI + assembly (next steps); deploy (reserve
 covenant + mint supply to operator vault via genesis.ts) SERVER layer done ↑; buy = reserve buy (client) + operator STAS delivery
