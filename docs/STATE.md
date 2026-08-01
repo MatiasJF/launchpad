@@ -192,6 +192,18 @@ held balance, to seed the sell card + pick a source). **Thin shell:** components
 server actions only; all tx math stays in `packages/curve` / `packages/bsv` / `stas-actions`. **No
 auto-broadcast** — every broadcast is inside an explicit button handler or an operator server action.
 Green: web typecheck, web build, verify-stas 17/17 (backend not regressed). See ADR-028 Step-4 update.
+**ADVERSARIALLY VERIFIED (both client round-trips, could-not-refute):** BUY — buyer signs input 1 with
+0x41 (never the covenant), no over/under-pay, parent broadcast before TX-A with safe retry, recorded
+pool == broadcast successor, delivery to the buyer's own address, order recoverable on failure. SELL —
+the derivation footgun is REFUTED: reproduced from @bsv/sdk BRC-42, `counterparty:'self'` makes `forSelf`
+a no-op, so the delivery lock pkh and the sell-spend key are BYTE-IDENTICAL (the STAS card sidesteps the
+ledger card's `'anyone'+forSelf` trap); TX1 returns exactly `delta` to the vault with change to the
+seller; vault address consistent (single `getOperator()`); `>=delta` single-holding guard fails loudly.
+**UX/robustness follow-ups (non-blocking, note for the live test):** (a) NO UI button to re-trigger a
+STUCK delivery/refund — if `deliverStasToBuyer` or `finalizeStasSell` fails after the buyer paid / seller
+returned STAS, recovery needs an operator re-invoke by orderId (re-clicking Buy/Sell would re-pay / can't
+re-return since the source is spent); (b) sell needs ONE holding `>=delta` (no cross-UTXO aggregation);
+(c) 200-sat default fee is thin; (d) buy delivery is at-least-once (step-2 note: per-delivery idempotency key).
 **Deferred: the live mainnet round-trip itself** (needs the running operator wallet + a funded BSV
 Desktop; the user runs it).
 **Deferred: all UI.** See ADR-028 Step-2/Step-3 updates.
