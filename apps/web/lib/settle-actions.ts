@@ -307,27 +307,39 @@ export async function getOperatorBaseUtxos(
  * unconfirmed chain would blow the node's 25-ancestor mempool limit. A confirmed txid → 0.
  */
 async function unconfirmedAncestorCount(txid: string, cap: number): Promise<number> {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // Throttled + retried fetch so a deep chain isn't UNDERcounted by rate-limit gaps
+  // (which would wrongly keep a stuck UTXO). Returns null only after persistent failure.
+  const fetchTx = async (t: string): Promise<{ confirmed: boolean; vin: string[] } | null> => {
+    for (let i = 0; i < 4; i++) {
+      try {
+        const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/hash/${t}`, { cache: 'no-store' });
+        if (res.ok) {
+          const d = (await res.json()) as { confirmations?: number; blockheight?: number; vin?: { txid?: string }[] };
+          return {
+            confirmed: (d.confirmations ?? 0) > 0 || !!d.blockheight,
+            vin: (d.vin ?? []).map((v) => v.txid).filter((x): x is string => typeof x === 'string'),
+          };
+        }
+      } catch {
+        /* transient — retry */
+      }
+      await sleep(400 + i * 400);
+    }
+    return null;
+  };
   const seen = new Set<string>();
   let frontier = [txid];
   while (frontier.length > 0 && seen.size <= cap) {
     const next: string[] = [];
     for (const t of frontier) {
       if (seen.has(t) || !/^[0-9a-f]{64}$/.test(t)) continue;
-      let confirmed = false;
-      let vin: { txid: string }[] = [];
-      try {
-        const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/hash/${t}`, { cache: 'no-store' });
-        if (res.ok) {
-          const d = (await res.json()) as { confirmations?: number; blockheight?: number; vin?: { txid?: string }[] };
-          confirmed = (d.confirmations ?? 0) > 0 || !!d.blockheight;
-          vin = (d.vin ?? []).filter((v) => typeof v.txid === 'string').map((v) => ({ txid: v.txid as string }));
-        }
-      } catch {
-        /* unknown — treat as an unconfirmed leaf (counted, no further walk) */
-      }
-      if (confirmed) continue; // confirmed boundary — do not count, stop this branch
+      const info = await fetchTx(t);
+      if (info === null) return cap + 2; // FAIL-CLOSED: can't verify → treat as deep, skip the UTXO
+      if (info.confirmed) continue; // confirmed boundary — do not count, stop this branch
       seen.add(t);
-      for (const v of vin) next.push(v.txid);
+      for (const v of info.vin) next.push(v);
+      await sleep(120); // stay under WoC's rate limit so the count is accurate
     }
     frontier = next;
   }
