@@ -1,5 +1,6 @@
 'use server';
 
+import { Beef, Transaction } from '@bsv/sdk';
 import { isStasScript, stasOwnerPkh, stasTail, provenanceWalk } from '@launchpad/curve';
 
 /**
@@ -338,8 +339,120 @@ export async function getSourceBeef(txid: string): Promise<number[] | null> {
     if (!res.ok) return null;
     const hex = (await res.text()).trim();
     if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) return null;
-    const bytes: number[] = [];
-    for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.substring(i, i + 2), 16));
+    return hexToBytes(hex);
+  } catch {
+    return null;
+  }
+}
+
+/** hex → byte array (WoC returns tx/beef as hex). */
+function hexToBytes(hex: string): number[] {
+  const bytes: number[] = [];
+  for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.substring(i, i + 2), 16));
+  return bytes;
+}
+
+/** Fetch a tx's RAW serialized bytes (hex) from WoC — works for UNCONFIRMED txs too
+ * (unlike `/beef`, which needs a mined merkle proof). Server-side, no CORS. */
+async function fetchRawTxHex(txid: string): Promise<string | null> {
+  if (!/^[0-9a-fA-F]{64}$/.test(txid)) return null;
+  for (let i = 0; i < 4; i++) {
+    try {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/hex`, { cache: 'no-store' });
+      if (res.ok) {
+        const hex = (await res.text()).trim();
+        return /^[0-9a-fA-F]+$/.test(hex) && hex.length % 2 === 0 ? hex : null;
+      }
+    } catch {
+      /* transient — retry */
+    }
+    if (i < 3) await new Promise((r) => setTimeout(r, 1500));
+  }
+  return null;
+}
+
+/**
+ * UNCONFIRMED-SAFE ancestry BEEF for a STAS source UTXO (ADR-028 delivery robustness).
+ *
+ * `getSourceBeef` fetches WoC `/tx/{txid}/beef`, which ONLY returns a BEEF for a
+ * CONFIRMED tx (it needs the merkle BUMP). A fresh mint — and every subsequent vault
+ * hop, which moves the vault to a NEW unconfirmed tx — is unconfirmed, so that path
+ * 404s and delivery aborts even though the operator can spend the raw UTXO fine. That
+ * left buyers who PAID (TX-A landed, pool advanced) with no tokens and no retry.
+ *
+ * This builds a valid ancestry BEEF whose TIP may be unconfirmed:
+ *   • Cheap path — if the tip itself is confirmed, WoC `/beef` is already a complete,
+ *     bump-anchored SPV proof; use it verbatim.
+ *   • Deep path — walk the ancestry from the (unconfirmed) tip: `mergeRawTx` each
+ *     unconfirmed tx, then recurse into ALL of its parent inputs; when a parent is
+ *     CONFIRMED, merge its `/beef` (which carries the merkle BUMP) and STOP that branch
+ *     — the bump anchors it to a mined root. The result is a BEEF whose leaves reach
+ *     confirmed, mined roots even though the tip is not yet mined.
+ *
+ * Bounded (visited set + node budget) and FAIL-CLOSED: any fetch gap, a walk that can't
+ * reach a confirmed root within budget, or a BEEF that fails to assemble/verify returns
+ * null — never a partial/unanchored BEEF (it is SPV-critical for the buyer). We VERIFY
+ * by round-tripping through `Beef.fromBinary` and requiring `findAtomicTransaction(tip)`
+ * to resolve (proves the ancestry is complete + anchored for the tip).
+ */
+export async function getSourceBeefDeep(txid: string): Promise<number[] | null> {
+  if (!/^[0-9a-fA-F]{64}$/.test(txid)) return null;
+  const tip = txid.toLowerCase();
+
+  // Cheap path first: a confirmed tip's /beef is already a full SPV anchor.
+  const direct = await getSourceBeef(tip);
+  if (direct) return direct;
+
+  const beef = new Beef();
+  const visited = new Set<string>();
+  const MAX_NODES = 200; // bound the DAG walk (fabricated deep/wide ancestry → fail closed)
+  let count = 0;
+
+  async function walk(id: string): Promise<boolean> {
+    const key = id.toLowerCase();
+    if (visited.has(key)) return true;
+    if (++count > MAX_NODES) return false; // budget exhausted → fail closed
+    visited.add(key);
+
+    // Anchored? A CONFIRMED ancestor's /beef is self-sufficient (tx + merkle bump).
+    const confirmed = await getSourceBeef(key);
+    if (confirmed) {
+      try {
+        beef.mergeBeef(confirmed);
+        return true; // branch anchored to a mined root — stop
+      } catch {
+        return false;
+      }
+    }
+
+    // UNCONFIRMED → merge raw bytes, then recurse into every parent input so the whole
+    // input DAG reaches proofs (a BEEF is valid only if each tx chains back to a bump).
+    const rawHex = await fetchRawTxHex(key);
+    if (!rawHex) return false;
+    let parents: string[];
+    try {
+      beef.mergeRawTx(hexToBytes(rawHex));
+      const tx = Transaction.fromHex(rawHex);
+      parents = tx.inputs
+        .map((i) => (i.sourceTXID ?? '').toLowerCase())
+        .filter((t) => /^[0-9a-f]{64}$/.test(t));
+    } catch {
+      return false;
+    }
+    if (parents.length === 0) return false; // no traceable parents → can't anchor
+    for (const p of parents) {
+      if (!(await walk(p))) return false;
+    }
+    return true;
+  }
+
+  if (!(await walk(tip))) return null;
+
+  // VERIFY: round-trip parse + the tip must resolve to a complete, anchored atomic tx.
+  try {
+    const bytes = beef.toBinary();
+    const parsed = Beef.fromBinary(bytes);
+    if (!parsed.findAtomicTransaction(tip)) return null; // incomplete/unanchored → fail closed
     return bytes;
   } catch {
     return null;

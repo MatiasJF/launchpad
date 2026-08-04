@@ -41,7 +41,7 @@ present, not implemented.
 - STAS libs kept server-external → `apps/web/next.config.mjs`
 - STAS transfer (settlement) → `packages/bsv/src/settle` (`transferStas` + `twoTx/` primitives + `beef.ts` first-pass — BSV-003)
 - Settle-token UI (client, wallet transfer) → `apps/web/components/SettleButton.tsx`
-- Fetch on-chain output script / balance / ancestry BEEF → `apps/web/lib/settle-actions.ts` (`getOutputScriptHex`, `getOutputInfo`, `getSourceBeef`)
+- Fetch on-chain output script / balance / ancestry BEEF → `apps/web/lib/settle-actions.ts` (`getOutputScriptHex`, `getOutputInfo`, `getSourceBeef`, `getSourceBeefDeep` — unconfirmed-safe ancestry BEEF: walks raw ancestry, anchors at confirmed merkle bumps, fail-closed; used by delivery so a fresh/just-moved vault no longer blocks TX-B)
 - Chained-transfer BEEF (spend a prior transfer's token change) → `StasSource.beef` from-chain; basket path in `settle/beef.ts` is fallback only
 - Browser polyfills for bsv-js → `apps/web/next.config.mjs` (webpack fallbacks)
 - STAS knowledge (external) → `stas-knowledge-mcp` MCP (local) + `../stas-knowledge-mcp/knowledge`
@@ -80,6 +80,8 @@ present, not implemented.
 - Stas curve UI (Step 4, ADR-028) → owner deploy+mint `apps/web/components/StasPoolManage.tsx` (configurable small k/supply) · buyer+seller trade card `apps/web/components/StasTradeCard.tsx` (buy = TX-A + operator deliver; sell = client STAS-return TX1 + operator refund TX2) · sale-page conditional `app/sale/[slug]/page.tsx` (`variant==='stas'` → `StasTradeCard`) · manage wiring `components/ProjectManage.tsx`
 - Stas curve deploy config + seller holdings (Step 4) → `apps/web/lib/stas-actions.ts` (`createStasPool` now takes `k`/`supply`; `prepareStasSell` returns `vaultAddress`; `getSellerStasDeliveries`)
 - Stuck-refund recovery (Step 3b; sell whose refund failed mid-flow — STAS returned, no `refundTxid`) → `apps/web/lib/stas-actions.ts` (`getPendingStasSells`, `completePendingStasSell` — seller-scoped guard, delegates to idempotent `finalizeStasSell`) · UI notice + "Complete refund" button in `apps/web/components/StasTradeCard.tsx` (Sell tab)
+- Stuck-delivery recovery (Step 2b; buy whose delivery failed mid-flow — paid, `curve_buy` pending, no delivery `txid`) → `apps/web/lib/stas-actions.ts` (`getPendingStasDeliveries`, `completePendingStasDelivery` — buyer-scoped guard, delegates to idempotent `deliverStasToBuyer`) · UI notice + "Complete delivery" button in `apps/web/components/StasTradeCard.tsx` (Buy tab)
+- Offline BEEF-assembly check (unconfirmed tip anchored by a confirmed merkle bump → valid, atomic-resolvable BEEF; validates the `getSourceBeefDeep` strategy) → `packages/curve/test/deep-beef.test.mjs`
 - Operator key + custody wallet (co-sign gate + STAS/sats vault) → `apps/web/lib/operator-wallet.ts` (`getOperator`, `getOperatorWallet`, `operatorBalance`, `operatorSignDigest`) · toolbox `apps/web/lib/operator-toolbox.ts`
 - Curve UI → buy card `apps/web/components/CurveBuyCard.tsx` · owner deploy `apps/web/components/CurvePoolDeploy.tsx` · sale-page wiring `app/sale/[slug]/page.tsx` · owner sets type in `components/ProjectManage.tsx` (Presale tab) via `updateSaleEscrow`
 - Buyer claim UI (register settled purchases into wallet) → `apps/web/components/ClaimTokens.tsx` (on sale page)

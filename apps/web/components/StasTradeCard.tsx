@@ -10,6 +10,7 @@ import {
   getStasPool, prepareStasBuy, recordStasBuy, deliverStasToBuyer,
   prepareStasSell, recordStasSell, finalizeStasSell, getSellerStasDeliveries,
   getPendingStasSells, completePendingStasSell,
+  getPendingStasDeliveries, completePendingStasDelivery,
 } from '../lib/stas-actions';
 
 // Canonical STAS BRC-42 owner derivation (ADR-021). The buyer receives STAS to
@@ -37,6 +38,7 @@ export function StasTradeCard({ s }: { s: SaleCardVM }) {
   const [pool, setPool] = useState<{ sold: number; supply: number; k: number; reserveSats: number } | null>(null);
   const [held, setHeld] = useState(0);
   const [pendingSells, setPendingSells] = useState<{ orderId: string; tokens: number; paymentTxid: string }[]>([]);
+  const [pendingBuys, setPendingBuys] = useState<{ orderId: string; tokens: number; paymentTxid: string | null }[]>([]);
   const [amount, setAmount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -55,6 +57,9 @@ export function StasTradeCard({ s }: { s: SaleCardVM }) {
       // Surface any stuck sell (STAS returned, refund never completed) so it can be retried.
       const p = await getPendingStasSells(s.saleId, identity);
       if (p.ok) setPendingSells(p.orders);
+      // Surface any stuck buy (paid, STAS never delivered) so it can be retried.
+      const b = await getPendingStasDeliveries(s.saleId, identity);
+      if (b.ok) setPendingBuys(b.orders);
     } catch { /* wallet not connected yet */ }
   }
   useEffect(() => { void refresh(); }, [s.saleId]);
@@ -72,6 +77,24 @@ export function StasTradeCard({ s }: { s: SaleCardVM }) {
       if (!fin.ok || !fin.txid) throw new Error(fin.error ?? 'refund failed');
       setTxid(fin.txid);
       setNote('refunded — sats returned to your address');
+      await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setNote(null); }
+    finally { setBusy(false); }
+  }
+
+  /** Retry the operator STAS delivery for a stuck buy (already paid; delegates to deliver). */
+  async function doCompleteDelivery(orderId: string) {
+    setBusy(true); setError(null); setTxid(null); setNote(null);
+    try {
+      await connect();
+      const { getWalletClient } = await import('@launchpad/bsv/wallet');
+      const wallet = await getWalletClient();
+      const { publicKey: identity } = await wallet.getPublicKey({ identityKey: true });
+      setNote('operator delivering your STAS…');
+      const del = await completePendingStasDelivery({ orderId, buyerIdentity: identity });
+      if (!del.ok || !del.txid) throw new Error(del.error ?? 'delivery failed');
+      setTxid(del.txid);
+      setNote('delivered — tokens are in your wallet');
       await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setNote(null); }
     finally { setBusy(false); }
@@ -243,6 +266,17 @@ export function StasTradeCard({ s }: { s: SaleCardVM }) {
           <button key={t} type="button" onClick={() => setTab(t)} className="chip" data-active={tab === t}>{t === 'buy' ? 'Buy' : 'Sell'}</button>
         ))}
       </div>
+
+      {tab === 'buy' && pendingBuys.map((o) => (
+        <div key={o.orderId} className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-3 text-xs">
+          <p className="text-fg">
+            You paid for <span className="font-mono">{o.tokens}</span> {s.ticker} but delivery didn&apos;t complete. Your payment is recorded — finish the delivery below.
+          </p>
+          <Button onClick={() => doCompleteDelivery(o.orderId)} disabled={busy} block>
+            {busy ? 'Working…' : `Complete delivery of ${o.tokens} ${s.ticker}`}
+          </Button>
+        </div>
+      ))}
 
       {tab === 'sell' && pendingSells.map((o) => (
         <div key={o.orderId} className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-3 text-xs">

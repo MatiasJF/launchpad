@@ -1,6 +1,32 @@
 # Project State
 
-_Last updated: 2026-08-04 — by: poolScriptForSold sold=0 / state-int length-boundary fix (money-critical: sell-to-zero was bricked)_
+_Last updated: 2026-08-04 — by: unconfirmed-safe delivery BEEF + buy-side recovery (money-critical: paid-but-undelivered buys were unretriable)_
+
+## Latest fix (2026-08-04) — unconfirmed-safe delivery BEEF + buy-side recovery (money-critical)
+
+Live-test symptom: a buyer paid (TX-A broadcast, pool advanced to sold=2) but the operator STAS
+delivery FAILED with "could not fetch vault ancestry BEEF (mint may still be confirming)" — buyer
+paid, got no tokens, and it couldn't be retried. **Root cause:** `deliverStasToBuyer` fetched the
+vault ancestry via `getSourceBeef` → WoC `/tx/{txid}/beef`, which only returns a BEEF for a
+CONFIRMED tx (needs the merkle proof). A fresh mint — and every subsequent delivery, which moves the
+vault to a NEW unconfirmed tx — is unconfirmed, so the fetch 404'd and delivery aborted, even though
+the operator can spend the raw UTXO fine (the BEEF is only used to build the buyer's returned SPV
+anchor, not the broadcast). **FIX 1:** new `getSourceBeefDeep(txid)` in `settle-actions.ts` builds an
+unconfirmed-safe ancestry BEEF — walks the vault ancestry, `mergeRawTx`-ing each UNCONFIRMED tx and
+recursing into its parents, and anchoring at CONFIRMED ancestors by merging their `/beef` (merkle
+BUMP) and stopping. Bounded (visited set + 200-node budget) and fail-closed (any fetch gap /
+unreachable root → null, never a partial/unanchored BEEF). Verified by round-tripping through
+`Beef.fromBinary` + requiring `findAtomicTransaction(tip)` to resolve. `deliverStasToBuyer` now uses
+it, so deliveries work immediately after mint and back-to-back. Offline check: `packages/curve/test/
+deep-beef.test.mjs` proves an unconfirmed tip anchored by a bump-carrying ancestor yields a valid,
+atomic-resolvable BEEF (node suite 19/19). **FIX 2 (buy-side recovery, mirrors the sell recovery):**
+`getPendingStasDeliveries(saleId, buyerIdentity)` lists a buyer's `curve_buy` orders `pending`/
+`settling` with `txid` null (paid, undelivered); `completePendingStasDelivery({orderId, buyerIdentity})`
+guards ownership + not-yet-delivered and DELEGATES to the idempotent `deliverStasToBuyer`. Buy tab in
+`StasTradeCard.tsx` surfaces a warning notice + "Complete delivery" button (matches the Sell-tab
+"Complete refund" pattern). Closes the noted buy-side "no retry" follow-up. Green: bsv/curve/web
+typecheck, web build, verify-stas 33/33, curve node suite 19/19. **Existing stuck bt2 buys are
+recoverable via the new control after a dev-server restart.**
 
 ## ✅ FULL ROUND-TRIP PROVEN ON MAINNET (2026-08-04)
 

@@ -8,7 +8,7 @@ import { buildStasSellRefundTx } from '@launchpad/curve';
 import { isProjectOwner } from './account-actions';
 import { getOperator, getOperatorWallet, operatorSignDigest } from './operator-wallet';
 import { stasGenesisScript } from './stas-service';
-import { resolveCurrentPool, getOutputInfo, getSourceBeef, broadcastRawTx, verifyStasBackToGenesis, findStasOutputToPkh, isOutputUnspent } from './settle-actions';
+import { resolveCurrentPool, getOutputInfo, getSourceBeefDeep, broadcastRawTx, verifyStasBackToGenesis, findStasOutputToPkh, isOutputUnspent } from './settle-actions';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadBsv(): Promise<any> {
@@ -383,8 +383,12 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
       const info = await getOutputInfo(vault.txid, vault.vout);
       if (!info) throw new Error('could not fetch vault UTXO script/value');
       if (info.satoshis < delta) throw new Error(`vault holds ${info.satoshis} tokens, need ${delta}`);
-      const beef = await getSourceBeef(vault.txid);
-      if (!beef) throw new Error('could not fetch vault ancestry BEEF (mint may still be confirming)');
+      // Unconfirmed-safe ancestry BEEF: a fresh mint (and every subsequent delivery,
+      // which moves the vault to a NEW unconfirmed tx) has no `/beef` yet, so the plain
+      // confirmed-only fetch would abort delivery. getSourceBeefDeep walks the ancestry
+      // and anchors at confirmed roots, so back-to-back deliveries work immediately.
+      const beef = await getSourceBeefDeep(vault.txid);
+      if (!beef) throw new Error('could not build vault ancestry BEEF (could not anchor to a confirmed root — retry shortly)');
 
       const feeWallet = await getOperatorWallet();
       const res = await operatorDeliverStas({
@@ -419,6 +423,69 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
       await prisma.order.updateMany({ where: { id: order.id, state: 'settling' }, data: { state: 'pending' } });
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 2b · BUY RECOVERY (ADR-028). A buy whose TX-A (reserve buy) landed — the pool
+// advanced and the `curve_buy` Order exists `pending` — but whose TX-B (operator STAS
+// delivery) failed mid-flow leaves the buyer PAID with no tokens and `order.txid` null.
+// The historical cause was `getSourceBeef` requiring a CONFIRMED vault (fixed above with
+// getSourceBeefDeep); this control makes such a stuck buy RECOVERABLE regardless. Mirrors
+// the sell recovery (STEP 3b): list the stuck buys, then DELEGATE to the existing
+// idempotent `deliverStasToBuyer` (which claims pending→settling and is `order.txid`-
+// idempotent). Buyer-scoped — a buyer can only complete their own delivery.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * List a buyer's stuck buys: `curve_buy` orders in `pending`/`settling` with the reserve
+ * buy recorded (`paymentTxid` set) but NO STAS delivered yet (`txid` null). These are the
+ * orders `completePendingStasDelivery` can finish. Buyer-scoped. Minimal display info only.
+ */
+export async function getPendingStasDeliveries(saleId: string, buyerIdentity: string): Promise<
+  { ok: true; orders: { orderId: string; tokens: number; paymentTxid: string | null }[] } | { ok: false; error: string }
+> {
+  try {
+    if (!buyerIdentity) return { ok: false, error: 'buyerIdentity required' };
+    const rows = await prisma.order.findMany({
+      where: {
+        saleId,
+        buyerIdentity,
+        kind: 'curve_buy',
+        state: { in: ['pending', 'settling'] },
+        txid: null, // no delivery yet
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return {
+      ok: true,
+      orders: rows.map((o) => ({ orderId: o.id, tokens: Number(o.tokens), paymentTxid: o.paymentTxid })),
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Re-trigger the operator STAS delivery for a buyer's stuck buy order. Guards buyer
+ * ownership + that the order is a pending/settling `curve_buy` not yet delivered, then
+ * DELEGATES to the existing idempotent `deliverStasToBuyer` — no delivery logic is
+ * duplicated here (it re-claims pending→settling, resolves the current vault, builds the
+ * unconfirmed-safe BEEF, delivers + broadcasts, and is `order.txid`-idempotent). Buyer-scoped.
+ */
+export async function completePendingStasDelivery(input: { orderId: string; buyerIdentity: string }): Promise<{ ok: boolean; txid?: string; error?: string }> {
+  try {
+    if (!input.buyerIdentity) return { ok: false, error: 'buyerIdentity required' };
+    const order = await prisma.order.findUnique({ where: { id: input.orderId } });
+    if (!order || order.kind !== 'curve_buy') return { ok: false, error: 'order not found or not a curve buy' };
+    if (order.buyerIdentity !== input.buyerIdentity) return { ok: false, error: 'not your order' };
+    if (order.txid) return { ok: true, txid: order.txid }; // already delivered (idempotent)
+    if (!(order.state === 'pending' || order.state === 'settling')) return { ok: false, error: `order not completable (state ${order.state})` };
+    // Delegate to the existing idempotent delivery (claims pending→settling, resolves the
+    // current vault, builds the unconfirmed-safe ancestry BEEF, delivers + broadcasts).
+    return await deliverStasToBuyer({ orderId: order.id });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
