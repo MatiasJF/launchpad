@@ -502,16 +502,28 @@ export async function verifyStasBackToGenesis(input: {
   const genuineTail = stasTail(genesisScript);
 
   // Delegate to the pure, unit-tested full-provenance walk with WoC-backed fetchers.
-  return provenanceWalk(outpointTxid, outpointVout, {
-    issuanceTxid,
-    genuineTail,
-    getOutput: async (txid, vout) => {
-      const info = await getOutputInfo(txid, vout);
-      return info ? { scriptHex: info.scriptHex, sats: info.satoshis } : null;
-    },
-    getTxIO: fetchTxIO,
-    maxNodes: 400,
-  });
+  // RETRY to ride out WoC INDEXING LAG: a sell verifies the returned STAS seconds after its
+  // TX1 return (and its delivery) broadcast, before WoC indexes them — the walk then hits a
+  // "fetch gap" on an unindexed fresh tx, which is TRANSIENT, not a real counterfeit. Retrying
+  // preserves fail-closed security: a genuine counterfeit / unbacked token stays
+  // authentic:false across every attempt (it can never START passing by waiting).
+  const walk = () =>
+    provenanceWalk(outpointTxid, outpointVout, {
+      issuanceTxid,
+      genuineTail,
+      getOutput: async (txid, vout) => {
+        const info = await getOutputInfo(txid, vout);
+        return info ? { scriptHex: info.scriptHex, sats: info.satoshis } : null;
+      },
+      getTxIO: fetchTxIO,
+      maxNodes: 400,
+    });
+  let last = await walk();
+  for (let attempt = 1; !last.authentic && attempt < 6; attempt++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    last = await walk();
+  }
+  return last;
 }
 
 /**
