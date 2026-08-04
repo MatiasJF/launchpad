@@ -46,6 +46,20 @@ function run(cur: StasCurvePool, sourceLock: string, outputs: any[], reserveBefo
   check('buy validates (no operator needed)', run(cur, cur.lockingScript.toHex(), [{ satoshis: newReserve, lockingScript: LockingScript.fromHex(nextHex) }], reserveBefore, usc.toHex()));
 }
 
+// BYTE-MATCH: poolScriptForSold (scrypt-ts-free byte-patch) must equal scrypt-ts's own
+// getStateScript for EVERY reachable `sold`, across integer-length boundaries. The sold=0
+// case is the money-critical one: scrypt encodes 0 as a 1-byte push of 0x00, not empty, so a
+// naive minimal encoder made the successor 1 byte short and bricked any sell landing on 0.
+{
+  const genesis = pool(0n).lockingScript.toHex();
+  const boundary = [0n, 1n, 2n, 16n, 127n, 128n, 129n, 255n, 256n, 257n, 999n, 1000n];
+  for (const s of boundary) {
+    const real = String((pool(s) as any).getStateScript());
+    const patch = poolScriptForSold(genesis, s);
+    check(`poolScriptForSold(${s}) byte-matches getStateScript(${s})`, patch === real, `patch=${patch.slice(-16)} real=${real.slice(-16)}`);
+  }
+}
+
 // SELL: from sold=10, sell 4, operator co-signs
 function buildSell(signer: any) {
   const cur = pool(10n); const delta = 4n; const reserveBefore = 546 + Number(curveCost(0n, 10n));
@@ -112,11 +126,12 @@ function buildSell(signer: any) {
 // covenant input doesn't depend on under ANYONECANPAY|ALL).
 // Build a REAL two-input/two-output sell tx with the runtime encoder (no scrypt-ts).
 // `skim` underpays the seller refund by 1 sat (kept back in the reserve).
-function assembleSell(signer: any, opts: { skim?: boolean } = {}) {
-  const cur = pool(10n);
-  const delta = 4n;
-  const reserveBefore = 546 + Number(curveCost(0n, 10n));
-  const newSold = 10n - delta;
+function assembleSell(signer: any, opts: { skim?: boolean; startSold?: bigint; delta?: bigint } = {}) {
+  const startSold = opts.startSold ?? 10n;
+  const cur = pool(startSold);
+  const delta = opts.delta ?? 4n;
+  const reserveBefore = 546 + Number(curveCost(0n, startSold));
+  const newSold = startSold - delta;
   const refund = Number(curveCost(newSold, delta));
   const reserveAfter = reserveBefore - refund + (opts.skim ? 1 : 0);
   const payoutVal = refund - (opts.skim ? 1 : 0);
@@ -169,6 +184,39 @@ function assembleSell(signer: any, opts: { skim?: boolean } = {}) {
   const s = assembleSell(B.PrivateKey.fromRandom());
   const chk = validateAssembledCovenantInput(s.rawTx, { scriptHex: s.curHex, satoshis: s.reserveBefore }, 0);
   check('assembled sell REJECTED with wrong operator key', chk.ok === false, chk.error ?? '');
+}
+
+// SELL-TO-ZERO (the money-critical regression): a full sell that lands on newSold=0
+// (sold=2, delta=2) must VALIDATE. Before the stateInt(0)->[0x00] fix, poolScriptForSold
+// produced a successor 1 byte short of scrypt-ts's getStateScript, so the covenant's
+// hashOutputs assert failed and this was rejected at PC 2989 ("top stack must be truthy").
+{
+  const s = assembleSell(opPriv, { startSold: 2n, delta: 2n });
+  check('assembled sell to newSold=0 successor matches getStateScript', s.nextHex === String((pool(0n) as any).getStateScript()));
+  const chk = validateAssembledCovenantInput(s.rawTx, { scriptHex: s.curHex, satoshis: s.reserveBefore }, 0);
+  check('assembled sell that lands on newSold=0 VALIDATES (was PC-2989 reject)', chk.ok, chk.error ?? '');
+}
+
+// BUY across the 1-byte -> 2-byte state boundary (sold 127 -> 128): the shared
+// poolScriptForSold successor primitive must stay byte-correct as `sold` grows an extra
+// value byte. Proves the sold=0 fix did not disturb the length-transition handling.
+{
+  const cur = pool(127n);
+  const delta = 1n;
+  const reserveBefore = 546 + Number(curveCost(0n, 127n));
+  const newReserve = reserveBefore + Number(curveCost(127n, delta));
+  const curHex = cur.lockingScript.toHex();
+  const nextHex = poolScriptForSold(curHex, 128n);
+  check('buy 127->128 successor matches getStateScript', nextHex === String((pool(128n) as any).getStateScript()));
+  const tx = new B.Transaction();
+  tx.addInput(new B.Transaction.Input({ prevTxId: TXID, outputIndex: 0, script: new B.Script() }), B.Script.fromHex(curHex), reserveBefore);
+  tx.addInput(new B.Transaction.Input({ prevTxId: 'b'.repeat(64), outputIndex: 0, script: new B.Script() }), B.Script.fromHex(payoutScriptHex), newReserve);
+  tx.addOutput(new B.Transaction.Output({ script: B.Script.fromHex(nextHex), satoshis: newReserve }));
+  const preimage = B.Transaction.sighash.sighashPreimage(tx, 0xc3, 0, B.Script.fromHex(curHex), new B.crypto.BN(reserveBefore));
+  const unlockHex = encodeBuyUnlockingHex(delta, newReserve, Array.from(preimage) as number[]) + '00';
+  tx.inputs[0].setScript(B.Script.fromHex(unlockHex));
+  const chk = validateAssembledCovenantInput(tx.toString(), { scriptHex: curHex, satoshis: reserveBefore }, 0);
+  check('assembled buy across 127->128 validates', chk.ok, chk.error ?? '');
 }
 
 // FIX 2 tests use async (provenanceWalk) — CommonJS forbids top-level await, so wrap them

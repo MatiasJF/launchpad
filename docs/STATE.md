@@ -1,6 +1,20 @@
 # Project State
 
-_Last updated: 2026-07-31 — by: ADR-028 Step 3 FINAL (replay + full-provenance B2G CLOSED; FIX-3 payee-bind REVERTED → honest operator-trust)_
+_Last updated: 2026-08-04 — by: poolScriptForSold sold=0 / state-int length-boundary fix (money-critical: sell-to-zero was bricked)_
+
+## Latest fix (2026-08-04) — poolScriptForSold sold=0 bug (money-critical)
+
+`poolScriptForSold` (the scrypt-ts-free successor byte-patch, shared by BUY and SELL) encoded the
+`sold` @state bigint with the minimal ScriptNum encoder, so `sold=0` became an EMPTY push. But
+scrypt-ts's own `getStateScript()` encodes `sold=0` as a single-byte `0x00` push (`01 00`) — so the
+byte-patched successor for `sold=0` was 1 byte short, its 4-byte `le4` body-length field differed,
+and the covenant's `hashOutputs` assert failed. Any full SELL landing on `newSold=0` was rejected at
+PC 2989 ("top stack element must be truthy"). Fixed with a dedicated `stateInt()` encoder in
+`packages/curve/src/curvePool.ts` (0 → `[0x00]`, all nonzero unchanged = identical to scrypt for
+1..1000, incl. the 127→128 / 255→256 sign-byte transitions). `scriptNum` (used by the MINIMALDATA
+unlocking-arg pushes, where 0 must stay OP_0) is untouched. Buys are unaffected (proven: buy
+127→128 assembled-validates). verify-stas now **33/33** (was 17): +12 byte-match asserts for sold ∈
+{0,1,2,16,127,128,129,255,256,257,999,1000}, +2 sell-to-zero (sold=2→0 VALIDATES), +2 buy 127→128.
 
 ## Current phase
 

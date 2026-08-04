@@ -36,6 +36,21 @@ function scriptNum(n: bigint): number[] {
   return out;
 }
 
+/**
+ * scrypt-ts @state bigint serialization. Identical to `scriptNum` (minimal LE +
+ * positive sign byte) for every value EXCEPT 0: scrypt-ts's `getStateScript()`
+ * encodes `sold=0` as a single-byte push of `0x00` (`01 00`), NOT an empty push.
+ * `scriptNum(0n)` returns `[]` (correct for MINIMALDATA unlocking args, wrong for
+ * the covenant state region), so the state region needs its own zero case — else
+ * the successor script for sold=0 is 1 byte short, its `le4` body-length differs,
+ * and the covenant's `hashOutputs` assert fails (a full sell landing on sold=0 is
+ * rejected). Verified byte-for-byte against getStateScript for sold ∈ {0..1000}.
+ */
+function stateInt(n: bigint): number[] {
+  if (n === 0n) return [0x00];
+  return scriptNum(n);
+}
+
 function push(bytes: number[]): number[] {
   const L = bytes.length;
   if (L === 0) return [0x00]; // OP_0 (empty pushdata)
@@ -91,8 +106,8 @@ export function poolCodePart(currentScriptHex: string): string {
 /** Build the successor pool locking script for `newSold` from the current script. */
 export function poolScriptForSold(currentScriptHex: string, newSold: bigint): string {
   const codePart = poolCodePart(currentScriptHex);
-  const sn = scriptNum(newSold); // minimal LE, sign-padded — matches scrypt @state int
-  const body = [0x00, sn.length, ...sn]; // flag 0x00 + push(scriptNum(sold))
+  const sn = stateInt(newSold); // scrypt @state int: minimal LE, sign-padded, 0 -> [0x00]
+  const body = [0x00, sn.length, ...sn]; // flag 0x00 + push(stateInt(sold))
   const len = body.length;
   const le4 = [len & 0xff, (len >> 8) & 0xff, (len >> 16) & 0xff, (len >> 24) & 0xff];
   const region = [0x6a, ...body, ...le4, 0x00];
