@@ -1,6 +1,28 @@
 # Project State
 
-_Last updated: 2026-08-04 — by: operator moved OFF @bsv/wallet-toolbox onto a flat-key + WoC fee path for all trade txs (money-critical: toolbox custody corrupted under unconfirmed-chain trade load)_
+_Last updated: 2026-08-04 — by: e2e-stas harness is now FULLY flat-key (toolbox-free) for testing — a FlatKeyWallet shim drives every wallet role over WoC; DEPLOY→MINT→BUY→DELIVER proven on mainnet_
+
+## Latest change (2026-08-04e) — e2e-stas harness fully flat-key / toolbox-free (testing)
+
+The self-driving harness (`apps/web/scripts/e2e-stas.mjs`) no longer touches `@bsv/wallet-toolbox` AT ALL.
+Reason: the toolbox storage corrupts under this workload ("merged Beef failed validation" once it holds a
+chain of unconfirmed txs) — it broke both the operator toolbox and BSV Desktop. New shim
+`apps/web/scripts/lib/flat-key-wallet.mjs` (`FlatKeyWallet`) implements a minimal `@bsv/sdk` `WalletInterface`
+from the operator flat key + WhatsOnChain: crypto (getPublicKey / createSignature / createHmac-for-createNonce /
+verifyHmac / encrypt / decrypt) is inherited from `@bsv/sdk` `ProtoWallet` over a `KeyDeriver` (the SAME
+BRC-42/BRC-29 derivations the toolbox did); `createAction` funds the requested outputs from the operator BASE
+UTXOs (`selectOperatorFeeInputs`), signs P2PKH with the flat key (`signOperatorP2pkhInput`, SIGHASH_ALL|FORKID),
+appends change back to base, builds the atomic ancestry BEEF, and broadcasts the chain parents-first
+(`broadcastBeefChain`), returning `{ txid, tx: atomicBEEF }`; `listOutputs` returns the base UTXOs;
+`internalizeAction`/getNetwork/getHeight/getVersion/isAuthenticated are trivial. All non-operator harness roles
+(admin deploy+mint, buyer payment, seller STAS return) now run through this shim — production still uses real
+user/admin wallets; the shim is TEST-ONLY and the operator key stays local to `apps/web/scripts` (never imported
+into packages). No production covenant/assembly/server-action logic changed. Green: web/bsv/curve typecheck, web
+build, verify-stas 33/33. **Mainnet proof:** two runs each broadcast DEPLOY→MINT→BUY→DELIVER live (8 txs total);
+SELL's funding createAction also broadcast. Remaining: a full green round-trip needs a shallow mempool chain —
+running the harness twice back-to-back stacked both runs' unconfirmed txs into one >25-deep chain, so SELL's STAS
+return hit the node's `too-long-mempool-chain` limit (an environment limit, not a shim/covenant bug). Run ONCE
+from a confirmed base (or wait for the mempool to confirm between runs) to land the full round-trip.
 
 ## Latest fix (2026-08-04d) — operator OFF wallet-toolbox → flat-key + WoC fee path (money-critical, ADR-028)
 

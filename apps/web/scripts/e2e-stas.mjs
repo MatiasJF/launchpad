@@ -16,18 +16,20 @@
  * helpers directly. It does NOT touch Prisma or the 'use server' server actions — it
  * replicates the guts of deliverStasToBuyer / finalizeStasSell inline (minus the DB).
  *
- * OPERATOR FEE PATH (ADR-028 revised): the money-critical DELIVER + REFUND fees come from
- * the operator's flat-key BASE-address UTXOs via WhatsOnChain (selectOperatorFeeInputs +
- * broadcastBeefChain) — NO @bsv/wallet-toolbox. The toolbox wallet remains ONLY as the
- * stand-in for the NON-operator wallet roles the harness must also play: admin MINT
- * funding (issueStasGenesis), the BUYER payment (buildStasBuyTx), and the SELLER STAS
- * return (transferStas) — in production those are real user/admin wallets, never operator
- * trade fees. `operatorBaseBalance` (WoC sum of the base-address UTXOs) is logged at
- * start/end so a run shows the flat-key fee spend.
+ * FULLY FLAT-KEY (toolbox-free): EVERY wallet role is funded by the operator flat key over
+ * WhatsOnChain — no @bsv/wallet-toolbox anywhere. The money-critical DELIVER + REFUND fees
+ * come from the operator BASE-address UTXOs (selectOperatorFeeInputs + broadcastBeefChain),
+ * AND the NON-operator wallet roles the harness plays — admin MINT funding (issueStasGenesis),
+ * the BUYER payment (buildStasBuyTx), the SELLER STAS return (transferStas) — now run through
+ * a minimal `FlatKeyWallet` WalletInterface shim (scripts/lib/flat-key-wallet.mjs): ProtoWallet
+ * crypto over a KeyDeriver, and a `createAction` that funds+signs+broadcasts from the same base
+ * UTXOs. In production those roles are real user/admin wallets; here they share the operator
+ * flat key purely to test without the toolbox, which corrupts under this workload ("merged Beef
+ * failed validation"). `operatorBaseBalance` (WoC sum of the base UTXOs) is logged start/end.
  *
  * REUSE (one implementation, no forks):
- *   • operator custody wallet  → ../lib/operator-toolbox.ts   (makeOperatorWallet — pure;
- *                                 admin/buyer/seller roles only, NOT operator trade fees)
+ *   • flat-key wallet shim     → ./lib/flat-key-wallet.mjs     (FlatKeyWallet — ProtoWallet
+ *                                 crypto + base-UTXO createAction; admin/buyer/seller roles)
  *   • genesis reserve covenant → packages/curve/service CLI    (stas-genesis, same as stas-service.ts)
  *   • assembly                 → @launchpad/curve              (buildStasBuyTx, buildStasSellRefundTx, curveCost)
  *   •                          → @launchpad/bsv                (issueStasGenesis, operatorDeliverStas, transferStas)
@@ -46,7 +48,7 @@ import { execFileSync } from 'node:child_process';
 
 import { KeyDeriver, PrivateKey, PublicKey, Transaction } from '@bsv/sdk';
 
-import { makeOperatorWallet, walletBalanceSats } from '../lib/operator-toolbox.ts';
+import { FlatKeyWallet, flatKeyBalanceSats } from './lib/flat-key-wallet.mjs';
 import { curveCost, buildStasBuyTx, buildStasSellRefundTx } from '@launchpad/curve';
 import { issueStasGenesis } from '@launchpad/bsv/genesis';
 import { operatorDeliverStas, transferStas } from '@launchpad/bsv/settle';
@@ -224,21 +226,31 @@ async function main() {
   kv('vault (mint→)', `hash160(operator pub) = ${op.pkh}`);
   kv('run slug', slug);
 
-  // Operator custody wallet (toolbox) — funds/broadcasts + plays buyer & seller.
-  const wallet = await makeOperatorWallet(keyHex);
+  // Flat-key wallet shim (NO toolbox) — funds/broadcasts every non-operator role
+  // (admin deploy+mint, buyer payment, seller STAS return) from the operator BASE
+  // UTXOs over WoC, exactly like the operator delivery/refund fee path.
+  const wallet = new FlatKeyWallet(keyHex, {
+    chain: CHAIN,
+    basePkh: op.pkh,
+    baseAddress: op.address,
+    operatorPubHex: op.pubHex,
+    fetchUtxos: () => getOperatorBaseUtxos(op.address),
+    fetchBeef: getSourceBeefDeep,
+    broadcastChain: broadcastBeefChain,
+  });
   const identityKey = new KeyDeriver(new PrivateKey(keyHex, 'hex')).identityKey;
 
-  const startBal = await walletBalanceSats(wallet);
+  const startBal = await flatKeyBalanceSats(wallet);
   const startBaseBal = await operatorBaseBalance(op.address);
-  kv('operator sats', `${startBal} (toolbox, start)`);
-  kv('operator base', `${startBaseBal} sats @ ${op.address} (flat-key fee source, start)`);
+  kv('operator sats', `${startBal} (flat-key base UTXOs, start)`);
+  kv('operator base', `${startBaseBal} sats @ ${op.address} (flat-key funding source, start)`);
   if (startBaseBal <= 0) {
-    log(`⚠️  operator BASE address holds 0 sats — DELIVER/REFUND (flat-key fees) will fail until it is funded (send sats to ${op.address}).`);
+    log(`⚠️  operator BASE address holds 0 sats — EVERY step (all flat-key funded) will fail until it is funded (send sats to ${op.address}).`);
   }
   if (startBal < MIN_OPERATOR_SATS) {
     throw new Error(
-      `operator balance ${startBal} sats is below ~${MIN_OPERATOR_SATS} needed for a run — ` +
-      `FUND THE OPERATOR (npx fund-metanet to ${op.address} / store-us-1.bsvb.tech) and retry.`,
+      `operator base balance ${startBal} sats is below ~${MIN_OPERATOR_SATS} needed for a run — ` +
+      `FUND THE OPERATOR BASE ADDRESS ${op.address} (real mainnet sats over WoC) and retry.`,
     );
   }
 
@@ -269,10 +281,10 @@ async function main() {
         options: { randomizeOutputs: false, acceptDelayedBroadcast: false },
       }, ORIGINATOR);
     } catch (e) {
-      // createAction runs inside the operator TOOLBOX custody wallet (store-us-1.bsvb.tech).
-      // A "merged Beef failed validation" here is the STORAGE server rejecting the action
-      // (stale/dead unconfirmed-chain BEEF in the wallet), NOT a covenant/assembly fault —
-      // capture the full underlying stack so its origin (StorageClient.rpcCall) is visible.
+      // createAction now runs inside the flat-key shim (FlatKeyWallet): it funds the
+      // covenant output from the operator BASE UTXOs over WoC, signs P2PKH with the flat
+      // key, and broadcasts the chain. A throw here is a funding/selection/broadcast fault
+      // (e.g. base address out of sats, or WoC lag on a just-spent UTXO) — capture the stack.
       throw fail(`deploy createAction threw: ${e instanceof Error ? e.message : String(e)}`, {
         underlyingStack: e instanceof Error ? e.stack : String(e),
         covenantHex,
@@ -536,7 +548,7 @@ async function main() {
     kv('tx', wocTx(state.refundTxid));
   });
 
-  const endBal = await walletBalanceSats(wallet);
+  const endBal = await flatKeyBalanceSats(wallet);
   const endBaseBal = await operatorBaseBalance(op.address);
   return { startBal, endBal, startBaseBal, endBaseBal, baseAddress: op.address, state };
 }
@@ -567,8 +579,8 @@ hr('█');
 for (const s of steps) console.log(`  ${s.ok ? '✅' : '❌'} ${s.name}${s.ok ? '' : `  — ${s.error}`}`);
 if (result) {
   hr();
-  kv('operator sats', `${result.startBal} → ${result.endBal} (Δ ${result.endBal - result.startBal}) [toolbox: admin/buyer/seller roles]`);
-  kv('operator base', `${result.startBaseBal} → ${result.endBaseBal} (Δ ${result.endBaseBal - result.startBaseBal}) [flat-key fee spend @ ${result.baseAddress}]`);
+  kv('operator sats', `${result.startBal} → ${result.endBal} (Δ ${result.endBal - result.startBal}) [flat-key base UTXOs]`);
+  kv('operator base', `${result.startBaseBal} → ${result.endBaseBal} (Δ ${result.endBaseBal - result.startBaseBal}) [flat-key spend @ ${result.baseAddress}]`);
   console.log('\n  txids:');
   for (const [k, v] of Object.entries(result.state)) {
     if (typeof v === 'string' && /^[0-9a-fA-F]{64}$/.test(v)) console.log(`    ${k.padEnd(14)} ${wocTx(v)}`);
