@@ -7,7 +7,6 @@ import fs from 'node:fs';
 import { KeyDeriver, PrivateKey } from '@bsv/sdk';
 import { Wallet, WalletStorageManager, WalletSigner, Services, StorageClient } from '@bsv/wallet-toolbox';
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // match fund-metanet's storage handshake
 
 const ENV_PATH = new URL('../.env', import.meta.url);
 const txt = fs.existsSync(ENV_PATH) ? fs.readFileSync(ENV_PATH, 'utf8') : '';

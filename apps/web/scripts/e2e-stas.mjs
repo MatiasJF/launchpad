@@ -51,7 +51,6 @@ import {
   isOutputUnspent,
 } from '../lib/settle-actions.ts';
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // match the operator storage handshake
 
 // ── curve params (a TINY demo pool so a full mainnet round-trip is cheap) ──────
 const K = 1n;

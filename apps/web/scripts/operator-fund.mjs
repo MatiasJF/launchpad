@@ -13,7 +13,6 @@ import fs from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { WalletClient, PrivateKey, PublicKey, P2PKH, Transaction, KeyDeriver } from '@bsv/sdk';
 import { Wallet, WalletStorageManager, WalletSigner, Services, StorageClient } from '@bsv/wallet-toolbox';
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const CHAIN = 'main';
 const STORAGE_URL = 'https://store-us-1.bsvb.tech';

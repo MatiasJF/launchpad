@@ -7,7 +7,6 @@
 // Read-only unless you pass `abort`:   node scripts/wallet-clean.mjs         (inspect only)
 //                                      node scripts/wallet-clean.mjs abort   (also abort dead actions)
 import { WalletClient } from '@bsv/sdk';
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const DO_ABORT = process.argv.includes('abort');
 const CHAIN = 'main';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
