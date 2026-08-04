@@ -673,3 +673,68 @@ export async function finalizeStasSell(input: { orderId: string }): Promise<{ ok
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 3b · RECOVERY (ADR-028). A sell whose TX1 (STAS return) landed but whose TX2
+// (operator refund) failed mid-flow leaves a `curve_sell` Order stuck `pending`/`settling`
+// with `paymentTxid`+`sellReturnOutpoint` set (STAS already back in the vault) but NO
+// `refundTxid`. Re-clicking Sell would try to return STAS the seller no longer holds, so
+// there is a dedicated retry: list the stuck orders, then delegate to the EXISTING
+// idempotent `finalizeStasSell` (which claims pending→settling, re-verifies unspent + B2G,
+// and refuses to double-refund). Seller-scoped — a seller can only complete their own order.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * List a seller's stuck sell orders: `curve_sell` orders in `pending`/`settling` with the
+ * STAS already returned (`sellReturnOutpoint`+`paymentTxid` set) but NOT yet refunded
+ * (`refundTxid` null). These are the orders `completePendingStasSell` can finish. Returns
+ * minimal display info only.
+ */
+export async function getPendingStasSells(saleId: string, sellerIdentity: string): Promise<
+  { ok: true; orders: { orderId: string; tokens: number; paymentTxid: string }[] } | { ok: false; error: string }
+> {
+  try {
+    if (!sellerIdentity) return { ok: false, error: 'sellerIdentity required' };
+    const rows = await prisma.order.findMany({
+      where: {
+        saleId,
+        buyerIdentity: sellerIdentity, // seller-scoped (buyerIdentity === sellerIdentity for curve_sell)
+        kind: 'curve_sell',
+        state: { in: ['pending', 'settling'] },
+        refundTxid: null,
+        sellReturnOutpoint: { not: null },
+        paymentTxid: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return {
+      ok: true,
+      orders: rows.map((o) => ({ orderId: o.id, tokens: Number(o.tokens), paymentTxid: o.paymentTxid as string })),
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Re-trigger the operator refund for a seller's stuck sell order. Guards seller ownership
+ * (buyerIdentity === sellerIdentity) + that the order is a pending/settling `curve_sell`
+ * with the STAS returned and no refund yet, then DELEGATES to the existing idempotent
+ * `finalizeStasSell` — no finalize logic is duplicated here. Owner/seller-scoped.
+ */
+export async function completePendingStasSell(input: { orderId: string; sellerIdentity: string }): Promise<{ ok: boolean; txid?: string; error?: string }> {
+  try {
+    if (!input.sellerIdentity) return { ok: false, error: 'sellerIdentity required' };
+    const order = await prisma.order.findUnique({ where: { id: input.orderId } });
+    if (!order || order.kind !== 'curve_sell') return { ok: false, error: 'order not found or not a curve sell' };
+    if (order.buyerIdentity !== input.sellerIdentity) return { ok: false, error: 'not your order' };
+    if (order.refundTxid) return { ok: true, txid: order.refundTxid }; // already refunded (idempotent)
+    if (!(order.state === 'pending' || order.state === 'settling')) return { ok: false, error: `order not completable (state ${order.state})` };
+    if (!order.sellReturnOutpoint || !order.paymentTxid) return { ok: false, error: 'order has no returned STAS to refund against' };
+    // Delegate to the existing idempotent refund (claims pending→settling, re-verifies
+    // unspent + full-provenance B2G, advances the pool, stamps refundTxid).
+    return await finalizeStasSell({ orderId: order.id });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}

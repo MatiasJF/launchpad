@@ -218,6 +218,20 @@ STUCK delivery/refund — if `deliverStasToBuyer` or `finalizeStasSell` fails af
 returned STAS, recovery needs an operator re-invoke by orderId (re-clicking Buy/Sell would re-pay / can't
 re-return since the source is spent); (b) sell needs ONE holding `>=delta` (no cross-UTXO aggregation);
 (c) 200-sat default fee is thin; (d) buy delivery is at-least-once (step-2 note: per-delivery idempotency key).
+**STUCK-REFUND RECOVERY — ✅ DONE (2026-08-04):** closes follow-up (a) for the SELL side — a
+`curve_sell` order left `pending`/`settling` with the STAS returned (`sellReturnOutpoint`+`paymentTxid`
+set) but no `refundTxid` (e.g. `finalizeStasSell` failed mid-flow on the old sell-to-zero bug) now has a
+UI retry, so re-clicking Sell (which would try to return already-spent STAS) is no longer the only path.
+**New server actions (`stas-actions.ts`):** `getPendingStasSells(saleId, sellerIdentity)` (lists the
+seller's stuck sells — orderId/tokens/paymentTxid; seller-scoped via `buyerIdentity===sellerIdentity`)
+and `completePendingStasSell({orderId, sellerIdentity})` (guards seller ownership + pending/settling +
+STAS-returned + no-refund, then **delegates to the existing idempotent `finalizeStasSell`** — no finalize
+logic duplicated; finalize's own `refundTxid`-short-circuit + `pending→settling` claim keep it safe against
+double-broadcast). **UI (`StasTradeCard.tsx`):** `refresh()` queries `getPendingStasSells`; the Sell tab
+renders a warning notice per stuck order ("You returned N tokens but the refund didn't complete") with a
+"Complete refund" button → `completePendingStasSell` → surfaces the refund txid (WhatsOnChain link) or the
+error, then refreshes. Thin shell (action delegates; component orchestrates); no auto-broadcast at import.
+Green: web typecheck, web build (backend/`packages/curve` untouched).
 **Deferred: the live mainnet round-trip itself** (needs the running operator wallet + a funded BSV
 Desktop; the user runs it).
 **Deferred: all UI.** See ADR-028 Step-2/Step-3 updates.
