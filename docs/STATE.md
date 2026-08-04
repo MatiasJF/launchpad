@@ -114,6 +114,38 @@ successor `340e1f00:0` @ 546 sats sold=0 + 3-sat refund to the seller `1J5oRN9m�
 sell hit the `poolScriptForSold` sold=0 bug (below), which was fixed + the stuck sell recovered via
 the new "Complete refund" control; the sell-to-zero successor now validates on the real network.
 
+## ✅✅ FULL SELF-DRIVING ROUND-TRIP PROVEN ON MAINNET (2026-08-04) — deploy→mint→buy→deliver→sell→refund
+
+The complete Option-B two-way STAS bonding curve ran end-to-end on BSV mainnet, fully automated by
+the operator flat key over WhatsOnChain — NO wallet-toolbox, NO BSV Desktop, NO human signing (the
+`e2e-stas` harness + `FlatKeyWallet` shim play every role from the operator's base UTXOs at `1D86…`).
+Run txids: mint `34e2d40b`, delivery `fe149176` (verified valid STAS: 1→buyer, 2→vault change, BSV
+change→base), return `f7165b98`, refund `caf36b55`; back-to-genesis returned `authentic:true`.
+
+This closed the whole cascade of live-test failures — each a real fix (all committed):
+- **Operator OFF wallet-toolbox** (b5f96b3): the toolbox storage corrupts under trade load
+  ("merged Beef failed validation" once it holds an unconfirmed chain — it broke the operator AND
+  the user's BSV Desktop, repeatedly). Operator delivery/refund fees now come from flat-key base
+  UTXOs via WoC (`operatorBaseFunding` + `getOperatorBaseUtxos` + `broadcastBeefChain`).
+- **Covenant fee underpayment** (1d84351): fees were sized at 34 B/output, ignoring the ~3.5 KB
+  covenant output → ~40 sats on a ~3.7 KB tx (0.011 sat/byte) → mempool-EVICTED. Now sized from
+  ACTUAL tx bytes at 0.1 sat/byte (covenant txs pay ~370+ sats and CONFIRM).
+- **Deep-chain UTXO selection** (a2b90ca + f62ecc8): `getOperatorBaseUtxos` now skips base UTXOs
+  whose unconfirmed ancestry is deep (throttled/retried/fail-closed WoC walk) so a run doesn't
+  build past the node's 25-ancestor mempool limit; picks the clean/confirmed base.
+- **WoC indexing-lag retries** (b57c76f delivery vault resolve; 31f43a0 back-to-genesis): a step
+  can fire seconds after its dependency tx broadcasts, before WoC indexes it → transient "fetch
+  gap". Both now retry with backoff. Back-to-genesis stays FAIL-CLOSED (a counterfeit never starts
+  passing by waiting).
+- (earlier this day) unconfirmed-safe delivery BEEF `getSourceBeefDeep` (f35206d), buy-side
+  "Complete delivery" recovery, getOutputScriptHex JSON fallback (14b89b6), poolScriptForSold
+  sold=0 fix (b84f37a).
+
+**Operator funding model (current): flat key + WoC only.** Sats live at the operator BASE address
+`1D86zXnT7hhB7cLYE8NxAd2WZeXqnEcpxF`; delivery/refund fees + change flow through it, signed by the
+flat key (callback-only, never in packages). Deprecated `operator-toolbox.ts` kept for the ops
+balance script only. FEE_RATE 0.1 sat/byte sized from real bytes.
+
 ## Latest fix (2026-08-04b) — getOutputScriptHex unconfirmed-safe (back-to-genesis over mempool ancestry)
 
 `getOutputScriptHex` used WoC `/tx/{txid}/out/{vout}/hex`, which only serves CONFIRMED txs — so the back-to-genesis provenance walk (and vault resolution) FAILED with "provenance unverifiable (fetch gap)" whenever a returned token's ancestry ran through an UNCONFIRMED operator delivery (the common case: buy then immediately sell). Added a fallback to the `/tx/{txid}` JSON endpoint (returns mempool txs + the same `scriptPubKey.hex`) so the walk works over unconfirmed ancestry. Same bytes, not a weaker check — a counterfeit still fails to reach the operator's issuance. Sell-after-buy now verifies.
