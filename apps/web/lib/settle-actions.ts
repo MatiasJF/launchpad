@@ -289,7 +289,49 @@ export async function getOperatorBaseUtxos(
     const s = await isOutputUnspent(u.txid, u.vout);
     if (s.unspent !== false) live.push(u); // keep true + unverifiable (broadcast is the backstop)
   }
-  return live;
+  // Prefer UTXOs whose unconfirmed ancestry is SHALLOW. A base UTXO sitting on a deep
+  // unconfirmed chain (e.g. a leftover from a prior stuck/underfeed run) would push a new
+  // run's ~10 txs past the node's 25-ancestor mempool limit → "too-long-mempool-chain".
+  // Keep only UTXOs with ≤ 10 unconfirmed ancestors (confirmed = 0), leaving headroom.
+  const shallow: { txid: string; vout: number; satoshis: number }[] = [];
+  for (const u of live) {
+    const depth = await unconfirmedAncestorCount(u.txid, 12);
+    if (depth <= 10) shallow.push(u);
+  }
+  return shallow.length ? shallow : live; // fall back to live if all are deep (broadcast backstops)
+}
+
+/**
+ * Count distinct UNCONFIRMED ancestor txs of `txid` (bounded by `cap`), stopping each
+ * branch at the first confirmed tx. Used to avoid selecting a base fee UTXO whose deep
+ * unconfirmed chain would blow the node's 25-ancestor mempool limit. A confirmed txid → 0.
+ */
+async function unconfirmedAncestorCount(txid: string, cap: number): Promise<number> {
+  const seen = new Set<string>();
+  let frontier = [txid];
+  while (frontier.length > 0 && seen.size <= cap) {
+    const next: string[] = [];
+    for (const t of frontier) {
+      if (seen.has(t) || !/^[0-9a-f]{64}$/.test(t)) continue;
+      let confirmed = false;
+      let vin: { txid: string }[] = [];
+      try {
+        const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/hash/${t}`, { cache: 'no-store' });
+        if (res.ok) {
+          const d = (await res.json()) as { confirmations?: number; blockheight?: number; vin?: { txid?: string }[] };
+          confirmed = (d.confirmations ?? 0) > 0 || !!d.blockheight;
+          vin = (d.vin ?? []).filter((v) => typeof v.txid === 'string').map((v) => ({ txid: v.txid as string }));
+        }
+      } catch {
+        /* unknown — treat as an unconfirmed leaf (counted, no further walk) */
+      }
+      if (confirmed) continue; // confirmed boundary — do not count, stop this branch
+      seen.add(t);
+      for (const v of vin) next.push(v.txid);
+    }
+    frontier = next;
+  }
+  return seen.size;
 }
 
 /**
