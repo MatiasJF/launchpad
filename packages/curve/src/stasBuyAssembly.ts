@@ -32,7 +32,7 @@ import type { WalletInterface } from '@bsv/sdk';
 import { Transaction } from '@bsv/sdk';
 import { signP2pkhInput } from '@launchpad/bsv/settle/p2pkh';
 import { createTokenFundingOutput } from '@launchpad/bsv/settle/funding';
-import { curveCost, poolScriptForSold, encodeBuyUnlockingHex } from './curvePool';
+import { curveCost, poolScriptForSold, encodeBuyUnlockingHex, sizeCovenantTx, covenantFeeSats } from './curvePool';
 import { validateAssembledCovenantInput } from './covenant';
 
 const SIGHASH_POOL = 0xc3; // ANYONECANPAY | SINGLE | FORKID
@@ -61,7 +61,13 @@ export interface StasBuyArgs {
   chain: 'main' | 'test';
   pool: StasPoolState;
   delta: number; // tokens to buy
-  feeSats?: number; // miner fee to size the payment input for (default 200)
+  /**
+   * Optional miner-fee FLOOR (sats). The buyer's payment is sized to `cost + fee`,
+   * where `fee` is computed from the ACTUAL TX-A byte size (covenant input preimage
+   * + ~3.5 KB covenant output). If this is passed, it acts only as a lower bound —
+   * TX-A is NEVER funded below the real size-based fee (else it underpays + evicts).
+   */
+  feeSats?: number;
   originator?: string;
 }
 
@@ -85,7 +91,7 @@ export type StasBuyResult =
  * returning; nothing is broadcast.
  */
 export async function buildStasBuyTx(args: StasBuyArgs): Promise<StasBuyResult> {
-  const { wallet, chain, pool, delta, feeSats = 200, originator = ORIGINATOR } = args;
+  const { wallet, chain, pool, delta, feeSats, originator = ORIGINATOR } = args;
 
   try {
     if (!Number.isInteger(delta) || delta <= 0) return { ok: false, reason: 'delta must be a positive integer' };
@@ -96,18 +102,43 @@ export async function buildStasBuyTx(args: StasBuyArgs): Promise<StasBuyResult> 
     const nextSold = pool.sold + delta;
     const nextScriptHex = poolScriptForSold(pool.scriptHex, BigInt(nextSold));
 
+    const bsv = await loadBsv();
+    const poolScript = bsv.Script.fromHex(pool.scriptHex);
+    const reserveBN = new bsv.crypto.BN(pool.reserveSats);
+
+    // ── FEE SIZING (money-critical) ──────────────────────────────────────────────
+    // The pool unlock is 0xc3 (ANYONECANPAY|SINGLE): the preimage depends ONLY on
+    // this input's outpoint + output 0, so it is IDENTICAL whether or not the buyer
+    // input is present. We can therefore build the real pool unlock on a sizing tx
+    // (pool input + output 0 only) and size TX-A's fee from the ACTUAL bytes — the
+    // covenant input's preimage (~3.5 KB scriptCode) + the ~3.5 KB covenant output —
+    // BEFORE funding the buyer payment. Sizing at a flat 34 B/output underpaid this
+    // ~7 KB tx to ~40 sats → evicted. TX-A has NO change output, so the fee equals
+    // exactly (funding − cost); we must fund `cost + fee` where fee ≥ real size.
+    const sizingTx = new bsv.Transaction();
+    sizingTx.addInput(
+      new bsv.Transaction.Input({ prevTxId: pool.txid, outputIndex: pool.vout, script: new bsv.Script() }),
+      poolScript,
+      pool.reserveSats,
+    );
+    sizingTx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(nextScriptHex), satoshis: newReserve }));
+    const sizingPreimage: Buffer = bsv.Transaction.sighash.sighashPreimage(sizingTx, SIGHASH_POOL, 0, poolScript, reserveBN);
+    const unlockHex = encodeBuyUnlockingHex(BigInt(delta), newReserve, Array.from(sizingPreimage) as number[]) + BUY_SELECTOR_HEX;
+    const estSize = sizeCovenantTx(unlockHex.length / 2, [nextScriptHex.length / 2], 1 /* buyer P2PKH input */);
+    const sizedFee = covenantFeeSats(estSize); // 0.1 sat/byte, floored
+    const fee = Math.max(sizedFee, feeSats ?? 0); // caller `feeSats` is a floor only
+
     // TX1 — buyer funds an exact payment input: cost goes into the pool reserve,
-    // plus the miner fee. No receipt dust (STAS delivery is TX-B). Non-custodial.
-    const payNeeded = cost + feeSats;
+    // plus the size-based miner fee. No receipt dust (STAS delivery is TX-B). Non-custodial.
+    const payNeeded = cost + fee;
     const funding = await createTokenFundingOutput({ wallet, chain, satoshis: payNeeded, originator, description: 'stas reserve buy payment' });
 
     // TX2 — the reserve buy.
-    const bsv = await loadBsv();
     const tx = new bsv.Transaction();
     // input 0: pool covenant
     tx.addInput(
       new bsv.Transaction.Input({ prevTxId: pool.txid, outputIndex: pool.vout, script: new bsv.Script() }),
-      bsv.Script.fromHex(pool.scriptHex),
+      poolScript,
       pool.reserveSats,
     );
     // input 1: buyer payment
@@ -121,13 +152,13 @@ export async function buildStasBuyTx(args: StasBuyArgs): Promise<StasBuyResult> 
     tx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(nextScriptHex), satoshis: newReserve }));
 
     // pool input unlock: push (delta, newReserve, preimage) then the buy selector.
-    // Preimage is 0xc3 over this tx — under ANYONECANPAY|SINGLE it depends only on
-    // output 0, so it is independent of the buyer input we just added.
-    const poolScript = bsv.Script.fromHex(pool.scriptHex);
-    const reserveBN = new bsv.crypto.BN(pool.reserveSats);
+    // Recompute the preimage over the REAL tx (identical bytes — 0xc3 is independent
+    // of the buyer input) and assert it matches the sized unlock, so the fee we
+    // funded provably covers the exact tx we broadcast.
     const preimageBuf: Buffer = bsv.Transaction.sighash.sighashPreimage(tx, SIGHASH_POOL, 0, poolScript, reserveBN);
-    const unlockHex = encodeBuyUnlockingHex(BigInt(delta), newReserve, Array.from(preimageBuf) as number[]) + BUY_SELECTOR_HEX;
-    tx.inputs[0].setScript(bsv.Script.fromHex(unlockHex));
+    const realUnlockHex = encodeBuyUnlockingHex(BigInt(delta), newReserve, Array.from(preimageBuf) as number[]) + BUY_SELECTOR_HEX;
+    if (realUnlockHex !== unlockHex) return { ok: false, reason: 'pool preimage drifted between sizing and assembly' };
+    tx.inputs[0].setScript(bsv.Script.fromHex(realUnlockHex));
 
     // buyer input: standard BRC-29 P2PKH signature over ALL (commits the tx).
     const buyerUnlock = await signP2pkhInput({

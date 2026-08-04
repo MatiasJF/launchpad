@@ -44,8 +44,10 @@ import {
   p2pkhScriptHexForPkh,
 } from '@launchpad/bsv/settle/base-funding';
 
-const FEE_RATE = 0.05; // sat/byte — matches the two-tx STAS transfer sizing
+const FEE_RATE = 0.1; // sat/byte — covenant-safe (was 0.05; underpaid the 3.5KB deploy tx)
 const MIN_FEE = 40; // sats — miner floor so a tiny tx still relays
+/** Serialized size of one output given its locking-script byte length. */
+const outputBytes = (scriptLen) => 8 + (scriptLen < 0xfd ? 1 : scriptLen <= 0xffff ? 3 : 5) + scriptLen;
 const SIGHASH_ALL_FORKID = 0x41;
 
 let BSV; // bsv-js v1, lazily loaded (same lib the STAS assembly uses)
@@ -143,10 +145,16 @@ export class FlatKeyWallet extends ProtoWallet {
     }
 
     const sumOut = outputs.reduce((s, o) => s + Number(o.satoshis), 0);
-    // Size the fee. Inputs unknown until selection → over-request at the cap so
-    // selection never comes up short; the real fee uses the actual input count.
-    const est = (nIn, nOut) => Math.max(MIN_FEE, Math.ceil((10 + nIn * 148 + nOut * 34) * FEE_RATE));
-    const need = sumOut + est(5, outputs.length + 1) + 1;
+    // Size the fee from the ACTUAL serialized bytes (money-critical): sum each
+    // requested output at its REAL locking-script length — so the ~3.5 KB stas curve
+    // DEPLOY covenant output is counted, not flattened to 34 B — plus a P2PKH change
+    // output, plus N ~148 B P2PKH fee inputs. The old flat 34 B/output priced the
+    // 3.5 KB deploy tx at ~40 sats (0.011 sat/B) → EVICTED. Inputs unknown until
+    // selection → over-request at the cap so selection never comes up short; the real
+    // fee uses the actual input count.
+    const requestedOutBytes = outputs.reduce((s, o) => s + outputBytes(o.lockingScript.length / 2), 0);
+    const est = (nIn) => Math.max(MIN_FEE, Math.ceil((4 + 4 + 3 + nIn * 148 + requestedOutBytes + outputBytes(25)) * FEE_RATE));
+    const need = sumOut + est(5) + 1;
 
     const sel = await selectOperatorFeeInputs({
       basePkh: this.basePkh,
@@ -156,7 +164,7 @@ export class FlatKeyWallet extends ProtoWallet {
     });
     if (!sel.ok) throw new Error(`flat-key createAction funding failed: ${sel.reason}`);
 
-    const fee = est(sel.feeInputs.length, outputs.length + 1);
+    const fee = est(sel.feeInputs.length);
     const change = sel.totalSats - sumOut - fee;
     if (change < 0) {
       throw new Error(`flat-key createAction: selected ${sel.totalSats} sats < outputs ${sumOut} + fee ${fee}`);

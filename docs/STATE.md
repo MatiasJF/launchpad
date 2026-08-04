@@ -1,6 +1,38 @@
 # Project State
 
-_Last updated: 2026-08-04 — by: e2e-stas harness is now FULLY flat-key (toolbox-free) for testing — a FlatKeyWallet shim drives every wallet role over WoC; DEPLOY→MINT→BUY→DELIVER proven on mainnet_
+_Last updated: 2026-08-04 — by: money-critical covenant fee-underpayment fix — every covenant tx now sized from ACTUAL bytes (incl. the ~3.5KB covenant output) at 0.1 sat/byte; mainnet-proven on DEPLOY (0.100 sat/B) + BUY TX-A (0.100 sat/B computed)_
+
+## Latest fix (2026-08-04f) — covenant fee-underpayment (money-critical)
+
+**Symptom:** every covenant-carrying tx (deploy, buy TX-A, sell TX2 refund) paid ~40 sats for a ~3,683-byte tx
+(0.011 sat/byte) and was EVICTED from the mempool — nothing confirmed. **Cause:** the fee estimators sized
+every output at a flat 34 bytes, ignoring the ~3,480-byte covenant OUTPUT script (and, on buy/sell, the
+covenant INPUT preimage that embeds that same ~3.5KB script as scriptCode). A ~7KB covenant tx was priced as
+~200 bytes.
+
+**Fix (fee sizing + funding amounts only — no covenant/security logic touched):** every covenant tx is now
+sized from its ACTUAL serialized bytes at **0.1 sat/byte** (floor `MIN_FEE=40`, which never dominates a large tx).
+- `packages/curve/src/curvePool.ts` — new shared helpers `sizeCovenantTx` / `covenantFeeSats` / `varIntLen` +
+  `CURVE_FEE_RATE=0.1`; size a covenant tx from the real covenant-unlock length + each real output-script length.
+- `packages/curve/src/stasBuyAssembly.ts` — TX-A fee computed from the ACTUAL covenant unlock (0xc3 preimage,
+  independent of the buyer input) + the ~3.5KB successor output BEFORE funding; buyer funds `cost + fee`.
+- `packages/curve/src/stasSellAssembly.ts` — TX2 fee computed from the ACTUAL co-signed unlock (0xc1) + both
+  pinned outputs BEFORE funding TX1; the TX1 funding output (consumed WHOLE as the fee) is sized to it.
+- `packages/bsv/src/settle/operatorBaseFunding.ts` — `FEE_RATE 0.05→0.1` (TX1 split-tx outputs are genuine 34B).
+- `packages/bsv/src/settle/operatorDeliver.ts` — 0.1 + sized from actual STAS output lengths + a safe STAS-input budget.
+- `apps/web/scripts/lib/flat-key-wallet.mjs` — shim `createAction` sizes the fee from each real output-script
+  length (so the ~3.5KB DEPLOY covenant output is counted, not flattened to 34B), 0.1 sat/byte.
+- Also bumped the STAS mint-issue (`issue/genesis.ts`) and STAS-transfer/return (`settle/index.ts`) fee rates
+  0.05→0.1 so every step of the round-trip clears the eviction threshold.
+
+**Mainnet proof (post-fix run):** DEPLOY (3,683-byte covenant tx) paid **369 sats = 0.1002 sat/byte** and
+persists (not evicted) — the exact tx that previously stuck at 0.0109. MINT contract 0.1025 (shim). BUY TX-A
+(7,338 bytes) was correctly sized to **734 sats = 0.1000 sat/byte** but could not RELAY: the operator base
+UTXO descends from a chain of PRE-FIX stuck txs (rooted at a 0.0109 old DEPLOY covenant that consumed the
+confirmed 20k UTXO and will never mine), so BUY hit `too-long-mempool-chain` — an environment clog from the
+OLD bug, not the fee logic. **To land a full green round-trip, the operator base needs a fresh CONFIRMED UTXO**
+(the current one is bricked behind pre-fix stuck txs that cannot be double-spent under BSV first-seen). Green:
+bsv/curve/web typecheck, web build, curve 19 + bsv 2 unit tests, verify-stas 33/33 (offline buy/sell use dummy fees).
 
 ## Latest change (2026-08-04e) — e2e-stas harness fully flat-key / toolbox-free (testing)
 

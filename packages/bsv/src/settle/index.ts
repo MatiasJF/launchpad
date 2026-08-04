@@ -157,11 +157,11 @@ export async function transferStas(
   }
 
   // 7. TX1: funding output sized to TX2's fee.
-  //    FEE_RATE is sat/BYTE. BSV's standard is ~1 sat/KB (0.001 sat/byte); we use
-  //    0.05 sat/byte (= 50 sat/KB) — comfortably above miner min-relay yet ~20×
-  //    cheaper than the old 1 sat/byte, which overpaid by ~1000× (the ~9k charge).
-  //    A miner floor keeps a tiny tx from dropping below relay minimum.
-  const FEE_RATE = 0.05;
+  //    FEE_RATE is sat/BYTE. We use 0.1 sat/byte (= 100 sat/KB) — the covenant-tx
+  //    floor, comfortably above the mempool eviction threshold that was killing the
+  //    underpaid covenant txs (0.011 sat/byte) so the STAS return tx clears on the
+  //    same round-trip. A miner floor keeps a tiny tx from dropping below relay minimum.
+  const FEE_RATE = 0.1;
   const MIN_FEE = 40; // sats — floor so a small tx still relays
   const estTx2Size =
     1600 + // STAS input unlocking (preimage + sig + pubkey) is large

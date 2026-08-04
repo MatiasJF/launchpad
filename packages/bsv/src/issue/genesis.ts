@@ -153,7 +153,9 @@ export async function issueStasGenesis(
 
   // 3. Issue-fee funding (a self BRC-29 P2PKH we can sign). Sized to the issue tx.
   const estIssueSize = 300 + Math.ceil(stasScriptHex.length / 2) + 34 + 40;
-  const issueFee = Math.max(40, Math.ceil(estIssueSize * 0.05));
+  // 0.1 sat/byte (was 0.05) — matches the covenant-tx floor so the mint issue tx
+  // clears the mempool eviction threshold on the same round-trip (money-critical).
+  const issueFee = Math.max(40, Math.ceil(estIssueSize * 0.1));
   const fundingSats = issueFee + 300; // 300 change back to self
   let fund;
   try {

@@ -38,7 +38,7 @@
  */
 import { Transaction } from '@bsv/sdk';
 import { buildOperatorFundingTx, signOperatorP2pkhInput, type OperatorBaseUtxo } from '@launchpad/bsv/settle/base-funding';
-import { curveCost, poolScriptForSold, encodeSellUnlockingHex } from './curvePool';
+import { curveCost, poolScriptForSold, encodeSellUnlockingHex, sizeCovenantTx, covenantFeeSats } from './curvePool';
 import { validateAssembledCovenantInput } from './covenant';
 import type { StasPoolState } from './stasBuyAssembly';
 
@@ -71,7 +71,14 @@ export interface StasSellArgs {
   fetchUtxos: () => Promise<OperatorBaseUtxo[]>;
   /** Fetch a tx's unconfirmed-safe ancestry BEEF (getSourceBeefDeep, app-injected). */
   fetchBeef: (txid: string) => Promise<number[] | null>;
-  feeSats?: number; // miner fee (the funding value is consumed whole; default 200)
+  /**
+   * Optional miner-fee FLOOR (sats). The TX1 funding output (consumed WHOLE as TX2's
+   * fee — the covenant pins exactly two outputs, so TX2 carries no change) is sized to
+   * the ACTUAL TX2 byte size (covenant input preimage + ~3.5 KB covenant output + the
+   * seller refund output). If passed, this is a lower bound only — TX2 is NEVER funded
+   * below the real size-based fee (else it underpays + evicts).
+   */
+  feeSats?: number;
   originator?: string;
 }
 
@@ -98,7 +105,7 @@ export type StasSellResult =
  * covenant input via @bsv/sdk BEFORE returning. Broadcasts nothing.
  */
 export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSellResult> {
-  const { chain, pool, delta, sellerRefundScriptHex, operatorPubHex, basePkh, signCovenant, signFeeDigest, fetchUtxos, fetchBeef, feeSats = 200, originator = ORIGINATOR } = args;
+  const { chain, pool, delta, sellerRefundScriptHex, operatorPubHex, basePkh, signCovenant, signFeeDigest, fetchUtxos, fetchBeef, feeSats, originator = ORIGINATOR } = args;
   void chain;
   void originator;
 
@@ -116,21 +123,50 @@ export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSel
     if (reserveAfter < 1) return { ok: false, reason: `refund ${refund} would drain reserve ${pool.reserveSats} below 1` };
     const nextScriptHex = poolScriptForSold(pool.scriptHex, BigInt(newSold));
 
+    const bsv = await loadBsv();
+    const poolScript = bsv.Script.fromHex(pool.scriptHex);
+    const reserveBN = new bsv.crypto.BN(pool.reserveSats);
+
+    // ── FEE SIZING (money-critical) ──────────────────────────────────────────────
+    // The pool unlock is 0xc1 (ANYONECANPAY|ALL): the preimage commits BOTH outputs
+    // but is INDEPENDENT of the fee input, so we co-sign the covenant on a sizing tx
+    // (pool input + the two pinned outputs only) and size TX2's fee from the ACTUAL
+    // bytes — the covenant input's preimage (~3.5 KB scriptCode) + the ~3.5 KB
+    // successor covenant output + the seller refund — BEFORE we fund the fee input.
+    // Sizing at a flat 34 B/output underpaid this ~7 KB tx to ~40 sats → evicted.
+    // TX2 has NO change (the covenant pins exactly two outputs), so its fee equals the
+    // TX1 funding output consumed whole; that output MUST be ≥ the real size-based fee.
+    const sizingTx = new bsv.Transaction();
+    sizingTx.addInput(
+      new bsv.Transaction.Input({ prevTxId: pool.txid, outputIndex: pool.vout, script: new bsv.Script() }),
+      poolScript,
+      pool.reserveSats,
+    );
+    sizingTx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(nextScriptHex), satoshis: reserveAfter }));
+    sizingTx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(sellerRefundScriptHex), satoshis: refund }));
+    const sizingPreimage: Buffer = bsv.Transaction.sighash.sighashPreimage(sizingTx, SIGHASH_SELL, 0, poolScript, reserveBN);
+    const digestHex = (bsv.crypto.Hash.sha256sha256(sizingPreimage) as Buffer).toString('hex');
+    const der = await signCovenant(digestHex);
+    if (!/^[0-9a-fA-F]+$/.test(der)) return { ok: false, reason: 'operator co-sign returned non-hex' };
+    const operatorSigHex = der + SIGHASH_SELL.toString(16).padStart(2, '0');
+    const unlockHex = encodeSellUnlockingHex(BigInt(delta), sellerRefundScriptHex, operatorPubHex, operatorSigHex, Array.from(sizingPreimage) as number[]) + SELL_SELECTOR_HEX;
+    const estSize = sizeCovenantTx(unlockHex.length / 2, [nextScriptHex.length / 2, sellerRefundScriptHex.length / 2], 1 /* operator fee P2PKH input */);
+    const sizedFee = covenantFeeSats(estSize); // 0.1 sat/byte, floored
+    const fee = Math.max(sizedFee, feeSats ?? 0); // caller `feeSats` is a floor only
+
     // TX1 — a flat-key P2PKH split tx funded from the operator BASE address that mints
-    // an EXACT-fee output (feeSats) at base + BSV change back to base. TX2 consumes that
-    // output WHOLE as its miner fee: the covenant pins exactly two outputs, so TX2 itself
-    // can carry no change. (Drops @bsv/wallet-toolbox off the refund path — ADR-028 revised.)
-    const fundingRes = await buildOperatorFundingTx({ basePkh, operatorPubHex, outputSats: feeSats, fetchUtxos, fetchBeef, signFeeDigest });
+    // an EXACT-fee output (`fee`) at base + BSV change back to base. TX2 consumes that
+    // output WHOLE as its miner fee. (Drops @bsv/wallet-toolbox off the refund path — ADR-028 revised.)
+    const fundingRes = await buildOperatorFundingTx({ basePkh, operatorPubHex, outputSats: fee, fetchUtxos, fetchBeef, signFeeDigest });
     if (!fundingRes.ok) return { ok: false, reason: `sell fee funding (TX1): ${fundingRes.reason}` };
     const funding = fundingRes.funding;
 
     // TX2 — the reserve refund.
-    const bsv = await loadBsv();
     const tx = new bsv.Transaction();
     // input 0: pool covenant
     tx.addInput(
       new bsv.Transaction.Input({ prevTxId: pool.txid, outputIndex: pool.vout, script: new bsv.Script() }),
-      bsv.Script.fromHex(pool.scriptHex),
+      poolScript,
       pool.reserveSats,
     );
     // input 1: operator fee input (consumed whole as the miner fee)
@@ -144,16 +180,14 @@ export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSel
     // output 1: seller refund @ the curve refund (covenant-pinned amount + script).
     tx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(sellerRefundScriptHex), satoshis: refund }));
 
-    // pool input unlock: operator co-signs sha256sha256(preimage), 0xc1. The preimage
-    // (ANYONECANPAY|ALL) commits BOTH outputs, so it is independent of the fee input.
-    const poolScript = bsv.Script.fromHex(pool.scriptHex);
-    const reserveBN = new bsv.crypto.BN(pool.reserveSats);
+    // pool input unlock: reuse the co-signed unlock from sizing. The 0xc1 preimage is
+    // independent of the fee input, so recompute it over the REAL tx and assert byte
+    // equality — this proves the funded fee covers exactly the tx we broadcast, while
+    // avoiding a second (non-deterministic-length) signature.
     const preimageBuf: Buffer = bsv.Transaction.sighash.sighashPreimage(tx, SIGHASH_SELL, 0, poolScript, reserveBN);
-    const digestHex = (bsv.crypto.Hash.sha256sha256(preimageBuf) as Buffer).toString('hex');
-    const der = await signCovenant(digestHex);
-    if (!/^[0-9a-fA-F]+$/.test(der)) return { ok: false, reason: 'operator co-sign returned non-hex' };
-    const operatorSigHex = der + SIGHASH_SELL.toString(16).padStart(2, '0');
-    const unlockHex = encodeSellUnlockingHex(BigInt(delta), sellerRefundScriptHex, operatorPubHex, operatorSigHex, Array.from(preimageBuf) as number[]) + SELL_SELECTOR_HEX;
+    if (Buffer.from(preimageBuf).toString('hex') !== Buffer.from(sizingPreimage).toString('hex')) {
+      return { ok: false, reason: 'pool preimage drifted between sizing and assembly' };
+    }
     tx.inputs[0].setScript(bsv.Script.fromHex(unlockHex));
 
     // fee input: flat-key P2PKH signature over ALL (commits both outputs). The operator

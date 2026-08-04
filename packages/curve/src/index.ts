@@ -25,6 +25,11 @@ export {
   poolScriptForSold,
   poolCodePart,
   CURVE_SCOPE,
+  CURVE_FEE_RATE,
+  CURVE_MIN_FEE,
+  sizeCovenantTx,
+  covenantFeeSats,
+  varIntLen,
   type BuySpendArgs,
 } from './curvePool';
 

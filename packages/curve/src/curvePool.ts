@@ -21,6 +21,58 @@ export function curveCost(k: bigint, sold: bigint, delta: bigint): bigint {
   return (k * delta * (2n * sold + delta + 1n)) / 2n;
 }
 
+// ── Covenant-tx fee sizing (money-critical) ────────────────────────────────────
+// The stas curve's covenant txs (buy TX-A, sell TX2, deploy) carry a ~3.5 KB
+// covenant OUTPUT script AND — on buy/sell — a covenant INPUT whose OP_PUSH_TX
+// preimage embeds that same ~3.5 KB script as its scriptCode. The historical fee
+// estimators sized every output at a flat 34 bytes and every input at 148, so a
+// ~7 KB covenant tx was priced as if it were ~200 bytes → ~40 sats (0.011 sat/B)
+// → EVICTED from the mempool, nothing confirmed. These helpers size the fee from
+// the ACTUAL serialized bytes (the real unlock length + each real output script
+// length) at a rate that reliably confirms on BSV mainnet for covenant-heavy txs.
+
+/** sat/byte for covenant txs. 0.05 is the standard floor; 0.1 is safe vs eviction. */
+export const CURVE_FEE_RATE = 0.1;
+/** Miner floor so a tiny tx still relays; must never dominate a large covenant tx. */
+export const CURVE_MIN_FEE = 40;
+/** Serialized byte length of a standard signed P2PKH input (buyer / operator fee). */
+export const P2PKH_INPUT_SIZE = 148;
+
+/** Byte length of a Bitcoin CompactSize varint for a count/length `n`. */
+export function varIntLen(n: number): number {
+  if (n < 0xfd) return 1;
+  if (n <= 0xffff) return 3;
+  if (n <= 0xffffffff) return 5;
+  return 9;
+}
+
+/**
+ * Estimate the serialized byte size of an assembled covenant tx from its ACTUAL
+ * component sizes: one covenant input (its full unlocking-script length, which is
+ * dominated by the preimage), `p2pkhInputCount` plain P2PKH inputs (~148 B each),
+ * and each output sized from its REAL locking-script byte length (so the ~3.5 KB
+ * successor covenant output is counted, not flattened to 34 B).
+ */
+export function sizeCovenantTx(
+  covenantUnlockLenBytes: number,
+  outputScriptLenBytes: number[],
+  p2pkhInputCount: number,
+): number {
+  const nIn = 1 + p2pkhInputCount;
+  const nOut = outputScriptLenBytes.length;
+  let size = 4 /* version */ + 4 /* locktime */ + varIntLen(nIn) + varIntLen(nOut);
+  // covenant input: 32 txid + 4 vout + varint(len) + unlock + 4 sequence.
+  size += 32 + 4 + varIntLen(covenantUnlockLenBytes) + covenantUnlockLenBytes + 4;
+  size += p2pkhInputCount * P2PKH_INPUT_SIZE;
+  for (const L of outputScriptLenBytes) size += 8 /* value */ + varIntLen(L) + L;
+  return size;
+}
+
+/** Miner fee for a tx of `sizeBytes`, floored at `minFee`, at `feeRate` sat/byte. */
+export function covenantFeeSats(sizeBytes: number, feeRate = CURVE_FEE_RATE, minFee = CURVE_MIN_FEE): number {
+  return Math.max(minFee, Math.ceil(sizeBytes * feeRate));
+}
+
 /** Minimal little-endian ScriptNum encoding of a non-negative integer. */
 function scriptNum(n: bigint): number[] {
   if (n === 0n) return [];

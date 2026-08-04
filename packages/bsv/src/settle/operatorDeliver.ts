@@ -157,10 +157,21 @@ export async function operatorDeliverStas(args: OperatorDeliverArgs): Promise<Op
   const tokenBeef = source.beef;
 
   // Fee sizing: the delivery tx is [token + N fee inputs] → [recipient, (token-change), BSV-change].
-  const FEE_RATE = 0.05;
+  // Size from the ACTUAL output script lengths (the STAS outputs are the large ones —
+  // counted explicitly, not flattened to 34 B) plus a generous budget for the STAS
+  // token input's unlocking script (partial-STAS pushes + sig + pubkey can exceed a
+  // plain 148-B P2PKH input). This tx HAS a BSV-change output, so any over-estimate is
+  // simply absorbed as a smaller change (never an underpay). 0.1 sat/byte, floored.
+  const FEE_RATE = 0.1;
   const MIN_FEE = 40;
-  const nOut = 1 + (changeStasScriptHex ? 1 : 0) + 1;
-  const estSize = 10 + (1 + feeInputs.length) * 148 + nOut * 34 + Math.ceil(newStasScriptHex.length / 2) + (changeStasScriptHex ? Math.ceil(changeStasScriptHex.length / 2) : 0) + 60;
+  const STAS_TOKEN_INPUT_BUDGET = 400; // safe upper bound for the STAS token unlock
+  const outBytes = (len: number) => 8 + (len < 0xfd ? 1 : len <= 0xffff ? 3 : 5) + len;
+  const estSize =
+    4 /* version */ + 4 /* locktime */ + 3 /* varint in/out counts */ +
+    STAS_TOKEN_INPUT_BUDGET + feeInputs.length * 148 +
+    outBytes(Math.ceil(newStasScriptHex.length / 2)) +
+    (changeStasScriptHex ? outBytes(Math.ceil(changeStasScriptHex.length / 2)) : 0) +
+    outBytes(25) /* base P2PKH change */;
   const txFee = Math.max(MIN_FEE, Math.ceil(estSize * FEE_RATE));
   const totalFeeIn = feeInputs.reduce((s, f) => s + f.satoshis, 0);
   const changeValue = totalFeeIn - txFee;
