@@ -383,18 +383,26 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
     try {
       const { pubHex, pkh: operatorPkh, address: operatorAddress } = await getOperator();
 
-      // Resolve the CURRENT vault UTXO on-chain (it moves as tokens are delivered).
-      const vault = await resolveCurrentPool(issuanceTxid);
-      if ('error' in vault) throw new Error(`resolve vault: ${vault.error}`);
-      const info = await getOutputInfo(vault.txid, vault.vout);
-      if (!info) throw new Error('could not fetch vault UTXO script/value');
+      // Resolve the CURRENT vault UTXO on-chain (it moves as tokens are delivered), plus its
+      // script/value and unconfirmed-safe ancestry BEEF. Retry to ride out WoC INDEXING LAG:
+      // a delivery can fire seconds after the mint (or a prior delivery), before WoC has
+      // indexed the fresh vault output — a single fetch would then abort the delivery.
+      // getSourceBeefDeep walks the ancestry and anchors at confirmed roots, so back-to-back
+      // deliveries work immediately once the vault tx is visible.
+      let vault: { txid: string; vout: number } | null = null;
+      let info: { scriptHex: string; satoshis: number } | null = null;
+      let beef: number[] | null = null;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const v = await resolveCurrentPool(issuanceTxid);
+        if (!('error' in v)) {
+          const gi = await getOutputInfo(v.txid, v.vout);
+          const bf = gi ? await getSourceBeefDeep(v.txid) : null;
+          if (gi && bf) { vault = v; info = gi; beef = bf; break; }
+        }
+        if (attempt < 5) await new Promise((r) => setTimeout(r, 3000));
+      }
+      if (!vault || !info || !beef) throw new Error('could not resolve vault (script/value/ancestry) after retries — the mint/vault may still be propagating to WoC');
       if (info.satoshis < delta) throw new Error(`vault holds ${info.satoshis} tokens, need ${delta}`);
-      // Unconfirmed-safe ancestry BEEF: a fresh mint (and every subsequent delivery,
-      // which moves the vault to a NEW unconfirmed tx) has no `/beef` yet, so the plain
-      // confirmed-only fetch would abort delivery. getSourceBeefDeep walks the ancestry
-      // and anchors at confirmed roots, so back-to-back deliveries work immediately.
-      const beef = await getSourceBeefDeep(vault.txid);
-      if (!beef) throw new Error('could not build vault ancestry BEEF (could not anchor to a confirmed root — retry shortly)');
 
       // Fee: fund DIRECTLY from the operator BASE address (flat key) — NO wallet-toolbox.
       // The base UTXO(s) become extra inputs; BSV change returns to base in the same tx.
