@@ -14,12 +14,26 @@ export async function getOutputScriptHex(txid: string, vout: number): Promise<st
       const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/out/${vout}/hex`, { cache: 'no-store' });
       if (res.ok) {
         const hex = (await res.text()).trim();
-        return /^[0-9a-fA-F]+$/.test(hex) ? hex : null;
+        if (/^[0-9a-fA-F]+$/.test(hex)) return hex;
       }
     } catch {
       /* transient — retry */
     }
     if (i < 2) await new Promise((r) => setTimeout(r, 1500));
+  }
+  // Fallback: the /out/{vout}/hex endpoint only serves CONFIRMED txs, so it 404s for a
+  // mempool tx (e.g. an unconfirmed operator delivery in a token's ancestry). The /tx/{txid}
+  // JSON endpoint DOES return mempool txs and carries the same scriptPubKey.hex — use it so
+  // back-to-genesis + vault resolution work over unconfirmed ancestry. Same bytes, not a weaker check.
+  try {
+    const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`, { cache: 'no-store' });
+    if (res.ok) {
+      const tx = (await res.json()) as { vout?: { n: number; scriptPubKey?: { hex?: string } }[] };
+      const hex = (tx.vout?.find((o) => o.n === vout)?.scriptPubKey?.hex ?? '').toLowerCase();
+      return /^[0-9a-fA-F]+$/.test(hex) ? hex : null;
+    }
+  } catch {
+    /* fall through */
   }
   return null;
 }

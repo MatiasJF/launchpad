@@ -37,6 +37,10 @@ successor `340e1f00:0` @ 546 sats sold=0 + 3-sat refund to the seller `1J5oRN9m�
 sell hit the `poolScriptForSold` sold=0 bug (below), which was fixed + the stuck sell recovered via
 the new "Complete refund" control; the sell-to-zero successor now validates on the real network.
 
+## Latest fix (2026-08-04b) — getOutputScriptHex unconfirmed-safe (back-to-genesis over mempool ancestry)
+
+`getOutputScriptHex` used WoC `/tx/{txid}/out/{vout}/hex`, which only serves CONFIRMED txs — so the back-to-genesis provenance walk (and vault resolution) FAILED with "provenance unverifiable (fetch gap)" whenever a returned token's ancestry ran through an UNCONFIRMED operator delivery (the common case: buy then immediately sell). Added a fallback to the `/tx/{txid}` JSON endpoint (returns mempool txs + the same `scriptPubKey.hex`) so the walk works over unconfirmed ancestry. Same bytes, not a weaker check — a counterfeit still fails to reach the operator's issuance. Sell-after-buy now verifies.
+
 ## Latest fix (2026-08-04) — poolScriptForSold sold=0 bug (money-critical)
 
 `poolScriptForSold` (the scrypt-ts-free successor byte-patch, shared by BUY and SELL) encoded the
