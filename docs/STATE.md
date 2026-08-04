@@ -2,6 +2,15 @@
 
 _Last updated: 2026-08-04 — by: poolScriptForSold sold=0 / state-int length-boundary fix (money-critical: sell-to-zero was bricked)_
 
+## ✅ FULL ROUND-TRIP PROVEN ON MAINNET (2026-08-04)
+
+Option B (wallet-STAS operator-gated curve) ran end-to-end on BSV mainnet with a tiny demo pool
+(supply 5, k 1, seed 546): **deploy** `f34927aa` → **mint** to vault → **buy** 2 (pool → `234b3db5:0`,
+sold=2, reserve 549) → **sell** 2 back to sold=0 → **refund** `340e1f00` (spends pool `234b3db5:0` →
+successor `340e1f00:0` @ 546 sats sold=0 + 3-sat refund to the seller `1J5oRN9m…`). The first live
+sell hit the `poolScriptForSold` sold=0 bug (below), which was fixed + the stuck sell recovered via
+the new "Complete refund" control; the sell-to-zero successor now validates on the real network.
+
 ## Latest fix (2026-08-04) — poolScriptForSold sold=0 bug (money-critical)
 
 `poolScriptForSold` (the scrypt-ts-free successor byte-patch, shared by BUY and SELL) encoded the
