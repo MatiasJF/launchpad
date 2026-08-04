@@ -231,6 +231,128 @@ export async function broadcastRawTx(
 }
 
 /**
+ * List the operator BASE address's spendable UTXOs from WhatsOnChain (server-side, no
+ * CORS). Powers the flat-key operator fee funding (ADR-028 revised) that replaced the
+ * `@bsv/wallet-toolbox` custody on the trade path. Merges CONFIRMED + UNCONFIRMED unspent
+ * (an operator base UTXO is often unconfirmed change from a prior op) and drops any that
+ * are already spent in the mempool (isOutputUnspent), so back-to-back trades don't try to
+ * spend a UTXO a pending tx already consumed. Tolerant of WoC's array vs `{result:[]}`
+ * response shapes. Returns `{ txid, vout, satoshis }[]`.
+ */
+export async function getOperatorBaseUtxos(
+  address: string,
+): Promise<{ txid: string; vout: number; satoshis: number }[]> {
+  if (!address) return [];
+  const parse = (body: unknown): { txid: string; vout: number; satoshis: number }[] => {
+    const rows = Array.isArray(body)
+      ? body
+      : Array.isArray((body as { result?: unknown })?.result)
+        ? ((body as { result: unknown[] }).result)
+        : [];
+    const out: { txid: string; vout: number; satoshis: number }[] = [];
+    for (const r of rows as { tx_hash?: string; tx_pos?: number; value?: number }[]) {
+      const txid = (r.tx_hash ?? '').toLowerCase();
+      const vout = r.tx_pos;
+      const satoshis = r.value;
+      if (/^[0-9a-f]{64}$/.test(txid) && Number.isInteger(vout) && typeof satoshis === 'number' && satoshis > 0) {
+        out.push({ txid, vout: vout as number, satoshis });
+      }
+    }
+    return out;
+  };
+
+  const endpoints = [
+    `https://api.whatsonchain.com/v1/bsv/main/address/${address}/confirmed/unspent`,
+    `https://api.whatsonchain.com/v1/bsv/main/address/${address}/unconfirmed/unspent`,
+    `https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`, // legacy fallback
+  ];
+  const seen = new Set<string>();
+  const merged: { txid: string; vout: number; satoshis: number }[] = [];
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) continue;
+      for (const u of parse(await res.json())) {
+        const key = `${u.txid}:${u.vout}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(u);
+        }
+      }
+    } catch {
+      /* transient — try next endpoint */
+    }
+  }
+  // Drop any UTXO already spent by a pending tx (mempool-aware spent check).
+  const live: { txid: string; vout: number; satoshis: number }[] = [];
+  for (const u of merged) {
+    const s = await isOutputUnspent(u.txid, u.vout);
+    if (s.unspent !== false) live.push(u); // keep true + unverifiable (broadcast is the backstop)
+  }
+  return live;
+}
+
+/**
+ * Broadcast an ATOMIC BEEF's whole unconfirmed chain to WhatsOnChain, parents-first,
+ * multi-pass + throttled — the proven flush from `operator-fund.mjs`, now shared for the
+ * flat-key operator trade path (ADR-028 revised). The BEEF's tip is the tx we want live;
+ * its leaves are anchored at confirmed roots. We reconstruct the tip (with its ancestry
+ * links populated from the BEEF), collect every UNCONFIRMED ancestor (skipping confirmed
+ * boundaries), and push them parents-before-children so WoC's single-tx endpoint always
+ * sees each parent present. Returns the tip's broadcast verdict.
+ */
+export async function broadcastBeefChain(
+  beefBytes: number[],
+  expectedTipTxid?: string,
+): Promise<{ ok: true; txid: string } | { ok: false; error: string }> {
+  let tip: Transaction;
+  try {
+    tip = Transaction.fromAtomicBEEF(beefBytes);
+  } catch (e) {
+    return { ok: false, error: `bad atomic BEEF: ${e instanceof Error ? e.message : String(e)}` };
+  }
+
+  // Collect unconfirmed ancestors, parents-before-children (a tx with a merklePath is a
+  // confirmed boundary — stop there).
+  const seen = new Set<string>();
+  const chain: Transaction[] = [];
+  const collect = (tx: Transaction): void => {
+    for (const inp of tx.inputs) {
+      const src = inp.sourceTransaction;
+      if (!src || src.merklePath) continue;
+      collect(src);
+      const id = src.id('hex');
+      if (!seen.has(id)) {
+        seen.add(id);
+        chain.push(src);
+      }
+    }
+  };
+  collect(tip);
+
+  const tipId = tip.id('hex');
+  let pending = [...chain, tip].map((t) => ({ hex: t.toHex(), id: t.id('hex') }));
+  let tipResult: { ok: true; txid: string } | { ok: false; error: string } = { ok: false, error: 'tip not broadcast' };
+
+  for (let pass = 0; pending.length && pass < 8; pass++) {
+    const next: typeof pending = [];
+    let progressed = false;
+    for (const t of pending) {
+      const r = await broadcastRawTx(t.hex, t.id);
+      if (t.id === tipId) tipResult = r.ok ? { ok: true, txid: r.txid || tipId } : { ok: false, error: r.error };
+      if (r.ok) progressed = true;
+      else next.push(t);
+      await new Promise((res) => setTimeout(res, 450)); // ~2 req/s, under WoC free-tier
+    }
+    pending = next;
+    if (!progressed) break; // a full pass landed nothing new — stop
+  }
+
+  if (tipResult.ok && expectedTipTxid && !tipResult.txid) return { ok: true, txid: expectedTipTxid };
+  return tipResult;
+}
+
+/**
  * Find the STAS output in a tx that is locked to `ownerPkh` and carries exactly
  * `amount` tokens (1 sat = 1 token). Used to locate the seller's STAS-return output
  * (the tokens they sent to the operator vault) before refunding. Returns its vout +

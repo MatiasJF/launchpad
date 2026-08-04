@@ -1,6 +1,29 @@
 # Project State
 
-_Last updated: 2026-08-04 — by: unconfirmed-safe delivery BEEF + buy-side recovery (money-critical: paid-but-undelivered buys were unretriable)_
+_Last updated: 2026-08-04 — by: operator moved OFF @bsv/wallet-toolbox onto a flat-key + WoC fee path for all trade txs (money-critical: toolbox custody corrupted under unconfirmed-chain trade load)_
+
+## Latest fix (2026-08-04d) — operator OFF wallet-toolbox → flat-key + WoC fee path (money-critical, ADR-028)
+
+**Symptom (live):** under trade load the operator's `@bsv/wallet-toolbox` custody wallet corrupted — its
+remote storage rejected EVERY `createAction` with "merged Beef failed validation" once the operator held a
+chain of unconfirmed txs (a delivery per buy, a refund per sell each leave un-mined operator change). The
+trade path is inherently an unconfirmed chain, so delivery/refund could not build at all. **Fix:** the
+operator now funds its own tx fees from spendable sats at its BASE P2PKH address (owner pkh = hash160(operator
+pubkey) — the same flat key that co-signs the covenant + owns the STAS vault), signed with raw low-S ECDSA and
+broadcast via WoC with the proven multi-pass unconfirmed-chain flush. `@bsv/wallet-toolbox` is DROPPED from
+the trade path (deprecated, kept only for the harness's non-operator wallet roles). New pure helper
+`packages/bsv/src/settle/operatorBaseFunding.ts` (`@launchpad/bsv/settle/base-funding`):
+`selectOperatorFeeInputs` / `buildOperatorFundingTx` / `signOperatorP2pkhInput`. **Delivery** (`operatorDeliverStas`)
+is now ONE tx `[token, base fee input(s)] → [recipient, (token-change), BSV-change to base]` (no separate TX1),
+both ancestries merged into the atomic BEEF, flushed via the new `broadcastBeefChain`. **Sell refund**
+(`buildStasSellRefundTx`) keeps its two-tx shape — the covenant pins EXACTLY two outputs (ANYONECANPAY_ALL), so
+TX1 is a flat-key split that mints an exact-fee output (change back to base) and TX2 consumes it WHOLE as the
+fee; the covenant + all security asserts are untouched. **The operator key stays callback-only** (`signFeeDigest`/
+`signCovenant`/`signTokenDigest` = `operatorSignDigest`; never imported into `packages/bsv`/`packages/curve`).
+`settle-actions.ts` gained `getOperatorBaseUtxos` + `broadcastBeefChain`; `deliverStasToBuyer` + `finalizeStasSell`
+no longer call `getOperatorWallet()`. Harness logs `operatorBaseBalance` start/end. Green: bsv/curve/web typecheck,
+web build, verify-stas 33/33, bsv unit 2/2. **NOT yet run on mainnet — base address `1D86zXnT7hhB7cLYE8NxAd2WZeXqnEcpxF`
+is being funded; the maintainer runs the harness once funds land.**
 
 ## Latest fix (2026-08-04) — unconfirmed-safe delivery BEEF + buy-side recovery (money-critical)
 

@@ -36,10 +36,8 @@
  * the operator's responsibility in the two-tx form; see ADR-028 step-3.) Nothing is
  * broadcast here — the caller broadcasts the funding tx then this tx explicitly.
  */
-import type { WalletInterface } from '@bsv/sdk';
 import { Transaction } from '@bsv/sdk';
-import { signP2pkhInput } from '@launchpad/bsv/settle/p2pkh';
-import { createTokenFundingOutput } from '@launchpad/bsv/settle/funding';
+import { buildOperatorFundingTx, signOperatorP2pkhInput, type OperatorBaseUtxo } from '@launchpad/bsv/settle/base-funding';
 import { curveCost, poolScriptForSold, encodeSellUnlockingHex } from './curvePool';
 import { validateAssembledCovenantInput } from './covenant';
 import type { StasPoolState } from './stasBuyAssembly';
@@ -56,8 +54,6 @@ async function loadBsv(): Promise<any> {
 }
 
 export interface StasSellArgs {
-  /** Operator toolbox wallet — funds + signs the P2PKH fee input (input 1). */
-  feeWallet: WalletInterface;
   chain: 'main' | 'test';
   pool: StasPoolState; // current reserve covenant (the outpoint the refund spends)
   delta: number; // tokens being sold back
@@ -65,8 +61,16 @@ export interface StasSellArgs {
   sellerRefundScriptHex: string;
   /** Operator public key hex whose hash160 == the covenant's operatorPkh gate. */
   operatorPubHex: string;
-  /** Raw ECDSA co-signer: sha256sha256(preimage) digest hex -> low-S DER sig hex. */
+  /** hash160 (hex) of the operator base address — owns the flat-key fee-funding UTXOs. */
+  basePkh: string;
+  /** Raw ECDSA co-signer for the covenant input: sha256sha256(preimage) digest hex -> low-S DER sig hex. */
   signCovenant: (digestHex: string) => Promise<string>;
+  /** Raw ECDSA signer for the fee input(s) (flat-key P2PKH): digest hex -> low-S DER sig hex (operatorSignDigest). */
+  signFeeDigest: (digestHex: string) => Promise<string>;
+  /** List the operator base-address spendable UTXOs (WoC address lookup, app-injected). */
+  fetchUtxos: () => Promise<OperatorBaseUtxo[]>;
+  /** Fetch a tx's unconfirmed-safe ancestry BEEF (getSourceBeefDeep, app-injected). */
+  fetchBeef: (txid: string) => Promise<number[] | null>;
   feeSats?: number; // miner fee (the funding value is consumed whole; default 200)
   originator?: string;
 }
@@ -80,6 +84,8 @@ export type StasSellResult =
       reserveAfter: number; // successor pool value
       fundingTxid: string; // TX1 (funds the fee input) — broadcast this first
       fundingRawTx: string;
+      /** TX1's atomic ancestry BEEF (base UTXO ancestry + TX1) — flush this chain first. */
+      fundingBeef: number[];
       newPool: { txid: string; vout: number; scriptHex: string; reserveSats: number; sold: number };
     }
   | { ok: false; reason: string };
@@ -92,13 +98,16 @@ export type StasSellResult =
  * covenant input via @bsv/sdk BEFORE returning. Broadcasts nothing.
  */
 export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSellResult> {
-  const { feeWallet, chain, pool, delta, sellerRefundScriptHex, operatorPubHex, signCovenant, feeSats = 200, originator = ORIGINATOR } = args;
+  const { chain, pool, delta, sellerRefundScriptHex, operatorPubHex, basePkh, signCovenant, signFeeDigest, fetchUtxos, fetchBeef, feeSats = 200, originator = ORIGINATOR } = args;
+  void chain;
+  void originator;
 
   try {
     if (!Number.isInteger(delta) || delta <= 0) return { ok: false, reason: 'delta must be a positive integer' };
     if (delta > pool.sold) return { ok: false, reason: 'sells more than outstanding (sold)' };
     if (!/^[0-9a-fA-F]+$/.test(sellerRefundScriptHex) || sellerRefundScriptHex.length % 2 !== 0) return { ok: false, reason: 'invalid seller refund script hex' };
     if (!/^0[23][0-9a-fA-F]{64}$/.test(operatorPubHex)) return { ok: false, reason: 'operatorPubHex must be a 33-byte compressed pubkey hex' };
+    if (!/^[0-9a-fA-F]{40}$/.test(basePkh)) return { ok: false, reason: 'basePkh must be a 20-byte pkh hex' };
 
     const newSold = pool.sold - delta;
     // Covenant refund == k·delta·(2·newSold + delta + 1)/2 (curveCost at the post-sell sold).
@@ -107,9 +116,13 @@ export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSel
     if (reserveAfter < 1) return { ok: false, reason: `refund ${refund} would drain reserve ${pool.reserveSats} below 1` };
     const nextScriptHex = poolScriptForSold(pool.scriptHex, BigInt(newSold));
 
-    // TX1 — operator funds the fee input. Its ENTIRE value is the miner fee: TX2
-    // pins exactly two outputs, so there is no change output for the fee input.
-    const funding = await createTokenFundingOutput({ wallet: feeWallet, chain, satoshis: feeSats, originator, description: 'stas sell refund fee' });
+    // TX1 — a flat-key P2PKH split tx funded from the operator BASE address that mints
+    // an EXACT-fee output (feeSats) at base + BSV change back to base. TX2 consumes that
+    // output WHOLE as its miner fee: the covenant pins exactly two outputs, so TX2 itself
+    // can carry no change. (Drops @bsv/wallet-toolbox off the refund path — ADR-028 revised.)
+    const fundingRes = await buildOperatorFundingTx({ basePkh, operatorPubHex, outputSats: feeSats, fetchUtxos, fetchBeef, signFeeDigest });
+    if (!fundingRes.ok) return { ok: false, reason: `sell fee funding (TX1): ${fundingRes.reason}` };
+    const funding = fundingRes.funding;
 
     // TX2 — the reserve refund.
     const bsv = await loadBsv();
@@ -143,11 +156,12 @@ export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSel
     const unlockHex = encodeSellUnlockingHex(BigInt(delta), sellerRefundScriptHex, operatorPubHex, operatorSigHex, Array.from(preimageBuf) as number[]) + SELL_SELECTOR_HEX;
     tx.inputs[0].setScript(bsv.Script.fromHex(unlockHex));
 
-    // fee input: standard BRC-29 P2PKH signature over ALL (commits both outputs).
-    const feeUnlock = await signP2pkhInput({
-      wallet: feeWallet, bsv, tx, inputIndex: 1,
-      derivationPrefix: funding.derivationPrefix, derivationSuffix: funding.derivationSuffix,
-      sourceScriptHex: funding.scriptHex, sourceSatoshis: funding.satoshis, sighashType: SIGHASH_FEE, originator,
+    // fee input: flat-key P2PKH signature over ALL (commits both outputs). The operator
+    // base key signs via the raw-ECDSA callback — no toolbox wallet on the path.
+    const feeUnlock = await signOperatorP2pkhInput({
+      bsv, tx, inputIndex: 1,
+      sourceScriptHex: funding.scriptHex, sourceSatoshis: funding.satoshis, sighashType: SIGHASH_FEE,
+      operatorPubHex, signFeeDigest,
     });
     tx.inputs[1].setScript(bsv.Script.fromHex(feeUnlock));
 
@@ -159,15 +173,6 @@ export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSel
     const check = validateAssembledCovenantInput(rawTx, { scriptHex: pool.scriptHex, satoshis: pool.reserveSats }, 0);
     if (!check.ok) return { ok: false, reason: `pool input failed interpreter check: ${check.error}` };
 
-    // TX1's raw hex (from its BEEF) so the caller can push it to the SAME node it
-    // broadcasts TX2 to (TX2 references TX1's output).
-    let fundingRawTx = '';
-    try {
-      if (funding.beef && funding.beef.length) fundingRawTx = Transaction.fromAtomicBEEF(funding.beef).toHex();
-    } catch {
-      fundingRawTx = '';
-    }
-
     return {
       ok: true,
       rawTx,
@@ -175,7 +180,8 @@ export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSel
       refund,
       reserveAfter,
       fundingTxid: funding.txid,
-      fundingRawTx,
+      fundingRawTx: fundingRes.fundingRawTx,
+      fundingBeef: fundingRes.fundingBeef,
       newPool: { txid, vout: 0, scriptHex: nextScriptHex, reserveSats: reserveAfter, sold: newSold },
     };
   } catch (e) {

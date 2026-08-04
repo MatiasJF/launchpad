@@ -14,7 +14,8 @@
     "./genesis": "./src/issue/genesis.ts",
     "./pledge": "./src/pledge/index.ts",
     "./settle/funding": "./src/settle/twoTx/fundingOutput.ts",
-    "./settle/p2pkh": "./src/settle/twoTx/p2pkhInput.ts"
+    "./settle/p2pkh": "./src/settle/twoTx/p2pkhInput.ts",
+    "./settle/base-funding": "./src/settle/operatorBaseFunding.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

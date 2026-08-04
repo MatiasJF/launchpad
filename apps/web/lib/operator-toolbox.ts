@@ -1,5 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
+ * @deprecated ADR-028 (revised, flat-key): NO LONGER on the operator TRADE path. The
+ * per-buy delivery + per-sell refund fees now come from the operator's flat-key BASE
+ * P2PKH UTXOs via WhatsOnChain (see settle/operatorBaseFunding.ts + settle-actions'
+ * getOperatorBaseUtxos/broadcastBeefChain). Reason: this toolbox custody's remote
+ * storage rejected every `createAction` ("merged Beef failed validation") once the
+ * operator held a chain of unconfirmed txs (a delivery per buy, a refund per sell). This
+ * module is kept ONLY so the e2e harness can play the NON-operator wallet roles (admin
+ * mint funding, buyer payment, seller STAS return) and for the ops balance script. Do
+ * NOT reintroduce it to the delivery/refund fee path.
+ *
  * operator-toolbox.ts — the operator's CUSTODY + BROADCAST layer (ADR-028, revised).
  *
  * The operator's on-chain sats/STAS live in a `@bsv/wallet-toolbox` wallet (free,

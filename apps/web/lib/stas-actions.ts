@@ -4,11 +4,15 @@ import { prisma } from '@launchpad/db';
 import { revalidatePath } from 'next/cache';
 import { planMint } from '@launchpad/bsv/issue';
 import { operatorDeliverStas } from '@launchpad/bsv/settle';
+import { selectOperatorFeeInputs } from '@launchpad/bsv/settle/base-funding';
 import { buildStasSellRefundTx } from '@launchpad/curve';
 import { isProjectOwner } from './account-actions';
-import { getOperator, getOperatorWallet, operatorSignDigest } from './operator-wallet';
+import { getOperator, operatorSignDigest } from './operator-wallet';
 import { stasGenesisScript } from './stas-service';
-import { resolveCurrentPool, getOutputInfo, getSourceBeefDeep, broadcastRawTx, verifyStasBackToGenesis, findStasOutputToPkh, isOutputUnspent } from './settle-actions';
+import { resolveCurrentPool, getOutputInfo, getSourceBeefDeep, broadcastRawTx, broadcastBeefChain, getOperatorBaseUtxos, verifyStasBackToGenesis, findStasOutputToPkh, isOutputUnspent } from './settle-actions';
+
+/** Sats the operator earmarks to cover one trade tx's miner fee (change returns to base). */
+const OPERATOR_FEE_BUDGET = 1000;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadBsv(): Promise<any> {
@@ -347,13 +351,15 @@ export async function recordStasBuy(input: {
  * from the operator vault to the buyer's receive address, then broadcasts. Called
  * explicitly after recordStasBuy — never at import/build time.
  *
- * Custody split (ADR-028): the STAS inventory lives at the operator's BASE P2PKH
- * vault (owner = operator flat key), while the fee sats live in the toolbox custody
- * wallet. So the token input is signed by the operator flat key (operatorSignDigest,
- * raw ECDSA) and the fee input by the toolbox wallet (getOperatorWallet). The vault
- * UTXO moves after each delivery (token-change re-locks back to the operator pkh),
- * so we RESOLVE the current vault on-chain by walking the change chain from the mint
- * (resolveCurrentPool) — the same walk settlement uses for the pool.
+ * Fee funding (ADR-028 revised): BOTH the STAS inventory AND the fee sats live at the
+ * operator's BASE P2PKH address (owner = operator flat key). The token input and the
+ * fee input are BOTH signed by the operator flat key (operatorSignDigest, raw ECDSA) —
+ * `@bsv/wallet-toolbox` is DROPPED from this hot path (its remote storage rejected every
+ * createAction once the operator held a chain of unconfirmed txs). The base fee UTXO(s)
+ * are selected from WoC (selectOperatorFeeInputs) and become extra inputs; BSV change
+ * returns to base in the same tx (no separate funding tx). The vault UTXO moves after
+ * each delivery (token-change re-locks back to the operator pkh), so we RESOLVE the
+ * current vault on-chain by walking the change chain from the mint (resolveCurrentPool).
  */
 export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ ok: boolean; txid?: string; error?: string }> {
   try {
@@ -375,7 +381,7 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
     if (claim.count !== 1) return { ok: false, error: `order not deliverable (state ${order.state})` };
 
     try {
-      const { pubHex, pkh: operatorPkh } = await getOperator();
+      const { pubHex, pkh: operatorPkh, address: operatorAddress } = await getOperator();
 
       // Resolve the CURRENT vault UTXO on-chain (it moves as tokens are delivered).
       const vault = await resolveCurrentPool(issuanceTxid);
@@ -390,9 +396,17 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
       const beef = await getSourceBeefDeep(vault.txid);
       if (!beef) throw new Error('could not build vault ancestry BEEF (could not anchor to a confirmed root — retry shortly)');
 
-      const feeWallet = await getOperatorWallet();
+      // Fee: fund DIRECTLY from the operator BASE address (flat key) — NO wallet-toolbox.
+      // The base UTXO(s) become extra inputs; BSV change returns to base in the same tx.
+      const feeSel = await selectOperatorFeeInputs({
+        basePkh: operatorPkh,
+        needSats: OPERATOR_FEE_BUDGET,
+        fetchUtxos: () => getOperatorBaseUtxos(operatorAddress),
+        fetchBeef: getSourceBeefDeep,
+      });
+      if (!feeSel.ok) throw new Error(`operator fee funding: ${feeSel.reason}`);
+
       const res = await operatorDeliverStas({
-        feeWallet,
         chain: 'main',
         source: { txid: vault.txid, vout: vault.vout, scriptHex: info.scriptHex, satoshis: info.satoshis, beef },
         recipientAddress: order.receiveAddress,
@@ -400,17 +414,16 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
         vaultChangeHash160: operatorPkh,
         tokenOwnerPubHex: pubHex,
         signTokenDigest: operatorSignDigest,
+        feeInputs: feeSel.feeInputs,
+        baseChangeHash160: operatorPkh,
+        feeOwnerPubHex: pubHex,
+        signFeeDigest: operatorSignDigest,
       });
       if (!res.ok) throw new Error(res.reason);
 
-      // Broadcast TX1 (funding) first, then TX-B, retrying on "Missing inputs"
-      // while TX1 propagates to the node.
-      if (res.fundingRawTx) await broadcastRawTx(res.fundingRawTx, res.fundingTxid);
-      let bc = await broadcastRawTx(res.rawTx, res.txid);
-      for (let i = 0; i < 4 && !bc.ok && /missing inputs/i.test(bc.error ?? ''); i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        bc = await broadcastRawTx(res.rawTx, res.txid);
-      }
+      // Broadcast the delivery's whole unconfirmed chain (token + fee ancestries + TX-B),
+      // parents-first, multi-pass — the proven flat-key + WoC flush. No separate TX1.
+      const bc = await broadcastBeefChain(res.beef, res.txid);
       if (!bc.ok) throw new Error(`delivery broadcast rejected: ${bc.error}`);
 
       const deliveryTxid = bc.txid || res.txid;
@@ -661,7 +674,7 @@ export async function finalizeStasSell(input: { orderId: string }): Promise<{ ok
     if (claim.count !== 1) return { ok: false, error: `order not refundable (state ${order.state})` };
 
     try {
-      const { pubHex, pkh: operatorPkh } = await getOperator();
+      const { pubHex, pkh: operatorPkh, address: operatorAddress } = await getOperator();
 
       // Resolve the returned STAS outpoint (delta tokens locked to the vault).
       const returnVout = order.returnVout ?? (await findStasOutputToPkh(order.paymentTxid, operatorPkh, delta))?.vout ?? null;
@@ -680,21 +693,24 @@ export async function finalizeStasSell(input: { orderId: string }): Promise<{ ok
       const spentPoolTxid = pool.poolTxid;
       const spentPoolVout = pool.poolVout;
       const sellerRefundScriptHex = await p2pkhScriptHexForAddress(order.receiveAddress);
-      const feeWallet = await getOperatorWallet();
       const res = await buildStasSellRefundTx({
-        feeWallet,
         chain: 'main',
         pool: { txid: pool.poolTxid, vout: pool.poolVout, scriptHex: pool.scriptHex, reserveSats: Number(pool.reserveSats), sold: Number(pool.sold), k: Number(pool.k), supply: Number(pool.supply) },
         delta,
         sellerRefundScriptHex,
         operatorPubHex: pubHex,
+        basePkh: operatorPkh,
         signCovenant: operatorSignDigest,
+        signFeeDigest: operatorSignDigest,
+        fetchUtxos: () => getOperatorBaseUtxos(operatorAddress),
+        fetchBeef: getSourceBeefDeep,
       });
       if (!res.ok) throw new Error(res.reason);
 
-      // Broadcast the fee-funding tx first, then TX2, retrying on "Missing inputs" while the
-      // funding propagates (mirrors deliverStasToBuyer).
-      if (res.fundingRawTx) await broadcastRawTx(res.fundingRawTx, res.fundingTxid);
+      // Flush TX1's whole unconfirmed chain (base ancestry + the flat-key funding tx),
+      // parents-first, then broadcast TX2 (the refund) retrying while TX1 propagates.
+      const fbc = await broadcastBeefChain(res.fundingBeef, res.fundingTxid);
+      if (!fbc.ok) throw new Error(`sell fee funding broadcast rejected: ${fbc.error}`);
       let bc = await broadcastRawTx(res.rawTx, res.txid);
       for (let i = 0; i < 4 && !bc.ok && /missing inputs/i.test(bc.error ?? ''); i++) {
         await new Promise((r) => setTimeout(r, 2000));

@@ -16,8 +16,18 @@
  * helpers directly. It does NOT touch Prisma or the 'use server' server actions — it
  * replicates the guts of deliverStasToBuyer / finalizeStasSell inline (minus the DB).
  *
+ * OPERATOR FEE PATH (ADR-028 revised): the money-critical DELIVER + REFUND fees come from
+ * the operator's flat-key BASE-address UTXOs via WhatsOnChain (selectOperatorFeeInputs +
+ * broadcastBeefChain) — NO @bsv/wallet-toolbox. The toolbox wallet remains ONLY as the
+ * stand-in for the NON-operator wallet roles the harness must also play: admin MINT
+ * funding (issueStasGenesis), the BUYER payment (buildStasBuyTx), and the SELLER STAS
+ * return (transferStas) — in production those are real user/admin wallets, never operator
+ * trade fees. `operatorBaseBalance` (WoC sum of the base-address UTXOs) is logged at
+ * start/end so a run shows the flat-key fee spend.
+ *
  * REUSE (one implementation, no forks):
- *   • operator custody wallet  → ../lib/operator-toolbox.ts   (makeOperatorWallet — pure)
+ *   • operator custody wallet  → ../lib/operator-toolbox.ts   (makeOperatorWallet — pure;
+ *                                 admin/buyer/seller roles only, NOT operator trade fees)
  *   • genesis reserve covenant → packages/curve/service CLI    (stas-genesis, same as stas-service.ts)
  *   • assembly                 → @launchpad/curve              (buildStasBuyTx, buildStasSellRefundTx, curveCost)
  *   •                          → @launchpad/bsv                (issueStasGenesis, operatorDeliverStas, transferStas)
@@ -40,12 +50,15 @@ import { makeOperatorWallet, walletBalanceSats } from '../lib/operator-toolbox.t
 import { curveCost, buildStasBuyTx, buildStasSellRefundTx } from '@launchpad/curve';
 import { issueStasGenesis } from '@launchpad/bsv/genesis';
 import { operatorDeliverStas, transferStas } from '@launchpad/bsv/settle';
+import { selectOperatorFeeInputs } from '@launchpad/bsv/settle/base-funding';
 import {
   getSourceBeef,
   getSourceBeefDeep,
   resolveCurrentPool,
   getOutputInfo,
   broadcastRawTx,
+  broadcastBeefChain,
+  getOperatorBaseUtxos,
   verifyStasBackToGenesis,
   findStasOutputToPkh,
   isOutputUnspent,
@@ -162,6 +175,16 @@ function makeOperatorSignDigest(keyHex) {
   };
 }
 
+/** WoC sum of the operator BASE-address spendable UTXOs (the flat-key fee source). */
+async function operatorBaseBalance(address) {
+  try {
+    const utxos = await getOperatorBaseUtxos(address);
+    return utxos.reduce((s, u) => s + Number(u.satoshis ?? 0), 0);
+  } catch {
+    return 0;
+  }
+}
+
 // ── broadcast: parent (TX1) before child, retrying while TX1 propagates ──────────
 async function broadcastWithParent(parentRaw, parentTxid, rawTx, id, label) {
   if (parentRaw) {
@@ -206,7 +229,12 @@ async function main() {
   const identityKey = new KeyDeriver(new PrivateKey(keyHex, 'hex')).identityKey;
 
   const startBal = await walletBalanceSats(wallet);
-  kv('operator sats', `${startBal} (start)`);
+  const startBaseBal = await operatorBaseBalance(op.address);
+  kv('operator sats', `${startBal} (toolbox, start)`);
+  kv('operator base', `${startBaseBal} sats @ ${op.address} (flat-key fee source, start)`);
+  if (startBaseBal <= 0) {
+    log(`⚠️  operator BASE address holds 0 sats — DELIVER/REFUND (flat-key fees) will fail until it is funded (send sats to ${op.address}).`);
+  }
   if (startBal < MIN_OPERATOR_SATS) {
     throw new Error(
       `operator balance ${startBal} sats is below ~${MIN_OPERATOR_SATS} needed for a run — ` +
@@ -349,11 +377,20 @@ async function main() {
     }
     kv('vault beef', `${beef.length} bytes`);
 
-    log('calling operatorDeliverStas (fee from toolbox wallet, token co-sign via flat key)…');
+    log('selecting operator BASE fee input(s) via WoC (flat-key, no toolbox)…');
+    const feeSel = await selectOperatorFeeInputs({
+      basePkh: op.pkh,
+      needSats: 1000,
+      fetchUtxos: () => getOperatorBaseUtxos(op.address),
+      fetchBeef: getSourceBeefDeep,
+    });
+    if (!feeSel.ok) throw fail(`operator base fee funding failed: ${feeSel.reason}`, { baseAddress: op.address });
+    kv('fee inputs', `${feeSel.feeInputs.length} (total ${feeSel.totalSats} sats)`);
+
+    log('calling operatorDeliverStas (fee + token BOTH via flat key — no toolbox)…');
     let res;
     try {
       res = await operatorDeliverStas({
-        feeWallet: wallet,
         chain: CHAIN,
         source: { txid: vault.txid, vout: vault.vout, scriptHex: info.scriptHex, satoshis: info.satoshis, beef },
         recipientAddress: receiveAddress,
@@ -361,12 +398,15 @@ async function main() {
         vaultChangeHash160: op.pkh,
         tokenOwnerPubHex: op.pubHex,
         signTokenDigest: signCovenant,
+        feeInputs: feeSel.feeInputs,
+        baseChangeHash160: op.pkh,
+        feeOwnerPubHex: op.pubHex,
+        signFeeDigest: signCovenant,
       });
     } catch (e) {
       throw fail(`operatorDeliverStas THREW: ${e instanceof Error ? (e.stack || e.message) : String(e)}`, { vaultBeef: beef, vaultSource: { txid: vault.txid, vout: vault.vout, scriptHex: info.scriptHex, satoshis: info.satoshis } });
     }
     if (!res.ok) {
-      // THE "merged Beef failed validation" surface — dump everything relevant.
       throw fail(`operatorDeliverStas FAILED: ${res.reason}`, {
         deliverReason: res.reason,
         vaultSource: { txid: vault.txid, vout: vault.vout, scriptHex: info.scriptHex, satoshis: info.satoshis },
@@ -378,16 +418,13 @@ async function main() {
     }
 
     kv('TX-B txid', res.txid);
-    kv('funding txid', res.fundingTxid);
-    if (res.fundingRawTx) kv('funding raw', `${res.fundingRawTx.length / 2} bytes`);
     if (res.newVault) kv('new vault', `${res.newVault.txid}:${res.newVault.vout} (${res.newVault.satoshis} tokens change)`);
 
-    log('broadcasting funding (TX1) then delivery (TX-B)…');
-    const bc = await broadcastWithParent(res.fundingRawTx, res.fundingTxid, res.rawTx, res.txid, 'DELIVER');
+    log('broadcasting the delivery chain (token + fee ancestries + TX-B) via broadcastBeefChain…');
+    const bc = await broadcastBeefChain(res.beef, res.txid);
     if (!bc.ok) {
       throw fail(`delivery broadcast rejected: ${bc.error}`, {
         deliveryRawTx: res.rawTx,
-        fundingRawTx: res.fundingRawTx,
         deliveryBeef: res.beef,
       });
     }
@@ -464,13 +501,16 @@ async function main() {
     let res;
     try {
       res = await buildStasSellRefundTx({
-        feeWallet: wallet,
         chain: CHAIN,
         pool: state.pool,
         delta: DELTA,
         sellerRefundScriptHex,
         operatorPubHex: op.pubHex,
+        basePkh: op.pkh,
         signCovenant,
+        signFeeDigest: signCovenant,
+        fetchUtxos: () => getOperatorBaseUtxos(op.address),
+        fetchBeef: getSourceBeefDeep,
       });
     } catch (e) {
       throw fail(`buildStasSellRefundTx THREW: ${e instanceof Error ? (e.stack || e.message) : String(e)}`, { pool: state.pool });
@@ -480,7 +520,15 @@ async function main() {
     kv('refund', `${res.refund} sats → ${op.address}`);
     kv('reserveAfter', res.reserveAfter);
     kv('TX2 txid', res.txid);
-    const bc = await broadcastWithParent(res.fundingRawTx, res.fundingTxid, res.rawTx, res.txid, 'REFUND');
+    // Flush TX1's flat-key funding chain (base ancestry + TX1), then broadcast TX2.
+    const fbc = await broadcastBeefChain(res.fundingBeef, res.fundingTxid);
+    log('  REFUND · funding chain flush:', fbc.ok ? `ok ${fbc.txid || res.fundingTxid}` : `(${fbc.error})`);
+    let bc = await broadcastRawTx(res.rawTx, res.txid);
+    for (let i = 0; i < 6 && !bc.ok && /missing inputs/i.test(bc.error ?? ''); i++) {
+      log(`  REFUND · TX2 not ready (missing inputs), retry ${i + 1}/6…`);
+      await new Promise((r) => setTimeout(r, 2500));
+      bc = await broadcastRawTx(res.rawTx, res.txid);
+    }
     if (!bc.ok) throw fail(`refund broadcast rejected: ${bc.error}`, { refundRawTx: res.rawTx, fundingRawTx: res.fundingRawTx, newPool: res.newPool });
     state.refundTxid = bc.txid || res.txid;
     state.pool = { ...res.newPool, k: Number(K), supply: Number(SUPPLY) };
@@ -489,7 +537,8 @@ async function main() {
   });
 
   const endBal = await walletBalanceSats(wallet);
-  return { startBal, endBal, state };
+  const endBaseBal = await operatorBaseBalance(op.address);
+  return { startBal, endBal, startBaseBal, endBaseBal, baseAddress: op.address, state };
 }
 
 function safeShape(o) {
@@ -518,7 +567,8 @@ hr('█');
 for (const s of steps) console.log(`  ${s.ok ? '✅' : '❌'} ${s.name}${s.ok ? '' : `  — ${s.error}`}`);
 if (result) {
   hr();
-  kv('operator sats', `${result.startBal} → ${result.endBal} (Δ ${result.endBal - result.startBal})`);
+  kv('operator sats', `${result.startBal} → ${result.endBal} (Δ ${result.endBal - result.startBal}) [toolbox: admin/buyer/seller roles]`);
+  kv('operator base', `${result.startBaseBal} → ${result.endBaseBal} (Δ ${result.endBaseBal - result.startBaseBal}) [flat-key fee spend @ ${result.baseAddress}]`);
   console.log('\n  txids:');
   for (const [k, v] of Object.entries(result.state)) {
     if (typeof v === 'string' && /^[0-9a-fA-F]{64}$/.test(v)) console.log(`    ${k.padEnd(14)} ${wocTx(v)}`);

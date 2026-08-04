@@ -5,35 +5,31 @@
  *
  * After a buyer funds the reserve buy (TX-A), the OPERATOR delivers `amount` STAS
  * from the operator vault to the buyer. This mirrors the proven single-recipient
- * two-tx transfer (settle/index.ts `transferStas`) EXACTLY, with one difference:
- * the STAS token input is owned by the operator's FLAT key (the vault = a base
- * P2PKH whose owner pkh is hash160(operator pubkey), minted in step 1), NOT a
- * BRC-42 wallet key — so it is signed by a caller-supplied raw ECDSA signer over
- * the sighash digest rather than `wallet.createSignature`.
+ * two-tx transfer (settle/index.ts `transferStas`), with two differences:
+ *   (1) the STAS token input is owned by the operator's FLAT key (the vault = a base
+ *       P2PKH whose owner pkh is hash160(operator pubkey), minted in step 1), NOT a
+ *       BRC-42 wallet key — so it is signed by a caller-supplied raw ECDSA signer over
+ *       the sighash digest rather than `wallet.createSignature`.
+ *   (2) the tx FEE no longer comes from a `@bsv/wallet-toolbox` custody wallet + a
+ *       separate TX1 funding output. Instead the operator funds the fee DIRECTLY from
+ *       spendable sats at its own BASE P2PKH address (flat key), passed in as
+ *       `feeInputs` (see operatorBaseFunding.selectOperatorFeeInputs). BSV change goes
+ *       straight back to the base address as the delivery tx's last output. This drops
+ *       the toolbox off the hot delivery path (ADR-028 revised): the toolbox custody's
+ *       remote storage rejected every createAction once the operator held a chain of
+ *       unconfirmed txs. See operatorBaseFunding.ts.
  *
- * CUSTODY SPLIT (the design point the STAS vault forces): the minted STAS inventory
- * lives at the operator's BASE P2PKH address (flat key), while the operator's fee
- * sats live in a wallet-toolbox custody wallet. So this function takes TWO signing
- * authorities:
- *   • `feeWallet`   — the toolbox custody wallet: creates the funding output (TX1)
- *                     and signs the P2PKH fee input (input 1). This is the same
- *                     BRC-29 funding path `transferStas` uses.
- *   • `signTokenDigest` + `tokenOwnerPubHex` — the operator flat key: signs the
- *                     STAS token input (input 0). The app passes operatorSignDigest
- *                     (raw ECDSA, low-S DER) so the operator key never enters this
- *                     package.
+ * Delivery tx shape:
+ *   inputs : [ token (flat-key), operator base fee input(s) (flat-key P2PKH) ]
+ *   outputs: [ recipient STAS, (token-change back to vault), BSV-change to base ]
  *
- * Non-broadcasting: like `transferStas`, this only ASSEMBLES + signs. It returns
- * `rawTx` (TX-B) + `fundingRawTx` (TX1) for the caller to broadcast explicitly
- * (TX1 first). `createTokenFundingOutput` DOES broadcast TX1 via the feeWallet's
- * createAction (operator-side) — that only happens when this function is invoked,
- * never at import/build time.
+ * Non-broadcasting: this only ASSEMBLES + signs and returns an ATOMIC BEEF whose tip is
+ * the delivery tx and whose leaves are BOTH ancestries (token + every fee input),
+ * anchored to confirmed roots. The caller flushes that whole unconfirmed chain to WoC
+ * (parents-first, multi-pass) — no separate TX1 to broadcast first.
  */
-import type { WalletInterface } from '@bsv/sdk';
 import { Beef, Transaction } from '@bsv/sdk';
-import { createTokenFundingOutput } from './twoTx/fundingOutput';
-import { deriveSelfBrc29P2pkh } from './twoTx/brc29Address';
-import { signP2pkhInput } from './twoTx/p2pkhInput';
+import { signOperatorP2pkhInput, p2pkhScriptHexForPkh, type OperatorFeeInput } from './operatorBaseFunding';
 
 const ORIGINATOR = 'launchpad.stas.deliver';
 
@@ -54,8 +50,6 @@ export interface OperatorDeliverSource {
 }
 
 export interface OperatorDeliverArgs {
-  /** Toolbox custody wallet — funds TX1 + signs the P2PKH fee input. */
-  feeWallet: WalletInterface;
   chain: 'main' | 'test';
   /** The vault STAS UTXO the delivery spends. */
   source: OperatorDeliverSource;
@@ -67,8 +61,16 @@ export interface OperatorDeliverArgs {
   vaultChangeHash160: string;
   /** Operator public key (hex) whose hash160 owns the vault STAS input. */
   tokenOwnerPubHex: string;
-  /** Raw ECDSA signer: sha256sha256(preimage) digest hex -> low-S DER sig hex. */
+  /** Raw ECDSA signer for the token input: sha256sha256(preimage) digest hex -> low-S DER sig hex. */
   signTokenDigest: (digestHex: string) => Promise<string>;
+  /** Operator base-address fee input(s) (flat-key P2PKH), ancestry-anchored. */
+  feeInputs: OperatorFeeInput[];
+  /** hash160 (hex) of the operator base address — the delivery's BSV change re-locks here. */
+  baseChangeHash160: string;
+  /** Operator public key (hex) whose hash160 owns the base fee input(s). */
+  feeOwnerPubHex: string;
+  /** Raw ECDSA signer for the fee input(s): digest hex -> low-S DER sig hex (operatorSignDigest). */
+  signFeeDigest: (digestHex: string) => Promise<string>;
   originator?: string;
 }
 
@@ -76,17 +78,29 @@ export type OperatorDeliverResult =
   | {
       ok: true;
       txid: string;
+      /** Atomic BEEF whose tip is the delivery tx (token + fee ancestries merged). */
       beef: number[];
       rawTx: string;
-      fundingRawTx: string;
-      fundingTxid: string;
       /** The token-change output back to the vault (new vault), or null if fully spent. */
       newVault: { txid: string; vout: number; scriptHex: string; satoshis: number } | null;
     }
   | { ok: false; reason: string };
 
 export async function operatorDeliverStas(args: OperatorDeliverArgs): Promise<OperatorDeliverResult> {
-  const { feeWallet, chain, source, recipientAddress, amount, vaultChangeHash160, tokenOwnerPubHex, signTokenDigest, originator = ORIGINATOR } = args;
+  const {
+    chain: _chain,
+    source,
+    recipientAddress,
+    amount,
+    vaultChangeHash160,
+    tokenOwnerPubHex,
+    signTokenDigest,
+    feeInputs,
+    baseChangeHash160,
+    feeOwnerPubHex,
+    signFeeDigest,
+    originator = ORIGINATOR,
+  } = args;
 
   let bsv: any, stas: any, SIGHASH: number;
   try {
@@ -103,6 +117,9 @@ export async function operatorDeliverStas(args: OperatorDeliverArgs): Promise<Op
   } catch (err) {
     return { ok: false, reason: `invalid tokenOwnerPubHex: ${errMsg(err)}` };
   }
+
+  if (!Array.isArray(feeInputs) || feeInputs.length === 0) return { ok: false, reason: 'feeInputs required (operator base fee)' };
+  if (!/^[0-9a-fA-F]{40}$/.test(baseChangeHash160)) return { ok: false, reason: 'baseChangeHash160 must be a 20-byte pkh hex' };
 
   // Recipient hash160.
   let recipientPkhHex: string;
@@ -139,49 +156,32 @@ export async function operatorDeliverStas(args: OperatorDeliverArgs): Promise<Op
   if (!source.beef || source.beef.length === 0) return { ok: false, reason: 'source.beef required (from-chain vault ancestry)' };
   const tokenBeef = source.beef;
 
-  // Self-owned BRC-29 address for TX-B's single BSV change output (toolbox wallet).
-  let changeDeriv;
-  try {
-    changeDeriv = await deriveSelfBrc29P2pkh({ wallet: feeWallet, chain, originator });
-  } catch (err) {
-    return { ok: false, reason: `change derivation: ${errMsg(err)}` };
-  }
-
-  // TX1: funding output sized to TX-B's fee (same sizing as transferStas).
+  // Fee sizing: the delivery tx is [token + N fee inputs] → [recipient, (token-change), BSV-change].
   const FEE_RATE = 0.05;
   const MIN_FEE = 40;
-  const estTx2Size = 1600 + 120 + 200 + Math.ceil(newStasScriptHex.length / 2) + (changeStasScriptHex ? Math.ceil(changeStasScriptHex.length / 2) : 0) + 34;
-  const tx2Fee = Math.max(MIN_FEE, Math.ceil(estTx2Size * FEE_RATE));
-  const fundingSats = tx2Fee + 500;
-  let funding;
-  try {
-    funding = await createTokenFundingOutput({ wallet: feeWallet, chain, satoshis: fundingSats, originator, description: 'stas delivery funding' });
-  } catch (err) {
-    return { ok: false, reason: `TX1 funding: ${errMsg(err)}` };
-  }
-  const changeValue = funding.satoshis - tx2Fee;
-  if (changeValue < 1) return { ok: false, reason: `funding ${funding.satoshis} below fee ${tx2Fee}` };
+  const nOut = 1 + (changeStasScriptHex ? 1 : 0) + 1;
+  const estSize = 10 + (1 + feeInputs.length) * 148 + nOut * 34 + Math.ceil(newStasScriptHex.length / 2) + (changeStasScriptHex ? Math.ceil(changeStasScriptHex.length / 2) : 0) + 60;
+  const txFee = Math.max(MIN_FEE, Math.ceil(estSize * FEE_RATE));
+  const totalFeeIn = feeInputs.reduce((s, f) => s + f.satoshis, 0);
+  const changeValue = totalFeeIn - txFee;
+  if (changeValue < 1) return { ok: false, reason: `fee inputs total ${totalFeeIn} below fee ${txFee} + dust` };
 
-  let fundingRawTx = '';
-  try {
-    const fb = Beef.fromBinary(funding.beef);
-    const fbt = fb.findTxid(funding.txid);
-    fundingRawTx = fbt?.tx ? fbt.tx.toHex() : '';
-  } catch {
-    fundingRawTx = '';
-  }
+  // BSV-change output locks back to the operator base address (P2PKH).
+  const baseChangeScriptHex = p2pkhScriptHexForPkh(baseChangeHash160);
 
-  // Assemble TX-B: [token(0), funding(1)] → [recipient(0), (token-change), BSV-change].
+  // Assemble: [token(0), fee(1..n)] → [recipient(0), (token-change), BSV-change(last)].
   let tx: any;
   try {
     tx = new bsv.Transaction();
     tx.from({ txId: source.txid, outputIndex: source.vout, script: source.scriptHex, satoshis: source.satoshis });
-    tx.from({ txId: funding.txid, outputIndex: funding.vout, script: funding.scriptHex, satoshis: funding.satoshis });
+    for (const fi of feeInputs) tx.from({ txId: fi.txid, outputIndex: fi.vout, script: fi.scriptHex, satoshis: fi.satoshis });
     tx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(newStasScriptHex), satoshis: sendAmt }));
     if (changeStasScriptHex != null) tx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(changeStasScriptHex), satoshis: changeAmt }));
-    tx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(changeDeriv.scriptHex), satoshis: changeValue }));
+    tx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(baseChangeScriptHex), satoshis: changeValue }));
     tx.inputs[0].output = new bsv.Transaction.Output({ script: bsv.Script.fromHex(source.scriptHex), satoshis: source.satoshis });
-    tx.inputs[1].output = new bsv.Transaction.Output({ script: bsv.Script.fromHex(funding.scriptHex), satoshis: funding.satoshis });
+    for (const [i, fi] of feeInputs.entries()) {
+      tx.inputs[i + 1].output = new bsv.Transaction.Output({ script: bsv.Script.fromHex(fi.scriptHex), satoshis: fi.satoshis });
+    }
   } catch (err) {
     return { ok: false, reason: `TX-B assembly: ${errMsg(err)}` };
   }
@@ -193,7 +193,7 @@ export async function operatorDeliverStas(args: OperatorDeliverArgs): Promise<Op
       [
         { satoshis: sendAmt, publicKey: recipientPkhHex },
         changeStasScriptHex != null ? { satoshis: changeAmt, publicKey: vaultChangeHash160 } : null,
-        { satoshis: changeValue, publicKey: changeDeriv.pkhHex },
+        { satoshis: changeValue, publicKey: baseChangeHash160 },
       ],
       stasVersion,
       false,
@@ -217,23 +217,25 @@ export async function operatorDeliverStas(args: OperatorDeliverArgs): Promise<Op
     return { ok: false, reason: `sign token input (operator): ${errMsg(err)}` };
   }
 
-  // Sign the funding input (P2PKH) with the toolbox wallet.
+  // Sign each operator base fee input (P2PKH) with the flat key (raw ECDSA callback).
   try {
-    const fundingUnlock = await signP2pkhInput({
-      wallet: feeWallet, bsv, tx, inputIndex: 1,
-      derivationPrefix: funding.derivationPrefix, derivationSuffix: funding.derivationSuffix,
-      sourceScriptHex: funding.scriptHex, sourceSatoshis: funding.satoshis, sighashType: SIGHASH, originator,
-    });
-    tx.inputs[1].setScript(bsv.Script.fromHex(fundingUnlock));
+    for (const [i, fi] of feeInputs.entries()) {
+      const unlock = await signOperatorP2pkhInput({
+        bsv, tx, inputIndex: i + 1,
+        sourceScriptHex: fi.scriptHex, sourceSatoshis: fi.satoshis, sighashType: SIGHASH,
+        operatorPubHex: feeOwnerPubHex, signFeeDigest,
+      });
+      tx.inputs[i + 1].setScript(bsv.Script.fromHex(unlock));
+    }
   } catch (err) {
-    return { ok: false, reason: `sign funding input: ${errMsg(err)}` };
+    return { ok: false, reason: `sign fee input (operator base): ${errMsg(err)}` };
   }
 
   const rawTx = tx.toString();
   let tx2Txid = '', tx2AtomicBeef: number[];
   try {
     const beef = Beef.fromBinary(tokenBeef);
-    beef.mergeBeef(Beef.fromBinary(funding.beef));
+    for (const fi of feeInputs) beef.mergeBeef(fi.beef);
     const sdkTx2 = Transaction.fromHex(rawTx);
     beef.mergeTransaction(sdkTx2);
     tx2Txid = sdkTx2.id('hex');
@@ -247,7 +249,9 @@ export async function operatorDeliverStas(args: OperatorDeliverArgs): Promise<Op
       ? { txid: tx2Txid, vout: 1, scriptHex: changeStasScriptHex, satoshis: changeAmt }
       : null;
 
-  return { ok: true, txid: tx2Txid, beef: tx2AtomicBeef, rawTx, fundingRawTx, fundingTxid: funding.txid, newVault };
+  void originator;
+  void _chain;
+  return { ok: true, txid: tx2Txid, beef: tx2AtomicBeef, rawTx, newVault };
 }
 
 function errMsg(err: unknown): string {

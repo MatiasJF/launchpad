@@ -31,13 +31,19 @@ function keyHex(): string {
 // The toolbox wallet is expensive to init (network handshake) — memoize per process.
 let walletPromise: Promise<any> | null = null;
 
-/** The operator's custody wallet (toolbox-backed). Lazily initialized + memoized. */
+/**
+ * @deprecated ADR-028 (revised): NOT on the trade path anymore. The operator's delivery
+ * + refund fees come from flat-key BASE-address UTXOs via WhatsOnChain (see
+ * settle/operatorBaseFunding.ts). This toolbox wallet corrupted under unconfirmed-chain
+ * trade load. Kept only for legacy ops tooling; do not use it to fund trades.
+ * The operator's custody wallet (toolbox-backed). Lazily initialized + memoized.
+ */
 export async function getOperatorWallet(): Promise<any> {
   if (!walletPromise) walletPromise = makeOperatorWallet(keyHex());
   return walletPromise;
 }
 
-/** Total spendable satoshis the operator currently holds (for funding checks). */
+/** @deprecated see getOperatorWallet. Total sats in the legacy toolbox custody wallet. */
 export async function operatorBalance(): Promise<number> {
   return walletBalanceSats(await getOperatorWallet());
 }
