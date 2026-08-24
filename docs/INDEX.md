@@ -15,6 +15,8 @@ present, not implemented.
 - Data model → `docs/SCHEMA.md`
 - Phases & status → `docs/ROADMAP.md`
 - Visual planning docs → `docs/artifacts/`
+- Curve serialization analysis (single-UTXO throughput, mitigation options) → `docs/CURVE-SERIALIZATION-ANALYSIS.md`
+- Launch guide (all sale types, procedures, troubleshooting) → `docs/LAUNCH-GUIDE.md`
 
 ## Domain & data
 

@@ -43,4 +43,16 @@ The detail is in `~/.claude/bsv-field-notes.md`; read that before touching anyth
 
 ## Launchpad-specific
 
-*(Nothing yet. First entry goes here — use `/lesson`.)*
+### Single-UTXO bonding curves hit a serialization wall under moderate load
+
+**Symptom**: After ~10-25 concurrent curve buys (unconfirmed), the next buyer's delivery fails with `"all N operator base UTXO(s) have deep unconfirmed ancestry — wait for confirmation or fund from fresh source to avoid too-long-mempool-chain"`. Order stays stuck in `pending` state (buyer paid, tokens not delivered). OR two simultaneous buys: one gets `258: txn-mempool-conflict`, the other succeeds, first buyer wasted gas on TX1 funding and must retry from scratch.
+
+**Cause**: Every buy spends the same single pool UTXO to create a successor (linearCurvePool.ts:14 "a single evolving UTXO"). No batching, queue, or parallel pools. Under concurrent load: (a) second buyer racing the first gets double-spend rejection, (b) 25+ unconfirmed buys chain together and hit the node's `too-long-mempool-chain` limit, blocking operator fee funding. The optimistic outpoint guard (stas-actions.ts:315-317) rejects stale advances but forces client-side retries.
+
+**The maths is fine**: Linear curve cost = `k·delta·(2s+delta+1)/2` is exact integer arithmetic, no exp/ln, covenant-verifiable on-chain. Overflow-safe for realistic ranges (verified to 3×10^15, well under BigInt/SQLite limits). LMSR needed transcendental functions and couldn't verify on-chain; this can. The problem is **serialization**, not math.
+
+**Mitigation**: Off-chain fills + batched settlement (proven in sibling prediction-market project). Buyer gets signed receipt instantly, operator batches every N orders into ONE on-chain pool advance with N outputs. Settlement size O(outputs), independent of fill count. Preserves capital efficiency (single reserve UTXO), unlimited throughput, users get instant quotes. Trade-off: covenant doesn't enforce each fill in real-time (operator signs receipt, auditable fraud proof). Alternative: serial queue + retry (simple, low throughput), batch-accepting covenant (complex unlock), or sharded pools (price incoherence).
+
+**Cost**: Mainnet proven (STATE.md:62,95 — delivery failures after deep unconfirmed chains). Analysis in docs/CURVE-SERIALIZATION-ANALYSIS.md. Throughput ceiling ~10-25 buys per confirmation cycle without mitigation.
+
+**Decision**: Defer curves entirely until post-instant-swap success (instant swap has zero serialization issues, each sale is independent). If curves demanded later, implement off-chain batch settlement first.
