@@ -99,3 +99,7 @@ present, not implemented.
 - Page components → `apps/web/components` (SiteHeader, SiteFooter, ProjectCard, ExploreSection, BuyCard, WalletButton)
 - Seed card data → `apps/web/lib/seed.ts` (getSaleBySlug)
 - UI pattern reference → Mobbin · `api.mobbin.com/mcp` _(MCP connected)_
+
+| **What has gone wrong before (read before building)** | `docs/LESSONS.md` |
+| **Cross-project BSV chain/SDK/toolchain facts** | `~/.claude/bsv-field-notes.md` |
+| **Capturing a new lesson** | `.claude/skills/lesson/SKILL.md` (`/lesson`) |

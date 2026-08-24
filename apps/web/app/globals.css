@@ -57,6 +57,12 @@
   --c-danger: #ef7a72;
   --c-info: #62a8ee;
 
+  /* Status pill colors */
+  --status-live: var(--c-teal);
+  --status-scheduled: var(--c-warning);
+  --status-finalized: var(--c-muted);
+  --status-failed: var(--c-danger);
+
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 20px 60px rgba(0, 0, 0, 0.55);
   --glow-gold: 0 0 0 1px color-mix(in srgb, var(--c-gold) 30%, transparent),
@@ -380,6 +386,27 @@
       var(--shadow-2),
       0 0 0 1px color-mix(in srgb, var(--c-violet) 22%, transparent);
   }
+
+  /* Custom scrollbar for tab overflow */
+  .tab-scrollbar::-webkit-scrollbar {
+    height: 6px;
+  }
+  .tab-scrollbar::-webkit-scrollbar-track {
+    background: var(--c-elevated);
+    border-radius: 3px;
+  }
+  .tab-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--c-line-strong);
+    border-radius: 3px;
+  }
+  .tab-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--c-gold);
+  }
+  /* Firefox */
+  .tab-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-line-strong) var(--c-elevated);
+  }
 }
 
 @layer utilities {
@@ -409,6 +436,18 @@
     }
     to {
       transform: translate3d(3%, -4%, 0) scale(1.08);
+    }
+  }
+  /* Skeleton loaders with longer, smoother transitions */
+  .skeleton {
+    animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  @keyframes skeleton-pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
     }
   }
 }

@@ -306,7 +306,7 @@ export async function getOperatorBaseUtxos(
  * branch at the first confirmed tx. Used to avoid selecting a base fee UTXO whose deep
  * unconfirmed chain would blow the node's 25-ancestor mempool limit. A confirmed txid → 0.
  */
-async function unconfirmedAncestorCount(txid: string, cap: number): Promise<number> {
+export async function unconfirmedAncestorCount(txid: string, cap: number): Promise<number> {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   // Throttled + retried fetch so a deep chain isn't UNDERcounted by rate-limit gaps
   // (which would wrongly keep a stuck UTXO). Returns null only after persistent failure.

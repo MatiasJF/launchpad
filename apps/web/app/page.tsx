@@ -18,13 +18,14 @@ export default async function Home() {
       <SiteHeader />
 
       <main>
-      <section className="relative mx-auto max-w-[1120px] overflow-x-clip px-4 pb-10 pt-14 sm:px-6 sm:pt-[72px]">
+      <section className="relative overflow-hidden px-4 pb-10 pt-14 sm:px-6 sm:pt-[72px]">
         {/* decorative ambient glow */}
         <div
           aria-hidden
-          className="ambient pointer-events-none absolute -right-24 -top-16 -z-10 h-[380px] w-[380px] rounded-full opacity-70 blur-3xl"
+          className="ambient pointer-events-none absolute right-0 -top-16 -z-10 h-[380px] w-[380px] rounded-full opacity-70 blur-3xl"
           style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--c-violet) 30%, transparent), transparent 68%)' }}
         />
+        <div className="mx-auto max-w-[1120px]">
         <span className="reveal font-mono text-xs uppercase tracking-[0.18em] text-gold" style={{ ['--i' as string]: 0 }}>
           On the BSV Blockchain
         </span>
@@ -66,6 +67,7 @@ export default async function Home() {
               <StatTile label={st.label} value={st.value} />
             </div>
           ))}
+        </div>
         </div>
       </section>
 

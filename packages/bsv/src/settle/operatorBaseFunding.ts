@@ -101,16 +101,26 @@ const MIN_FEE = 40;
  * Largest-first so the fewest inputs cover the need. Each input's ancestry BEEF is
  * fetched via `fetchBeef` (getSourceBeefDeep — unconfirmed-safe: a base UTXO may be
  * operator change from a prior op that hasn't confirmed yet). Fail-closed: any UTXO
- * whose BEEF cannot be built is skipped; insufficient coverage returns an error.
+ * whose BEEF cannot be built OR that is already spent is skipped; insufficient
+ * coverage returns an error.
+ *
+ * FIX (money-critical): spent-check is now ENFORCED at package boundary via the
+ * required `fetchIsUnspent` callback (WoC `/tx/{txid}/{vout}/spent` — see field
+ * notes: `/address/{addr}/unspent` returns already-spent outputs). Every candidate
+ * is verified unspent BEFORE attempting BEEF fetch, so a fresh process cannot
+ * double-spend on first tx.
  */
 export async function selectOperatorFeeInputs(args: {
   basePkh: string;
   needSats: number;
   fetchUtxos: () => Promise<OperatorBaseUtxo[]>;
   fetchBeef: (txid: string) => Promise<number[] | null>;
+  fetchIsUnspent: (txid: string, vout: number) => Promise<boolean | null>;
+  fetchUnconfirmedDepth?: (txid: string) => Promise<number | null>;
   maxInputs?: number;
+  maxUnconfirmedDepth?: number;
 }): Promise<{ ok: true; feeInputs: OperatorFeeInput[]; totalSats: number } | { ok: false; reason: string }> {
-  const { basePkh, needSats, fetchUtxos, fetchBeef, maxInputs = 5 } = args;
+  const { basePkh, needSats, fetchUtxos, fetchBeef, fetchIsUnspent, fetchUnconfirmedDepth, maxInputs = 5, maxUnconfirmedDepth = 10 } = args;
   let scriptHex: string;
   try {
     scriptHex = p2pkhScriptHexForPkh(basePkh);
@@ -128,16 +138,43 @@ export async function selectOperatorFeeInputs(args: {
 
   const feeInputs: OperatorFeeInput[] = [];
   let total = 0;
+  let allTooDeep = true; // track if we found ANY shallow UTXO
   for (const u of utxos) {
     if (total >= needSats) break;
     if (feeInputs.length >= maxInputs) break;
+    // SPENT CHECK (money-critical): verify this UTXO is actually unspent before
+    // attempting to use it. WoC /address/unspent returns already-spent outputs
+    // (field notes: confirmed-but-spent outputs from 50 blocks ago). Check the
+    // canonical spent endpoint; skip if spent or unverifiable (fail-closed).
+    const unspent = await fetchIsUnspent(u.txid, u.vout);
+    if (unspent !== true) continue; // spent (false) or unverifiable (null) — skip
+    // MEMPOOL DEPTH CHECK (money-critical): avoid selecting a UTXO whose deep
+    // unconfirmed ancestry would blow the node's 25-ancestor mempool limit,
+    // causing "too-long-mempool-chain" broadcast rejection. Prefer shallow UTXOs
+    // (≤ maxUnconfirmedDepth ancestors). If depth check is provided and this UTXO
+    // is too deep, skip it (fail-closed: assume deep if unverifiable).
+    if (fetchUnconfirmedDepth) {
+      const depth = await fetchUnconfirmedDepth(u.txid);
+      if (depth !== null && depth > maxUnconfirmedDepth) continue; // too deep — skip
+      if (depth === null) continue; // unverifiable — skip (fail-closed)
+      if (depth <= maxUnconfirmedDepth) allTooDeep = false; // found a shallow one
+    } else {
+      allTooDeep = false; // no depth check = assume OK
+    }
     const beef = await fetchBeef(u.txid);
     if (!beef) continue; // can't anchor this UTXO's ancestry — skip (fail-closed)
     feeInputs.push({ txid: u.txid, vout: u.vout, scriptHex, satoshis: u.satoshis, beef });
     total += u.satoshis;
   }
+  // FAIL BEFORE BROADCAST (money-critical): if ALL available UTXOs have deep
+  // unconfirmed ancestry (> maxUnconfirmedDepth), building will assemble a tx that
+  // WILL be rejected at broadcast with "too-long-mempool-chain". Stop here with a
+  // clear error instead of silently building a doomed tx.
+  if (fetchUnconfirmedDepth && allTooDeep && utxos.length > 0) {
+    return { ok: false, reason: `all ${utxos.length} operator base UTXO(s) have deep unconfirmed ancestry (> ${maxUnconfirmedDepth}) — wait for confirmation or fund from fresh confirmed source to avoid too-long-mempool-chain` };
+  }
   if (total < needSats) {
-    return { ok: false, reason: `operator base has ${total} anchorable sats across ${feeInputs.length} input(s), need ${needSats}` };
+    return { ok: false, reason: `operator base has ${total} shallow+anchorable sats across ${feeInputs.length} input(s), need ${needSats}` };
   }
   return { ok: true, feeInputs, totalSats: total };
 }
@@ -158,13 +195,16 @@ export async function buildOperatorFundingTx(args: {
   outputSats: number;
   fetchUtxos: () => Promise<OperatorBaseUtxo[]>;
   fetchBeef: (txid: string) => Promise<number[] | null>;
+  fetchIsUnspent: (txid: string, vout: number) => Promise<boolean | null>;
+  fetchUnconfirmedDepth?: (txid: string) => Promise<number | null>;
   signFeeDigest: (digestHex: string) => Promise<string>;
   sighashType?: number;
+  maxUnconfirmedDepth?: number;
 }): Promise<
   | { ok: true; funding: { txid: string; vout: number; scriptHex: string; satoshis: number }; fundingRawTx: string; fundingBeef: number[]; changeSats: number }
   | { ok: false; reason: string }
 > {
-  const { basePkh, operatorPubHex, outputSats, fetchUtxos, fetchBeef, signFeeDigest } = args;
+  const { basePkh, operatorPubHex, outputSats, fetchUtxos, fetchBeef, fetchIsUnspent, fetchUnconfirmedDepth, signFeeDigest, maxUnconfirmedDepth } = args;
   // SIGHASH_ALL | FORKID (0x41) — a standard P2PKH spend committing all outputs.
   const sighashType = args.sighashType ?? 0x41;
   try {
@@ -173,7 +213,7 @@ export async function buildOperatorFundingTx(args: {
     // Over-estimate inputs at the cap so selection never comes up short.
     const est = (nIn: number) => Math.max(MIN_FEE, Math.ceil((10 + nIn * 148 + 2 * 34) * FEE_RATE));
     const need = outputSats + est(5) + 1;
-    const sel = await selectOperatorFeeInputs({ basePkh, needSats: need, fetchUtxos, fetchBeef });
+    const sel = await selectOperatorFeeInputs({ basePkh, needSats: need, fetchUtxos, fetchBeef, fetchIsUnspent, fetchUnconfirmedDepth, maxUnconfirmedDepth });
     if (!sel.ok) return { ok: false, reason: sel.reason };
 
     const tx1Fee = est(sel.feeInputs.length);

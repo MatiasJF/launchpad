@@ -19,8 +19,14 @@ export function PortfolioHoldings({ identityKey }: { identityKey: string }) {
   useEffect(() => {
     async function fetchHoldings() {
       setLoading(true);
+      const startTime = Date.now();
       try {
         const data = await getPortfolioHoldings(identityKey);
+        // Minimum 500ms loading time for smooth skeleton transition
+        const elapsed = Date.now() - startTime;
+        if (elapsed < 500) {
+          await new Promise((resolve) => setTimeout(resolve, 500 - elapsed));
+        }
         setHoldings(data);
       } catch (e) {
         console.error('Failed to fetch holdings:', e);

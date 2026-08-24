@@ -9,7 +9,7 @@ import { buildStasSellRefundTx } from '@launchpad/curve';
 import { isProjectOwner } from './account-actions';
 import { getOperator, operatorSignDigest } from './operator-wallet';
 import { stasGenesisScript } from './stas-service';
-import { resolveCurrentPool, getOutputInfo, getSourceBeefDeep, broadcastRawTx, broadcastBeefChain, getOperatorBaseUtxos, verifyStasBackToGenesis, findStasOutputToPkh, isOutputUnspent } from './settle-actions';
+import { resolveCurrentPool, getOutputInfo, getSourceBeefDeep, broadcastRawTx, broadcastBeefChain, getOperatorBaseUtxos, verifyStasBackToGenesis, findStasOutputToPkh, isOutputUnspent, unconfirmedAncestorCount } from './settle-actions';
 
 /** Sats the operator earmarks to cover one trade tx's miner fee (change returns to base). */
 const OPERATOR_FEE_BUDGET = 1000;
@@ -411,6 +411,14 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
         needSats: OPERATOR_FEE_BUDGET,
         fetchUtxos: () => getOperatorBaseUtxos(operatorAddress),
         fetchBeef: getSourceBeefDeep,
+        fetchIsUnspent: async (txid, vout) => {
+          const result = await isOutputUnspent(txid, vout);
+          return result.unspent; // true | false | null
+        },
+        fetchUnconfirmedDepth: async (txid) => {
+          const depth = await unconfirmedAncestorCount(txid, 12);
+          return depth; // number (confirmed = 0)
+        },
       });
       if (!feeSel.ok) throw new Error(`operator fee funding: ${feeSel.reason}`);
 
@@ -712,6 +720,14 @@ export async function finalizeStasSell(input: { orderId: string }): Promise<{ ok
         signFeeDigest: operatorSignDigest,
         fetchUtxos: () => getOperatorBaseUtxos(operatorAddress),
         fetchBeef: getSourceBeefDeep,
+        fetchIsUnspent: async (txid, vout) => {
+          const result = await isOutputUnspent(txid, vout);
+          return result.unspent; // true | false | null
+        },
+        fetchUnconfirmedDepth: async (txid) => {
+          const depth = await unconfirmedAncestorCount(txid, 12);
+          return depth; // number (confirmed = 0)
+        },
       });
       if (!res.ok) throw new Error(res.reason);
 
