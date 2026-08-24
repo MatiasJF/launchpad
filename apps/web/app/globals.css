@@ -387,23 +387,23 @@
       0 0 0 1px color-mix(in srgb, var(--c-violet) 22%, transparent);
   }
 
-  /* Custom scrollbar for tab overflow */
-  .tab-scrollbar::-webkit-scrollbar {
+  /* Custom scrollbar for tables and code blocks */
+  .overflow-x-auto::-webkit-scrollbar {
     height: 6px;
   }
-  .tab-scrollbar::-webkit-scrollbar-track {
+  .overflow-x-auto::-webkit-scrollbar-track {
     background: var(--c-elevated);
     border-radius: 3px;
   }
-  .tab-scrollbar::-webkit-scrollbar-thumb {
+  .overflow-x-auto::-webkit-scrollbar-thumb {
     background: var(--c-line-strong);
     border-radius: 3px;
   }
-  .tab-scrollbar::-webkit-scrollbar-thumb:hover {
+  .overflow-x-auto::-webkit-scrollbar-thumb:hover {
     background: var(--c-gold);
   }
   /* Firefox */
-  .tab-scrollbar {
+  .overflow-x-auto {
     scrollbar-width: thin;
     scrollbar-color: var(--c-line-strong) var(--c-elevated);
   }

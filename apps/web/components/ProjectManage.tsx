@@ -336,7 +336,7 @@ export function ProjectManage({ p }: { p: ManageVM }) {
         </div>
       ) : (
         <div className="mt-8">
-          <div className="flex gap-1 overflow-x-auto border-b border-line">
+          <div className="flex flex-wrap gap-1 border-b border-line">
             {(
               [
                 ['details', 'Details'],
