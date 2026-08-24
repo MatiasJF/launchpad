@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getPortfolioHistory } from '../lib/data';
+import { getPortfolioHistory } from '../lib/portfolio-actions';
 import { StatusPill } from './ui';
 import type { OrderState } from '@launchpad/core';
 

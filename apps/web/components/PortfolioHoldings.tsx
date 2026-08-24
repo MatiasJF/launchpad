@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getPortfolioHoldings } from '../lib/data';
+import { getPortfolioHoldings } from '../lib/portfolio-actions';
 
 interface Holding {
   slug: string;
