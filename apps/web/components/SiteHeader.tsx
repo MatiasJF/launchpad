@@ -13,6 +13,7 @@ export function SiteHeader() {
         <nav className="ml-2 hidden gap-1.5 sm:flex">
           {[
             { label: 'Explore', href: '/#explore' },
+            { label: 'Portfolio', href: '/portfolio' },
             { label: 'Submit', href: '/submit' },
             { label: 'Docs', href: '#' },
           ].map((l) => (

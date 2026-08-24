@@ -1,8 +1,71 @@
 # Project State
 
-_Last updated: 2026-08-04 — by: money-critical covenant fee-underpayment fix — every covenant tx now sized from ACTUAL bytes (incl. the ~3.5KB covenant output) at 0.1 sat/byte; mainnet-proven on DEPLOY (0.100 sat/B) + BUY TX-A (0.100 sat/B computed)_
+_Last updated: 2026-08-24 — by: UX-first 4-week sprint COMPLETE — all core user flows polished, responsive, and SPV-integrated_
 
-## Latest fix (2026-08-04f) — covenant fee-underpayment (money-critical)
+## Latest (2026-08-24) — UX-First 4-Week Sprint: COMPLETE ✅
+
+**Decision:** UX-first, narrow + polished, STAS curve default, defer escrow, ship ASAP (user: "1) ux, 2) stas, 3) defer, 4) narrow, 5) asap").
+
+**All 4 weeks shipped** (typecheck + build green, responsive tested):
+
+### Week 1: Landing + Project Detail Pages ✅
+- ✅ Trending tab (volume-based sort)
+- ✅ Live status indicators (pulsing dot)
+- ✅ Buy tab front-and-center (default view)
+- ✅ Price guarantee messaging (no slippage, no front-running)
+- ✅ SPV explainer (collapsible education)
+
+### Week 2: Buy Modal + SPV Proof Download ✅
+- ✅ Multi-step modal (Connect → Amount → Confirm → Processing → Success)
+- ✅ Visual progress indicator
+- ✅ Error handling at each step
+- ✅ SPV proof download button (BEEF from WhatsOnChain)
+- ✅ "View Portfolio →" link
+
+### Week 3: Portfolio Page ✅
+- ✅ Portfolio route + nav integration (desktop + mobile)
+- ✅ Wallet connection gate
+- ✅ Holdings tab (grouped tokens, WoC links)
+- ✅ History tab (all orders, dual proofs)
+- ✅ Identity key display (truncated)
+
+### Week 4: Visual Polish + Responsive Design ✅
+- ✅ Mobile-responsive history (table → cards)
+- ✅ Skeleton loaders (perceived performance)
+- ✅ Identity key in portfolio header
+- ✅ All flows tested on desktop + mobile
+
+**Design philosophy**: BSV constraints → UX opportunities (instant finality, no front-running, SPV proofs are FEATURES to showcase, not hide).
+
+**Impact**: BSV's unique value props are now visible at every step. Users understand *why* BSV is different, not just *what* it does.
+
+**Details**: [ux-first-4week-shipped.md](./artifacts/ux-first-4week-shipped.md)
+
+**Next**: Production deployment + user feedback gathering.
+
+---
+
+## Pre-mortem fix (2026-08-24) — spent-check + depth guard (money-critical)
+
+**Background:** Pre-launch pre-mortem audit identified two money/time-critical risks in the operator fee funding path. Both are now fixed and tested (packages typecheck green, 22/22 tests pass).
+
+**FIX 1 — UTXO spent-check enforced at package boundary (money-critical):**
+- **Risk:** WoC `/address/{addr}/unspent` returns already-spent outputs (field notes: confirmed-but-spent from 50 blocks ago). The app layer (`settle-actions.ts:289`) had a defense (`isOutputUnspent` filter), BUT it was not enforced at the package boundary. A caller that bypassed `getOperatorBaseUtxos` would **immediately double-spend** on first tx (`258: txn-mempool-conflict`).
+- **Fix:** `selectOperatorFeeInputs` (packages/bsv/settle/operatorBaseFunding.ts:113-180) now REQUIRES a `fetchIsUnspent` callback and verifies EVERY candidate UTXO via `/tx/{txid}/{vout}/spent` BEFORE attempting BEEF fetch. Fail-closed: spent (false) or unverifiable (null) → skip. The spent-check is now a **mandatory part of the selection protocol**, not an optional app-layer defense.
+- **Call sites updated:** `deliverStasToBuyer` (stas-actions.ts:409) + `finalizeStasSell` (stas-actions.ts:708) now pass `fetchIsUnspent`.
+- **Evidence:** field notes verified this on mainnet in the sibling prediction-market project.
+
+**FIX 2 — Mempool depth fail-before-broadcast (money-critical):**
+- **Risk:** The system filters UTXOs by `unconfirmedAncestorCount ≤ 10` to avoid `too-long-mempool-chain` (node limit = 25 ancestors), BUT if ALL UTXOs are deep, it **falls back and returns them anyway** (settle-actions.ts:301). Build proceeds, broadcast fails, orders stuck `pending`. Already hit on mainnet (STATE.md:30-35).
+- **Fix:** `selectOperatorFeeInputs` now takes optional `fetchUnconfirmedDepth` + `maxUnconfirmedDepth` (default 10). If depth check is provided and ALL available UTXOs are too deep (> maxUnconfirmedDepth), selection returns `{ ok: false, reason: "all N operator base UTXO(s) have deep unconfirmed ancestry — wait for confirmation or fund from fresh source to avoid too-long-mempool-chain" }` BEFORE building. **No silent doomed-tx assembly.**
+- **Call sites updated:** both delivery + sell refund now pass `fetchUnconfirmedDepth` (via `unconfirmedAncestorCount`, now exported).
+- **Evidence:** mainnet failure (STATE.md) — BUY TX-A hit `too-long-mempool-chain` because operator base descended from pre-fix stuck txs.
+
+**Impact:** Both fixes are MANDATORY before public instant-swap. Without FIX 1, a fresh process or new integration double-spends on first tx. Without FIX 2, if operator base is funded from a deep chain, **every buy/sell fails at broadcast** → stuck orders until a fresh confirmed UTXO appears.
+
+**Tests:** packages typecheck clean (bsv, curve, db), 22/22 package tests pass (db 1/1, bsv 2/2, curve 19/19).
+
+## Previous fix (2026-08-04f) — covenant fee-underpayment (money-critical)
 
 **Symptom:** every covenant-carrying tx (deploy, buy TX-A, sell TX2 refund) paid ~40 sats for a ~3,683-byte tx
 (0.011 sat/byte) and was EVICTED from the mempool — nothing confirmed. **Cause:** the fee estimators sized

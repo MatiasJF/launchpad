@@ -11,6 +11,7 @@ import { LedgerTradeCard } from '../../../components/LedgerTradeCard';
 import { StasTradeCard } from '../../../components/StasTradeCard';
 import { ClaimTokens } from '../../../components/ClaimTokens';
 import { Markdown } from '../../../components/Markdown';
+import { SpvExplainer } from '../../../components/SpvExplainer';
 import { StatusPill, Tabs } from '../../../components/ui';
 import { TokenomicsBar } from '../../../components/ui/TokenomicsBar';
 
@@ -82,30 +83,88 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               <Tabs
                 tabs={[
                   {
-                    id: 'about',
-                    label: 'About',
-                    content: s.about ? (
-                      <Markdown className="max-w-[68ch]">{s.about}</Markdown>
-                    ) : (
-                      <p className="text-muted">No description yet.</p>
+                    id: 'buy',
+                    label: 'Buy',
+                    content: (
+                      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
+                        <div>
+                          {/* Price guarantee messaging */}
+                          <div className="mb-6 rounded-lg border border-teal/30 bg-teal/5 p-4">
+                            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-teal">
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                              </svg>
+                              Price Guarantee
+                            </h3>
+                            <p className="text-sm text-muted">
+                              Price locks when you confirm—no slippage, no front-running. BSV has no global mempool, so your transaction settles in order with instant finality.
+                            </p>
+                          </div>
+
+                          {/* Details grid */}
+                          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                            <Detail label="Total supply" value={s.totalSupply.toLocaleString('en-US')} />
+                            <Detail label="Public allocation" value={s.publicAllocation.toLocaleString('en-US')} />
+                            <Detail label="Price" value={`${s.priceSats} sats`} />
+                            <Detail label="Ticker" value={s.ticker} />
+                            <Detail label="Network" value="Mainnet" />
+                            <Detail label="Settlement" value="On-chain · SPV" />
+                          </div>
+
+                          {/* SPV explainer */}
+                          <SpvExplainer />
+                        </div>
+
+                        {/* Buy card (moved from sidebar) */}
+                        <div>
+                          {s.type === 'bonding_curve' ? (
+                            s.curve && s.curve.status === 'live' ? (
+                              s.curve.variant === 'stas' ? <StasTradeCard s={s} /> : s.curve.variant === 'ledger' ? <LedgerTradeCard s={s} /> : <CurveBuyCard s={s} />
+                            ) : (
+                              <div className="card p-6 text-sm text-muted">
+                                This bonding-curve sale isn't open yet — the project owner needs to deploy the pool (from their manage
+                                page). Check back shortly.
+                              </div>
+                            )
+                          ) : s.type === 'escrow_presale' && !s.assured ? (
+                            <ContributeCard s={s} />
+                          ) : (
+                            <BuyCard s={s} />
+                          )}
+                        </div>
+                      </div>
                     ),
                   },
                   {
-                    id: 'tokenomics',
-                    label: 'Tokenomics',
-                    content: <TokenomicsBar allocations={s.allocations} />,
+                    id: 'about',
+                    label: 'About',
+                    content: (
+                      <div>
+                        {s.about ? (
+                          <Markdown className="max-w-[68ch]">{s.about}</Markdown>
+                        ) : (
+                          <p className="text-muted">No description yet.</p>
+                        )}
+                        <div className="mt-8">
+                          <h3 className="mb-4 text-lg font-semibold">Tokenomics</h3>
+                          <TokenomicsBar allocations={s.allocations} />
+                        </div>
+                      </div>
+                    ),
                   },
                   {
-                    id: 'details',
-                    label: 'Details',
+                    id: 'stats',
+                    label: 'Stats',
                     content: (
                       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3">
                         <Detail label="Total supply" value={s.totalSupply.toLocaleString('en-US')} />
                         <Detail label="Public allocation" value={s.publicAllocation.toLocaleString('en-US')} />
                         <Detail label="Price" value={`${s.priceSats} sats`} />
-                        <Detail label="Ticker" value={s.ticker} />
+                        <Detail label="Remaining" value={s.remaining.toLocaleString('en-US')} />
+                        <Detail label="Sold %" value={`${s.soldPct}%`} />
                         <Detail label="Network" value="Mainnet" />
                         <Detail label="Settlement" value="On-chain · SPV" />
+                        <Detail label="Type" value={s.type === 'bonding_curve' ? 'Bonding curve' : s.type === 'escrow_presale' ? 'Escrow presale' : 'Instant swap'} />
                       </div>
                     ),
                   },
@@ -115,20 +174,6 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           </div>
 
           <aside>
-            {s.type === 'bonding_curve' ? (
-              s.curve && s.curve.status === 'live' ? (
-                s.curve.variant === 'stas' ? <StasTradeCard s={s} /> : s.curve.variant === 'ledger' ? <LedgerTradeCard s={s} /> : <CurveBuyCard s={s} />
-              ) : (
-                <div className="card p-6 text-sm text-muted">
-                  This bonding-curve sale isn’t open yet — the project owner needs to deploy the pool (from their manage
-                  page). Check back shortly.
-                </div>
-              )
-            ) : s.type === 'escrow_presale' && !s.assured ? (
-              <ContributeCard s={s} />
-            ) : (
-              <BuyCard s={s} />
-            )}
             <ClaimTokens slug={s.slug} />
             <Link
               href={`/project/${s.slug}/manage`}

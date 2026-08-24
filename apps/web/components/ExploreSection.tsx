@@ -5,16 +5,30 @@ import type { SaleStatus } from '@launchpad/core';
 import type { SaleCardVM } from '../lib/types';
 import { ProjectCard } from './ProjectCard';
 
-const FILTERS: { key: 'all' | SaleStatus; label: string }[] = [
+const FILTERS: { key: 'all' | 'trending' | SaleStatus; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'live', label: 'Live' },
+  { key: 'trending', label: 'Trending' },
   { key: 'scheduled', label: 'Upcoming' },
-  { key: 'finalized', label: 'Finalized' },
+  { key: 'finalized', label: 'Completed' },
 ];
 
 export function ExploreSection({ sales }: { sales: SaleCardVM[] }) {
-  const [active, setActive] = useState<'all' | SaleStatus>('all');
-  const items = active === 'all' ? sales : sales.filter((s) => s.status === active);
+  const [active, setActive] = useState<'all' | 'trending' | SaleStatus>('all');
+
+  // Trending: sort by volume (soldPct * publicAllocation * priceSats) descending, live only
+  const trending = [...sales]
+    .filter((s) => s.status === 'live')
+    .sort((a, b) => {
+      const volA = (a.soldPct / 100) * a.publicAllocation * a.priceSats;
+      const volB = (b.soldPct / 100) * b.publicAllocation * b.priceSats;
+      return volB - volA;
+    });
+
+  const items =
+    active === 'all' ? sales :
+    active === 'trending' ? trending :
+    sales.filter((s) => s.status === active as SaleStatus);
 
   return (
     <section id="explore" className="mx-auto max-w-[1120px] px-4 pb-20 pt-10 sm:px-6">

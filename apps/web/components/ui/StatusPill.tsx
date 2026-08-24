@@ -16,9 +16,14 @@ const TONE: Record<string, string> = {
 
 export function StatusPill({ status }: { status: SaleStatus | OrderState }) {
   const tone = TONE[status] ?? 'var(--info)';
+  const isLive = status === 'live';
+
   return (
     <span className="pill" style={{ '--tone': tone } as CSSProperties}>
-      {status}
+      {isLive && (
+        <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--status-live)]" />
+      )}
+      {status === 'finalized' ? 'Completed' : status}
     </span>
   );
 }
