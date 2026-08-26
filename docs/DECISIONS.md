@@ -257,3 +257,38 @@ Append-only; newest at the bottom. Template per entry:
   - **DEFER (explicit):** B-ledger / HashedMap (ADR-027), batch settlement / batching, Dutch & batch auctions. They stay on the roadmap as the *future* fully-trustless upgrade + viral-scale levers — **not launch blockers** at year-1 scale (20-30 projects × few contributors; one covenant per project already isolates them).
 - **Trust model (honest — MUST be labelled in-product):** trustless **pricing** both directions (the covenant caps amounts — nobody can be over/under-paid or diverted); **operator-assisted token movement** both directions (the operator can stall/censor, never mis-price or divert). A **compromised operator co-sign key drains the whole reserve** → the key is the load-bearing security boundary. Label the curve **"instant liquidity — operator-assisted," never "fully trustless."** This makes Option B the DEFAULT launch curve, reversing the strategy doc's positioning of it as a non-default variant; B-ledger becomes the later trustless upgrade.
 - **Consequences / build:** new **atomic buy assembly** merging `stasBuyAssembly` (covenant buy) with `operatorDeliver` (STAS transfer) into one tx; the server buy flow reverses so the operator participates at buy time. The split-buy "Complete delivery" recovery is kept ONLY for partial-failure recovery, not the happy path. **Mandatory before real money:** external covenant audit (ADR-026/027), HSM-grade custody for the operator key (or do not ship Option B), robust operator **fee-fuel management** (the mempool jam that blocked local testing), and honest in-product labelling. **Status:** decision only — no code changed yet; implementation to follow via orchestration.
+
+## ADR-030 · Bounded-size ledger: fixed-depth Merkle slots instead of an in-covenant HashedMap · Accepted · 2026-08-26
+
+- **Context.** ADR-027's `LedgerPool` keeps every holder inside the covenant as a `HashedMap`.
+  Measured (`packages/curve/service/measure-ledger-size.ts`): the contract code is a fixed 10,884 B
+  and each holder adds **~64 B of state**, which appears in BOTH the successor script and the
+  sighash preimage — **~128 B per holder per trade**. At 1,000 holders one buy is a **~150 KB**
+  transaction. The fee (~22.5k sats) is survivable; the real cost is that reconstruction must
+  download every hop, so a client's cost to verify the pool grows as **O(trades × holders)**. This
+  is "Limit A" in `docs/TRUSTLESS-LEDGER-ROADMAP.md`, and the reason Option B (ADR-028) exists.
+- **Decision.** Commit the ledger as a **32-byte Merkle root** over a **fixed-depth (16) array of
+  holder slots**, plus a `holderCount`. A spend carries an inclusion proof of exactly DEPTH sibling
+  hashes (**512 B, constant in holder count**). New contract `packages/curve/src/contracts/
+  merkleLedgerPool.ts`; off-chain tree `packages/curve/src/merkleLedger.ts`.
+- **Why indexed slots, not a key-addressed SMT.** A sparse Merkle tree keyed by a 160-bit pkh needs
+  a 160-level path (~5 KB proofs) or a compact bitmap encoding that is markedly harder to verify in
+  Script. This is already the largest audit surface in the system, so the simpler structure wins:
+  addressing by slot index gives a DEPTH-step verification loop of plain sha256.
+- **What it removes.** `LedgerPool.buy` needed an `isNew` flag backed by a **non-membership proof**,
+  because `HashedMap.set` could otherwise overwrite a live balance and break `sold == sum(balances)`
+  — a reserve drain. Indexed slots close that by construction: every spend must prove the CURRENT
+  value of the slot it touches, so nothing can be reset. A new holder proves the slot at exactly
+  `holderCount` is EMPTY. A holder ending up with two slots is harmless — the sum is conserved.
+  It also removes the **per-spend history replay**: state is three scalars, so no HashedMap has to
+  be rebuilt to derive a successor.
+- **Measured result.** Locking script **11,865 B at 0 holders and 11,867 B at 200** (the 2 B is
+  integer-encoding creep in `sold`/`holderCount` — O(log holders)) versus **23,684 B** for the
+  HashedMap at 200. Code floor is ~900 B higher, so the break-even is ~18 holders; above that the
+  advantage grows without bound.
+- **Consequences.** A second covenant to audit, and pool terms are not interchangeable with
+  ADR-027 pools (different script, different genesis). ADR-027's `LedgerPool` stays as the proven
+  prototype; deployed ADR-027 pools are unaffected. **Limit B is untouched** — this bounds SIZE,
+  not throughput; ~25 trades per confirmation window per pool still stands.
+- **Status of proof.** Offline 16/16 through the @bsv/sdk interpreter over the exact assembled
+  bytes (`service/verify-merkle-pool.ts`) plus 14 off-chain tree tests; mainnet proof pending.
