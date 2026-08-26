@@ -48,7 +48,7 @@ import { execFileSync } from 'node:child_process';
 
 import { KeyDeriver, PrivateKey, PublicKey, Transaction } from '@bsv/sdk';
 
-import { FlatKeyWallet, flatKeyBalanceSats } from './lib/flat-key-wallet.mjs';
+import { FlatKeyWallet } from './lib/flat-key-wallet.mjs';
 import { curveCost, buildStasBuyTx, buildStasSellRefundTx } from '@launchpad/curve';
 import { issueStasGenesis } from '@launchpad/bsv/genesis';
 import { operatorDeliverStas, transferStas } from '@launchpad/bsv/settle';
@@ -75,8 +75,10 @@ const DELTA = 1; // buy/sell one token
 const CHAIN = 'main';
 const STAS_PROTOCOL = [2, '3241645161d8']; // canonical STAS BRC-42 owner protocol (ADR-021)
 const ORIGINATOR = 'launchpad.e2e';
-// ~worst-case sats the operator must have on hand for one run (seed + fundings/fees).
+// ~worst-case sats each wallet must have for one run: the OPERATOR pays delivery+refund
+// fees; the CLIENT pays the pool seed + mint fees + the buy (cost + fees).
 const MIN_OPERATOR_SATS = 2500;
+const MIN_CLIENT_SATS = 2500;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -156,6 +158,15 @@ function readOperatorKeyHex() {
   }
   return keyHex;
 }
+function readClientKeyHex() {
+  const envPath = path.join(__dirname, '..', '.env');
+  const txt = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
+  const keyHex = (txt.match(/^TEST_CLIENT_KEY=(.+)$/m)?.[1] ?? '').trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) {
+    throw new Error('TEST_CLIENT_KEY missing or not 64-char hex in apps/web/.env — run: pnpm --filter @launchpad/web test:client');
+  }
+  return keyHex;
+}
 async function getOperator(keyHex) {
   const bsv = await loadBsv();
   const p = bsv.PrivateKey.fromString(keyHex);
@@ -226,37 +237,45 @@ async function main() {
   kv('vault (mint→)', `hash160(operator pub) = ${op.pkh}`);
   kv('run slug', slug);
 
-  // Flat-key wallet shim (NO toolbox) — funds/broadcasts every non-operator role
-  // (admin deploy+mint, buyer payment, seller STAS return) from the operator BASE
-  // UTXOs over WoC, exactly like the operator delivery/refund fee path.
-  const wallet = new FlatKeyWallet(keyHex, {
+  // TWO SEPARATE flat-key wallets (NO toolbox) = a real two-party test:
+  //   • clientWallet (TEST_CLIENT_KEY) plays the CLIENT roles — admin deploy+mint, buyer
+  //     payment, seller STAS return — funded from the CLIENT base address (your test wallet).
+  //   • the OPERATOR (OPERATOR_KEY / op) co-signs delivery + refund and pays operator fees
+  //     from the OPERATOR base address. Client sats ≠ operator sats; STAS flows client→vault→client.
+  const clientKeyHex = readClientKeyHex();
+  const client = await getOperator(clientKeyHex);
+  const clientWallet = new FlatKeyWallet(clientKeyHex, {
     chain: CHAIN,
-    basePkh: op.pkh,
-    baseAddress: op.address,
-    operatorPubHex: op.pubHex,
-    fetchUtxos: () => getOperatorBaseUtxos(op.address),
+    basePkh: client.pkh,
+    baseAddress: client.address,
+    operatorPubHex: client.pubHex, // the pubkey whose hash160 owns the CLIENT base UTXOs
+    fetchUtxos: () => getOperatorBaseUtxos(client.address),
     fetchBeef: getSourceBeefDeep,
     broadcastChain: broadcastBeefChain,
   });
-  const identityKey = new KeyDeriver(new PrivateKey(keyHex, 'hex')).identityKey;
+  const clientIdentityKey = new KeyDeriver(new PrivateKey(clientKeyHex, 'hex')).identityKey;
 
-  const startBal = await flatKeyBalanceSats(wallet);
-  const startBaseBal = await operatorBaseBalance(op.address);
-  kv('operator sats', `${startBal} (flat-key base UTXOs, start)`);
-  kv('operator base', `${startBaseBal} sats @ ${op.address} (flat-key funding source, start)`);
-  if (startBaseBal <= 0) {
-    log(`⚠️  operator BASE address holds 0 sats — EVERY step (all flat-key funded) will fail until it is funded (send sats to ${op.address}).`);
-  }
-  if (startBal < MIN_OPERATOR_SATS) {
+  const startBal = await operatorBaseBalance(client.address); // CLIENT funding source
+  const startBaseBal = await operatorBaseBalance(op.address); // OPERATOR fee source
+  kv('client addr', `${client.address} (deploy/mint/buy/sell — your funded test wallet)`);
+  kv('client sats', `${startBal} @ ${client.address} (client funding source, start)`);
+  kv('operator sats', `${startBaseBal} @ ${op.address} (operator fee source, start)`);
+  if (startBal < MIN_CLIENT_SATS) {
     throw new Error(
-      `operator base balance ${startBal} sats is below ~${MIN_OPERATOR_SATS} needed for a run — ` +
+      `client base balance ${startBal} sats is below ~${MIN_CLIENT_SATS} needed for deploy+mint+buy — ` +
+      `FUND THE CLIENT TEST ADDRESS ${client.address} (real mainnet sats) and retry.  (pnpm --filter @launchpad/web test:client shows it)`,
+    );
+  }
+  if (startBaseBal < MIN_OPERATOR_SATS) {
+    throw new Error(
+      `operator base balance ${startBaseBal} sats is below ~${MIN_OPERATOR_SATS} needed for delivery+refund fees — ` +
       `FUND THE OPERATOR BASE ADDRESS ${op.address} (real mainnet sats over WoC) and retry.`,
     );
   }
 
-  // Buyer/seller STAS owner address — derived from the SAME wallet, EXACTLY as the
-  // UI does (getPublicKey protocolID=STAS keyID=slug counterparty=self, no forSelf).
-  const { publicKey: ownerPub } = await wallet.getPublicKey({ protocolID: STAS_PROTOCOL, keyID: slug, counterparty: 'self' }, ORIGINATOR);
+  // Buyer/seller STAS owner address — derived from the CLIENT wallet (the real buyer),
+  // EXACTLY as the UI does (getPublicKey protocolID=STAS keyID=slug counterparty=self).
+  const { publicKey: ownerPub } = await clientWallet.getPublicKey({ protocolID: STAS_PROTOCOL, keyID: slug, counterparty: 'self' }, ORIGINATOR);
   const receiveAddress = PublicKey.fromString(ownerPub).toAddress().toString();
   kv('buyer STAS addr', receiveAddress);
 
@@ -272,10 +291,10 @@ async function main() {
     const { scriptHex: covenantHex } = JSON.parse(out.toString());
     kv('covenant bytes', covenantHex.length / 2);
 
-    log('funding + broadcasting the seed reserve output from the operator wallet…');
+    log('funding + broadcasting the seed reserve output from the CLIENT wallet…');
     let res;
     try {
-      res = await wallet.createAction({
+      res = await clientWallet.createAction({
         description: 'e2e stas pool deploy',
         outputs: [{ lockingScript: covenantHex, satoshis: SEED_RESERVE_SATS, outputDescription: 'stas curve pool reserve' }],
         options: { randomizeOutputs: false, acceptDelayedBroadcast: false },
@@ -314,12 +333,12 @@ async function main() {
   await step('MINT full supply as STAS into the operator vault', async () => {
     // redemption anchor (tokenId) is wallet-derived inside issueStasGenesis; owner
     // override = operator flat pubkey so the whole supply locks to the vault.
-    const { publicKey: redemptionPubkey } = await wallet.getPublicKey({ protocolID: STAS_PROTOCOL, keyID: `${slug}-redeem`, counterparty: 'self' }, ORIGINATOR);
+    const { publicKey: redemptionPubkey } = await clientWallet.getPublicKey({ protocolID: STAS_PROTOCOL, keyID: `${slug}-redeem`, counterparty: 'self' }, ORIGINATOR);
     kv('owner override', `${op.pubHex.slice(0, 16)}… (operator vault)`);
 
     let g;
     try {
-      g = await issueStasGenesis(wallet, identityKey, CHAIN, { slug, symbol, supply: Number(SUPPLY), ownerPubHex: op.pubHex });
+      g = await issueStasGenesis(clientWallet, clientIdentityKey, CHAIN, { slug, symbol, supply: Number(SUPPLY), ownerPubHex: op.pubHex });
     } catch (e) {
       throw fail(`issueStasGenesis threw: ${e instanceof Error ? e.message : String(e)}`, {});
     }
@@ -351,7 +370,7 @@ async function main() {
 
     let built;
     try {
-      built = await buildStasBuyTx({ wallet, chain: CHAIN, pool: state.pool, delta: DELTA });
+      built = await buildStasBuyTx({ wallet: clientWallet, chain: CHAIN, pool: state.pool, delta: DELTA });
     } catch (e) {
       throw fail(`buildStasBuyTx threw: ${e instanceof Error ? e.message : String(e)}`, { pool: state.pool });
     }
@@ -395,6 +414,7 @@ async function main() {
       needSats: 1000,
       fetchUtxos: () => getOperatorBaseUtxos(op.address),
       fetchBeef: getSourceBeefDeep,
+      fetchIsUnspent: async (t, v) => (await isOutputUnspent(t, v)).unspent, // FIX-1: mandatory spent-check
     });
     if (!feeSel.ok) throw fail(`operator base fee funding failed: ${feeSel.reason}`, { baseAddress: op.address });
     kv('fee inputs', `${feeSel.feeInputs.length} (total ${feeSel.totalSats} sats)`);
@@ -467,7 +487,7 @@ async function main() {
     const vaultAddress = op.address; // return STAS to the operator vault (base P2PKH)
     let res;
     try {
-      res = await transferStas(wallet, identityKey, CHAIN, {
+      res = await transferStas(clientWallet, clientIdentityKey, CHAIN, {
         source: {
           txid: cur.txid, vout: cur.vout, scriptHex: info.scriptHex, satoshis: info.satoshis,
           brc42KeyId: slug,
@@ -508,7 +528,8 @@ async function main() {
 
   await step('SELL — TX2 reserve refund (operator co-signed)', async () => {
     const bsv = await loadBsv();
-    const sellerRefundScriptHex = bsv.Script.buildPublicKeyHashOut(bsv.Address.fromString(op.address)).toHex();
+    // The SELLER is the CLIENT — the reserve refund pays the CLIENT address (two-party).
+    const sellerRefundScriptHex = bsv.Script.buildPublicKeyHashOut(bsv.Address.fromString(client.address)).toHex();
 
     let res;
     try {
@@ -523,13 +544,14 @@ async function main() {
         signFeeDigest: signCovenant,
         fetchUtxos: () => getOperatorBaseUtxos(op.address),
         fetchBeef: getSourceBeefDeep,
+        fetchIsUnspent: async (t, v) => (await isOutputUnspent(t, v)).unspent, // FIX-1: mandatory spent-check
       });
     } catch (e) {
       throw fail(`buildStasSellRefundTx THREW: ${e instanceof Error ? (e.stack || e.message) : String(e)}`, { pool: state.pool });
     }
     if (!res.ok) throw fail(`buildStasSellRefundTx failed: ${res.reason}`, { pool: state.pool, sellerRefundScriptHex });
 
-    kv('refund', `${res.refund} sats → ${op.address}`);
+    kv('refund', `${res.refund} sats → ${client.address} (seller = client)`);
     kv('reserveAfter', res.reserveAfter);
     kv('TX2 txid', res.txid);
     // Flush TX1's flat-key funding chain (base ancestry + TX1), then broadcast TX2.
@@ -548,9 +570,9 @@ async function main() {
     kv('tx', wocTx(state.refundTxid));
   });
 
-  const endBal = await flatKeyBalanceSats(wallet);
+  const endBal = await operatorBaseBalance(client.address);
   const endBaseBal = await operatorBaseBalance(op.address);
-  return { startBal, endBal, startBaseBal, endBaseBal, baseAddress: op.address, state };
+  return { startBal, endBal, startBaseBal, endBaseBal, clientAddress: client.address, baseAddress: op.address, state };
 }
 
 function safeShape(o) {
@@ -579,8 +601,8 @@ hr('█');
 for (const s of steps) console.log(`  ${s.ok ? '✅' : '❌'} ${s.name}${s.ok ? '' : `  — ${s.error}`}`);
 if (result) {
   hr();
-  kv('operator sats', `${result.startBal} → ${result.endBal} (Δ ${result.endBal - result.startBal}) [flat-key base UTXOs]`);
-  kv('operator base', `${result.startBaseBal} → ${result.endBaseBal} (Δ ${result.endBaseBal - result.startBaseBal}) [flat-key spend @ ${result.baseAddress}]`);
+  kv('client sats', `${result.startBal} → ${result.endBal} (Δ ${result.endBal - result.startBal}) [client @ ${result.clientAddress}]`);
+  kv('operator sats', `${result.startBaseBal} → ${result.endBaseBal} (Δ ${result.endBaseBal - result.startBaseBal}) [operator @ ${result.baseAddress}]`);
   console.log('\n  txids:');
   for (const [k, v] of Object.entries(result.state)) {
     if (typeof v === 'string' && /^[0-9a-fA-F]{64}$/.test(v)) console.log(`    ${k.padEnd(14)} ${wocTx(v)}`);
