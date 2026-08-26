@@ -21,6 +21,7 @@ present, not implemented.
 - Research: UTXO concurrency / serialization patterns → `docs/research/UTXO-CONCURRENCY-PATTERNS.md`
 - Research: comparable decentralized crowdfunding protocols (Eth/Cosmos/Cardano) → `docs/research/task-6-decentralized-crowdfunding-protocols.md`
 - Operator key custody (HSM/KMS signer for production; contract + provider recipes) → `docs/OPERATOR-KEY-CUSTODY.md`
+- Covenant audit prep (audit surface, invariants, drain vectors for an external auditor) → `docs/COVENANT-AUDIT-PREP.md`
 
 ## Domain & data
 

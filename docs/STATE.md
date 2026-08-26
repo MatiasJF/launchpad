@@ -96,6 +96,18 @@ is easy to click — removed the ledger/linear card; the wallet-STAS card is the
 (needed for /admin). UX follow-ups noted: sold-out state could show "sold out — selling open" explicitly;
 the "register settled purchases" panel display when already delivered.
 
+## ✅ Open items worked through (2026-08-26)
+
+Post-PR (#1) close-out of the ADR-029 launch open items:
+- **Operator key → HSM/KMS**: signer made pluggable (see below). ✅ code; human provisions the HSM.
+- **UX polish**: sold-out trade-card state ("buying closed, sell open" + shortcut); live pill fixed
+  (was two dots — static `.pill::before` + pulsing — now only the pulsing one). ✅
+- **Automated sweep trigger**: `CRON_SECRET` set + `apps/web/vercel.json` schedules
+  `/api/cron/sweep-deliveries` every 2 min (Vercel sends the bearer the route checks). ✅
+- **External audit**: prep doc `docs/COVENANT-AUDIT-PREP.md` (audit surface, invariants 1–8, drain
+  vectors, evidence, out-of-scope). ✅ prep; the audit itself is external and gates any real reserve.
+Remaining human/infra: run the audit; provision the HSM + signer; deploy + set the production envs.
+
 ## 🔐 Operator key → HSM/KMS ready (2026-08-26)
 
 The operator co-sign key (the reserve-security boundary, ADR-029) signing is now PLUGGABLE
