@@ -1,6 +1,37 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: ADR-030 audit gaps closed — Script attacked (34/34), boundaries + multi-slot proven_
+_Last updated: 2026-08-27 — by: ADR-031 no spread; calibrating the fee FLOOR, which is the real constraint_
+
+## ADR-031 (2026-08-27) — no spread on the trustless curve; the fee FLOOR is the real problem
+
+Decided before the external audit, because adding a spread afterwards means a new contract, a
+re-audit, and pools stranded on the old script. Modelled against measured numbers
+(`packages/curve/service/model-spread.ts`), not argued.
+
+**Decision: NO spread.** The curve stays exactly symmetric. Three measured reasons:
+1. **The deterrent already exists** — a round trip costs **7,410 sats** in miner fees at 0.15 sat/B,
+   so a 1% spread only dominates above ~741,000 sats per trade.
+2. **Revenue is negligible** — 5% on a 30% exit of a 500,500-sat pool is **7,508 sats**, two
+   transactions' worth of fee. At 0.5% it is 751.
+3. **It costs provable properties** — the `/2` is currently EXACT and solvency is an equality; a
+   spread makes it truncate (safely — always toward the pool, and splitting a sell to dodge it
+   costs more) but weakens the invariant to `>=` and adds a rounding direction to audit.
+
+**What the model surfaced instead, and it matters more:** the fee floor is **regressive**. A
+10,000-sat trade pays **74%** in miner fees; 100,000 pays **7.4%**. ADR-030 bounded the growth, but
+the FLOOR stays ~3,705 sats/trade because the ~11.8 KB contract appears twice (successor script +
+sighash preimage). **This curve is uneconomic below roughly 500,000 sats per trade** — a real
+product constraint not previously stated anywhere.
+
+**Follow-up 1 in progress — fee-rate calibration** (`service/calibrate-fee-rate.ts`). 0.15 sat/B was
+conservative and never tested. Deliberately two-phase: `--probe` broadcasts a pool-SIZED transaction
+at each candidate rate, `--check` returns later to see which were actually **MINED**. Acceptance
+into a mempool proves nothing, and an accepted-but-unmined transaction is WORSE than an overpaid one
+because it jams every successor behind it. First probe: **all 7 rates accepted, down to 0.001 sat/B
+(25 sats for 24,699 bytes)** — that is the acceptance floor, not the answer. Mining result pending.
+
+**Follow-up 2 (not started):** batch settlement, already the Limit B mitigation in the roadmap —
+amortises the floor across N buyers at the cost of a semi-trusted sequencer.
 
 ## ADR-030 audit gaps (2026-08-27) — four of five closed
 
