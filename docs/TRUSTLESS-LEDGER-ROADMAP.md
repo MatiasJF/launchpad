@@ -74,8 +74,24 @@ burst are in tension for a curve — pick per launch (§7).**
    with a real WhatsOnChain spent-lookup + tx-fetch (that is phase 2). (This reconstructs the *current
    HashedMap* ledger — enough for the trustless demo; the SMT migration in §3 is a separate covenant
    change layered on after.)
-2. **On-chain pool discovery** — `resolveLedgerPool(genesisTxid)`: walk to the unspent tip for
-   the current outpoint + committed root, no DB (mirror of `resolveCurrentPool`).
+2. **On-chain pool discovery — ✅ BUILT + MAINNET-PROVEN (10/10).**
+   `packages/curve/service/resolveLedgerPool.ts` — `resolveLedgerPool(genesisTxid, {k, supply,
+   payoutPkh})` returns the live outpoint, reserve, `sold`, every holder balance and the full op
+   history **from WhatsOnChain alone, no DB**. The walk is **self-verifying**: each hop recomputes
+   the expected successor from the ops parsed so far and matches an output byte-for-byte, so a
+   misparse fails at its own hop rather than surfacing as a confusing end-state mismatch, the
+   successor needs no prefix heuristic, and graduation is detected naturally.
+   **Proven on a live mainnet pool** (`verify-reconstruct-mainnet.ts`): deployed genesis
+   `3e247404…:0` (k=1, supply=100, payoutPkh `121c7ea8…`), put a real 3-op multi-holder history on
+   chain — A +40 (`fb7197f7…`), B +20 (`0bbe4c40…`), A −30 holder-signed (`888f3724…`) — then
+   rebuilt it with `--resolve <genesisTxid>` and nothing else: reserve 1011, sold 30, A=10, B=20,
+   and the reconstructed lockingScript **byte-matched the on-chain tip**. Holder B's pkh
+   (`275532e2…`) was recovered **from chain alone** — its key was a throwaway that no longer exists
+   locally, which is the claim in its strongest form.
+   **WoC quirk handled (cost a failed run):** `/tx/{txid}/{vout}/spent` returns the same 404 for a
+   genuinely-unspent output and for one whose spend is in the mempool but not yet indexed, so a read
+   moments after a trade reports a **stale tip and a short history**. `resolveLedgerPool` re-checks
+   an apparent tip (`tipRechecks`, default 2) before concluding.
 3. **Open client library** — package buy/sell construction (compiled ledger-state + `ledgerTx`)
    into a standalone lib taking `(wallet, genesisTxid)`, resolving state from chain — no server
    actions, no DB. This is the "anyone builds a UI" boundary. (scrypt-ts must compile with
@@ -115,11 +131,21 @@ burst are in tension for a curve — pick per launch (§7).**
 reconstructs from on-chain unlock scripts alone and byte-matches the successor tip, via both direct
 parse and a genesis→tip chain-walk with an injected `fetchSpendOf`.
 
-**Next (phase 2 — on-chain discovery):** back `fetchSpendOf` with a real WhatsOnChain spent-lookup +
-tx-fetch to make `resolveLedgerPool(genesisTxid)` return the live tip + reconstructed ledger with **no
-DB**, and prove it against a **real mainnet ledger pool** (walk an actual genesis to its tip and
-assert the byte-match on live data). Then the open client (phase 3) wraps this. Handle WoC tip
-reorgs + spent-lookup lag there.
+**✅ Phase 2 done — `resolveLedgerPool` is built and MAINNET-proven (10/10, see §5.2).** Pool state
+(outpoint, reserve, `sold`, all holder balances, full history) now resolves from WhatsOnChain alone.
+**Protocol property 1 of 3 — "on-chain is the source of truth" — is met for the ledger pool.**
+
+**Reference pool (keep — the July pool's params were lost with a DB reset, making it
+unverifiable):** genesis `3e2474045088c9eb8ba484a723294d4c92a09d4348f67a88241d4c824d6d9a2c:0`,
+k=1, supply=100, payoutPkh `121c7ea8310c…` (client). Re-verify any time with:
+`node packages/curve/service/dist/service/verify-reconstruct-mainnet.js --resolve <genesisTxid>`.
+
+**Next (phase 3 — the open client):** package buy/sell construction + `resolveLedgerPool` into a
+standalone library taking `(wallet, genesisTxid)` with no server actions and no DB — the "anyone
+builds a UI" boundary. The mainnet harness already builds every covenant spend without the app or
+Prisma (`verify-reconstruct-mainnet.ts` does deploy/buy/sell against a flat key), so phase 3 is
+largely extracting that into a published surface + a wallet adapter. Note the scrypt-ts constraint:
+ship the **compiled** service (tsc, not esbuild/tsx).
 
 Related: `docs/research/decentralized-funding-strategy.md` (the trust-model analysis + open
 questions), `docs/DECISIONS.md` ADR-026 (keyless buy) / ADR-027 (ledger) / ADR-029 (why Option B

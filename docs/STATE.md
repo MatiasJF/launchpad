@@ -1,8 +1,35 @@
 # Project State
 
-_Last updated: 2026-08-26 — by: trustless track — ledger reconstruction linchpin built + offline-proven (17/17), DB now non-authoritative_
+_Last updated: 2026-08-26 — by: trustless track — DB-free ledger resolution PROVEN ON MAINNET (10/10)_
 
-## Trustless track (2026-08-26) — ledger reconstruction linchpin ✅ BUILT + PROVEN (branch `trustless-ledger-reconstruct`)
+## Trustless track · phase 2 (2026-08-26) — `resolveLedgerPool` ✅ MAINNET-PROVEN (10/10)
+
+Pool state now resolves **from WhatsOnChain alone — no operator DB**:
+`packages/curve/service/resolveLedgerPool.ts` returns the live outpoint, reserve, `sold`, every
+holder balance and the full op history from just `(genesisTxid, k, supply, payoutPkh)`.
+
+- **Self-verifying walk.** Each hop recomputes the expected successor from the ops parsed so far
+  and matches an output **byte-for-byte** — so the successor needs no prefix heuristic, a misparse
+  fails at its own hop, and graduation is detected naturally.
+- **Proven on a live mainnet pool** (`packages/curve/service/verify-reconstruct-mainnet.ts`):
+  deployed genesis `3e247404…:0` (k=1, supply=100), wrote a real 3-op multi-holder history —
+  A +40 `fb7197f7…`, B +20 `0bbe4c40…`, A −30 holder-signed `888f3724…` — then rebuilt it from the
+  genesis txid and nothing else: **reserve 1011, sold 30, A=10, B=20, reconstructed lockingScript
+  byte-matched the on-chain tip.** Holder B's pkh `275532e2…` was recovered **from chain alone**
+  (its key was a throwaway that no longer exists locally). Cost ~11k sats; every broadcast gated on
+  `validateAssembledCovenantInput` (the interpreter over the exact bytes), with a `--dry` mode.
+- **WoC quirk found + handled (cost one failed run):** `/tx/{txid}/{vout}/spent` returns the same
+  404 for a genuinely-unspent output and for one whose spend is in the mempool but **not yet
+  indexed** — so a read moments after a trade reports a **stale tip and a short history**. The
+  resolver now re-checks an apparent tip before concluding (`tipRechecks`, default 2). Added to the
+  BSV field notes (it generalises past this repo).
+- **Keep this pool's params** — the July ledger pool became unverifiable when a DB reset lost its
+  outpoint/terms. Re-verify any time:
+  `node packages/curve/service/dist/service/verify-reconstruct-mainnet.js --resolve <genesisTxid>`.
+- **Protocol property 1 of 3 ("on-chain is the source of truth") is met** for the ledger pool.
+  Next: phase 3, the open client library. Research track — does not block the shipped Option B.
+
+## Trustless track · phase 1 (2026-08-26) — ledger reconstruction linchpin ✅ BUILT + PROVEN (branch `trustless-ledger-reconstruct`)
 
 The trustless upgrade beyond Option B (a bonding-curve **protocol** anyone can build a UI over —
 `docs/TRUSTLESS-LEDGER-ROADMAP.md`) has its **phase-1 linchpin done and offline-proven**: the ADR-027
