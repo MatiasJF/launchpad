@@ -31,7 +31,16 @@ import { resolveLedgerPool, PoolTerms, ResolvedLedgerPool } from './resolveLedge
 export type { PoolTerms, ResolvedLedgerPool };
 
 const WOC = 'https://api.whatsonchain.com/v1/bsv/main';
-const DEFAULT_FEE_RATE = 0.15; // sat/byte — these covenant txs are ~20KB; don't get evicted
+// Fee rate, sat/byte. MEASURED, not guessed (ADR-031): pool-sized (24.7KB) transactions were
+// broadcast at seven descending rates and ALL SEVEN were mined in the same block — including
+// 0.001 sat/B, i.e. 25 sats for 24,699 bytes (`service/calibrate-fee-rate.ts`).
+//
+// We deliberately do NOT set the rate at that floor. It is one sample in one mempool condition, and
+// the failure mode is asymmetric: overpaying costs a few hundred satoshis, whereas a pool spend that
+// sits unconfirmed eats into the ~25-deep unconfirmed-chain budget that every successor shares. So
+// 0.01 keeps a 10x margin over the lowest observed mined rate while still cutting a round trip from
+// 7,410 sats to 494 — a 100,000-sat trade pays 0.49% instead of 7.41%.
+const DEFAULT_FEE_RATE = 0.01;
 const DUST = 546;
 
 /**

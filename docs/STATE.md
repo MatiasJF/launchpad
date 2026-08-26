@@ -23,12 +23,26 @@ the FLOOR stays ~3,705 sats/trade because the ~11.8 KB contract appears twice (s
 sighash preimage). **This curve is uneconomic below roughly 500,000 sats per trade** — a real
 product constraint not previously stated anywhere.
 
-**Follow-up 1 in progress — fee-rate calibration** (`service/calibrate-fee-rate.ts`). 0.15 sat/B was
-conservative and never tested. Deliberately two-phase: `--probe` broadcasts a pool-SIZED transaction
-at each candidate rate, `--check` returns later to see which were actually **MINED**. Acceptance
-into a mempool proves nothing, and an accepted-but-unmined transaction is WORSE than an overpaid one
-because it jams every successor behind it. First probe: **all 7 rates accepted, down to 0.001 sat/B
-(25 sats for 24,699 bytes)** — that is the acceptance floor, not the answer. Mining result pending.
+**Follow-up 1 — ✅ DONE. Fee rate is now 0.01 sat/B, a 15x cut, measured not guessed.**
+`service/calibrate-fee-rate.ts` is deliberately two-phase, because acceptance into a mempool proves
+nothing and an accepted-but-unmined transaction is WORSE than an overpaid one (it eats the ~25-deep
+unconfirmed-chain budget every successor shares). Result: pool-sized (24.7 KB) transactions at seven
+descending rates were **all seven MINED in block 964059** — including **0.001 sat/B = 25 sats for
+24,699 bytes**.
+
+The rate was deliberately NOT set at that floor — one sample, one mempool condition, asymmetric
+failure mode. **0.01 keeps a 10x margin** and still takes a round trip from **7,410 → 494 sats**; a
+100,000-sat trade pays **0.49%** instead of 7.41%. Confirmed with a REAL covenant spend rather than
+the padded probes: the whole ADR-030 lifecycle re-ran at the new rate (pool `9c4da0cb…:0`, graduation
+`876e6f51…`). Defaults updated in `ledgerClient.ts` + `merkleLedgerClient.ts`; Option B's
+`CURVE_FEE_RATE` deliberately left alone (it is the shipped path and out of scope here).
+
+**One harness assertion was wrong again, not the code:** the lifecycle's graduation check summed
+every output paying the payout SCRIPT, but this harness graduates with its own key, so the
+graduator's change lands on the same address and inflated the total (5,862 vs 3,786). On chain,
+output 0 was exactly 3,786 — the covenant behaved correctly. The check now asserts **output 0**,
+which is the one the covenant actually pins. The stranger-graduates test never showed this because
+there the change goes elsewhere.
 
 **Follow-up 2 (not started):** batch settlement, already the Limit B mitigation in the roadmap —
 amortises the floor across N buyers at the cost of a semi-trusted sequencer.

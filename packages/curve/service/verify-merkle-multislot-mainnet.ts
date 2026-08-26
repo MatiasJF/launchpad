@@ -34,7 +34,7 @@ import artifact from '../artifacts/merkleLedgerPool.json';
 const B: any = bsv;
 const WOC = 'https://api.whatsonchain.com/v1/bsv/main';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const FEE_RATE = 0.15;
+const FEE_RATE = 0.01; // ADR-031: measured, see calibrate-fee-rate.ts (10x margin over the lowest mined rate)
 
 const K = 1n;
 const SUPPLY = 120n;

@@ -326,10 +326,18 @@ Append-only; newest at the bottom. Template per entry:
   preimage). **This curve is uneconomic below roughly 500,000 sats per trade** — a real product
   constraint that had not been stated anywhere.
 - **Consequences / follow-up.** Effort goes to the floor, not to a spread:
-  1. **Fee-rate calibration** — 0.15 sat/B was chosen conservatively and never tested. Establish
-     empirically what miners actually accept AND MINE for transactions of this size (acceptance
-     into a mempool is not the same as being mined, and a stuck 24 KB transaction is worse than an
-     overpaid one). At 0.05 a round trip is 2,470 sats; at 0.01, 494.
+  1. **Fee-rate calibration — ✅ DONE, rate now 0.01 sat/B.** Measured on mainnet
+     (`service/calibrate-fee-rate.ts`): pool-sized (24.7 KB) transactions broadcast at seven
+     descending rates were **all seven mined in the same block (964059)** — including **0.001 sat/B,
+     i.e. 25 sats for 24,699 bytes**. The rate was deliberately NOT set at that floor: it is one
+     sample in one mempool condition, and the failure mode is asymmetric — overpaying costs a few
+     hundred satoshis, whereas a pool spend left unconfirmed eats the ~25-deep unconfirmed-chain
+     budget every successor shares. **0.01 sat/B keeps a 10x margin over the lowest observed mined
+     rate** and still cuts a round trip from **7,410 → 494 sats (15x)**; a 100,000-sat trade now
+     pays **0.49%** instead of 7.41%. Confirmed with a real covenant spend, not just the padded
+     probes: the full ADR-030 lifecycle re-ran at the new rate on pool `9c4da0cb…:0`
+     (deploy → 3 buys → sell → buy-out → graduate `876e6f51…`). Re-probe periodically; a rate that
+     works in a quiet mempool can fail in a busy one.
   2. **Batch settlement** — already the Limit B mitigation in `TRUSTLESS-LEDGER-ROADMAP.md`;
      amortises the floor across N buyers, at the cost of a semi-trusted sequencer.
 - **Reversibility.** Low cost now, high cost later: adding a spread after the audit means a new

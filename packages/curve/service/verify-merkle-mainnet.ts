@@ -26,7 +26,7 @@ import { bsv } from 'scrypt-ts';
 const B: any = bsv;
 const WOC = 'https://api.whatsonchain.com/v1/bsv/main';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const FEE_RATE = 0.15;
+const FEE_RATE = 0.01; // ADR-031: measured, see calibrate-fee-rate.ts (10x margin over the lowest mined rate)
 
 const K = 1n;
 const SUPPLY = 80n;
@@ -213,9 +213,14 @@ async function main() {
     await sleep(8000);
     const gRes = await woc(`/tx/hash/${gradTxid}`);
     const g = gRes && gRes.ok ? ((await gRes.json()) as any) : null;
-    const toPayout = (g?.vout ?? []).filter((o: any) => (o.scriptPubKey?.hex ?? '').toLowerCase() === grad.payoutScriptHex.toLowerCase())
-      .reduce((s: number, o: any) => s + Math.round((o.value ?? 0) * 1e8), 0);
-    check('full reserve released to the committed payout', toPayout === reserve, `${toPayout} vs ${reserve}`);
+    // Check OUTPUT 0 specifically — the one the covenant pins. Summing every output that pays the
+    // payout script is wrong here: this harness graduates with its own key, so the graduator's
+    // change lands on the SAME address and inflates the total. (The stranger-graduates test does
+    // not collide, which is why it never showed this.)
+    const out0 = (g?.vout ?? []).find((o: any) => o.n === 0);
+    const paid0 = Math.round((out0?.value ?? 0) * 1e8);
+    check('output 0 is the committed payout script', (out0?.scriptPubKey?.hex ?? '').toLowerCase() === grad.payoutScriptHex.toLowerCase());
+    check('output 0 carries the full reserve', paid0 === reserve, `${paid0} vs ${reserve}`);
   }
 
   log('\n▶ 7. RECONSTRUCT — rebuild the final script from the op history and compare to chain');
