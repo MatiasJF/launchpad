@@ -119,6 +119,13 @@ no off-chain provenance gate to defeat.*
   + proof correctness, forged-balance rejection, stale-proof rejection) and `merkle-solvency.test.mjs`
   (exact division, no-spread, telescoping, a 40-seed buy/sell fuzz asserting the invariants after
   EVERY operation, and a full-exit test showing the reserve returns to exactly the seed).
+- **Adversarial Script attacks, 34/34** (`service/verify-merkle-adversarial.ts`) — builds a VALID
+  unlock and then surgically rewrites its bytes, so the covenant (not our builder) is what rejects.
+  Covers tampered/zeroed/swapped/short-length siblings, flipped path bits, claiming another
+  holder's slot, `isNew` flipped in both directions, inflated and deflated `oldBal`/`delta`/
+  `newReserve`, redirected and inflated payouts, an added third output on a sell, swapped sell
+  outputs, a substituted pubkey, and three graduation-redirection attacks. Honest baselines are
+  asserted in the same run so the suite cannot pass by rejecting everything.
 - **Offline interpreter, 24/24** (`service/verify-merkle-pool.ts`) — every spend validated through
   the @bsv/sdk interpreter over the exact assembled bytes, plus underpay / forged-signature /
   oversell / early-graduation rejections and parser round-trips.
@@ -134,10 +141,12 @@ no off-chain provenance gate to defeat.*
 
 ## Known gaps in our own testing (please cover these)
 
-- **The Script itself has not been fuzzed.** Our adversarial work is at the economic-model level
-  (TypeScript) and via targeted interpreter cases. Random/mutational fuzzing of the unlocking script
-  — malformed proofs, wrong-length siblings, out-of-range paths, boundary `oldBal`/`delta` — has not
-  been done.
+- **The Script has been ATTACKED but not FUZZED.** `verify-merkle-adversarial.ts` runs 34
+  hand-designed byte-level attacks against the unlocking script (see evidence above), which is a
+  materially stronger claim than we could make before — but 34 chosen cases are not random or
+  mutational fuzzing. Untried: randomised sibling/path corruption at scale, malformed pushdata
+  framing, out-of-range path values, oversized/undersized argument encodings, and non-minimal
+  scriptNum encodings of `oldBal`/`delta`/`newReserve`. **Please fuzz it properly.**
 - **No formal argument that the off-chain and in-script folds are equivalent.** They agree on every
   case we test; equivalence has not been proven.
 - **Multi-slot holders are untested on mainnet.** Permitted by design, exercised off-chain, never
