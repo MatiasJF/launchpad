@@ -1,6 +1,30 @@
 # Project State
 
-_Last updated: 2026-08-26 — by: product decision — ship Option B hybrid as the launch curve, atomic operator-cosigned buy (ADR-029)_
+_Last updated: 2026-08-26 — by: trustless track — ledger reconstruction linchpin built + offline-proven (17/17), DB now non-authoritative_
+
+## Trustless track (2026-08-26) — ledger reconstruction linchpin ✅ BUILT + PROVEN (branch `trustless-ledger-reconstruct`)
+
+The trustless upgrade beyond Option B (a bonding-curve **protocol** anyone can build a UI over —
+`docs/TRUSTLESS-LEDGER-ROADMAP.md`) has its **phase-1 linchpin done and offline-proven**: the ADR-027
+ledger pool's state can be reconstructed **from chain alone, no operator DB**.
+
+- **What was built:** `packages/curve/src/ledgerReconstruct.ts` — `parseLedgerOp(unlockHex)` parses a
+  spent pool covenant input into its op `(ownerPkh, delta)` (layout verified vs real scrypt-ts output:
+  buy selector `OP_0`, delta@chunk 3; sell selector `OP_1`, amount@chunk 4 → `delta = −amount`;
+  graduate `OP_2` terminal). `reconstructLedgerHistory(genesisTxid, fetchSpendOf)` walks the successor
+  chain feeding those ops to the already-mainnet-proven `replay()` (now also exported as
+  `poolScriptForHistory` in `service/ledgerState.ts`).
+- **Proof (offline, no network):** `packages/curve/service/verify-reconstruct.ts` **17/17** — build a
+  real buy/sell/repeat-buy/sell-to-zero op sequence via the app's own code paths → collect the on-chain
+  unlock scripts → reconstruct from the scripts alone → the rebuilt `lockingScript` **byte-matches the
+  successor tip**, both by direct parse and by a genesis→tip chain-walk with an injected `fetchSpendOf`.
+  `@launchpad/curve` typecheck clean, 19/19 existing tests green.
+- **Why it matters:** the operator's database is now provably **non-authoritative** for the ledger
+  pool — the first of the three protocol properties (on-chain source of truth). This is a research
+  track, separate from and not blocking the shipped Option B (below).
+- **Next (phase 2):** back `fetchSpendOf` with a real WhatsOnChain spent-lookup + tx-fetch
+  (`resolveLedgerPool(genesisTxid)`, DB-free) and prove it against a **real mainnet ledger pool**;
+  handle WoC tip reorgs + spent-lookup lag there. Then the open client (phase 3).
 
 ## Decision (2026-08-26) — Option B is the launch curve · atomic buy (ADR-029)
 

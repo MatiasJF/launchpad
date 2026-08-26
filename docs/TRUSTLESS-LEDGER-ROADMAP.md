@@ -59,17 +59,21 @@ burst are in tension for a curve — pick per launch (§7).**
    redesign. Specify the sequencer contract + the Merkle-root-of-orders consent question.
 
 ## 5. Build phases
-1. **Reconstruct the ledger from chain (the linchpin) — HALF ALREADY BUILT.** The ordered-history
-   **`replay()`** in `packages/curve/service/ledgerState.ts` already rebuilds the *exact* on-chain
-   `LedgerPool` instance from an op list, and is **proven byte-exact against real mainnet successors**
-   (`04f87f04:0`, `ca6692f6:0`). The only missing piece is deriving that op list **from chain instead
-   of the DB**: walk the pool's successor chain from genesis, and for each hop **parse input-0's
-   unlocking script** to extract the op `(ownerPkh, delta)` — the buy unlock pushes `ownerPkh` + `delta`
-   (`self.buy(ownerPkh, isNew, oldBal, delta, newReserve)`), the sell unlock pushes `ownerPkh` +
-   `amount` (`delta = −amount`) — feed the ordered list to `replay`, and **assert the result's
-   lockingScript byte-matches the on-chain tip**. That makes the DB non-authoritative. (This
-   reconstructs the *current HashedMap* ledger — enough for the trustless demo; the SMT migration in
-   §3 is a separate covenant change layered on after.)
+1. **Reconstruct the ledger from chain (the linchpin) — ✅ BUILT + OFFLINE-PROVEN (17/17).** The
+   ordered-history **`replay()`** in `packages/curve/service/ledgerState.ts` already rebuilds the
+   *exact* on-chain `LedgerPool` instance from an op list (proven byte-exact against real mainnet
+   successors `04f87f04:0`, `ca6692f6:0`). The missing piece — deriving that op list **from chain
+   instead of the DB** — is now built: `packages/curve/src/ledgerReconstruct.ts` parses each hop's
+   input-0 unlocking script into its op `(ownerPkh, delta)` (buy selector `OP_0`, delta at chunk 3;
+   sell selector `OP_1`, amount at chunk 4, `delta = −amount`; graduate `OP_2` is terminal), and
+   `reconstructLedgerHistory(genesisTxid, fetchSpendOf)` walks the successor chain feeding those ops
+   to `replay`. **`packages/curve/service/verify-reconstruct.ts` proves it offline (17/17):** build a
+   real buy/sell op sequence → collect the on-chain unlocks → reconstruct from the scripts alone →
+   the rebuilt lockingScript **byte-matches the successor tip**, both via direct parse and a
+   genesis→tip chain-walk. The DB is now provably **non-authoritative**. Remaining: back `fetchSpendOf`
+   with a real WhatsOnChain spent-lookup + tx-fetch (that is phase 2). (This reconstructs the *current
+   HashedMap* ledger — enough for the trustless demo; the SMT migration in §3 is a separate covenant
+   change layered on after.)
 2. **On-chain pool discovery** — `resolveLedgerPool(genesisTxid)`: walk to the unspent tip for
    the current outpoint + committed root, no DB (mirror of `resolveCurrentPool`).
 3. **Open client library** — package buy/sell construction (compiled ledger-state + `ledgerTx`)
@@ -86,9 +90,11 @@ burst are in tension for a curve — pick per launch (§7).**
    the demo that settles the trustless claim.
 
 ## 6. Honest hard parts / R&D
-- **Ledger reconstruction**: the byte-exact `replay()` is DONE + mainnet-proven; the remaining risk
-  is the **unlock-script parser** extracting `(ownerPkh, delta)` correctly from every buy/sell hop
-  (byte-exact push parsing + the method selector). Lower risk than a from-scratch replay.
+- **Ledger reconstruction**: ✅ **DONE + offline-proven** (`ledgerReconstruct.ts`, 17/17). The
+  byte-exact `replay()` was already mainnet-proven; the unlock-script parser is now built and shown
+  to extract `(ownerPkh, delta)` from real buy/sell hops with the rebuilt script byte-matching the
+  successor. The only remaining reconstruction risk is operational: the real chain-walk fetcher must
+  handle WoC quirks (reorgs at the tip, spent-lookup lag) — phase 2.
 - **SMT covenant is the largest audit surface** — external audit before any real reserve (see `COVENANT-AUDIT-PREP.md`).
 - **scrypt-ts ledger-state client-side** in the open lib (compiled, not bundled).
 - **Batch-settlement consent** without an interactive round (the keyless-buy anti-shortchange gap).
@@ -102,14 +108,18 @@ burst are in tension for a curve — pick per launch (§7).**
   a **shardable trustless model** (fixed-price / auction via the assurance contract) for that
   launch. A pure-trustless single curve pool cannot exceed ~25/window — physics, not a bug.
 
-## 8. First concrete step
-Build **`reconstructLedger(genesisTxid)`** = a **chain-walk** (pool successor chain from genesis to
-the unspent tip) + an **unlock-script parser** (`(ownerPkh, delta)` per hop) feeding the
-**already-proven `replay()`**; assert the reconstructed lockingScript byte-matches the on-chain tip.
-Prove it against a known mainnet ledger pool. Because `replay` is done + mainnet-proven, this is
-smaller than it looks — the risk is concentrated in the unlock parser being byte-exact. Fresh,
-focused branch. Once it byte-matches the chain, the rest (on-chain discovery, open client,
-permissionless sell, the chain-only round-trip) is wiring around it.
+## 8. Progress + next concrete step
+**✅ Done (branch `trustless-ledger-reconstruct`):** `reconstructLedger` is built and offline-proven.
+`packages/curve/src/ledgerReconstruct.ts` (`parseLedgerOp` / `reconstructHistoryFromUnlocks` /
+`reconstructLedgerHistory`) + `packages/curve/service/verify-reconstruct.ts` (17/17): the ledger
+reconstructs from on-chain unlock scripts alone and byte-matches the successor tip, via both direct
+parse and a genesis→tip chain-walk with an injected `fetchSpendOf`.
+
+**Next (phase 2 — on-chain discovery):** back `fetchSpendOf` with a real WhatsOnChain spent-lookup +
+tx-fetch to make `resolveLedgerPool(genesisTxid)` return the live tip + reconstructed ledger with **no
+DB**, and prove it against a **real mainnet ledger pool** (walk an actual genesis to its tip and
+assert the byte-match on live data). Then the open client (phase 3) wraps this. Handle WoC tip
+reorgs + spent-lookup lag there.
 
 Related: `docs/research/decentralized-funding-strategy.md` (the trust-model analysis + open
 questions), `docs/DECISIONS.md` ADR-026 (keyless buy) / ADR-027 (ledger) / ADR-029 (why Option B
