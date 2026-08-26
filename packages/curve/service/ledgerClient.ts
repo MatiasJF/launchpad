@@ -258,7 +258,12 @@ export class LedgerPoolClient {
    * reserve to the payout address baked in at deploy. No signature — the destination is fixed,
    * so there is nothing to steer and no one to ask.
    */
-  async buildGraduate(args: { funding: FundingInput; state?: ResolvedLedgerPool }): Promise<BuiltTx> {
+  async buildGraduate(args: {
+    funding: FundingInput;
+    /** where the graduator's own change goes; defaults to burning the surplus as fee */
+    changeScriptHex?: string;
+    state?: ResolvedLedgerPool;
+  }): Promise<BuiltTx & { released: number; payoutScriptHex: string }> {
     const state = args.state ?? (await this.state());
     if (state.graduated) throw new Error('pool already graduated');
     if (state.sold !== this.terms.supply) throw new Error(`not fully sold (${state.sold}/${this.terms.supply})`);
@@ -266,10 +271,19 @@ export class LedgerPoolClient {
       k: this.terms.k, supply: this.terms.supply, payoutPkh: this.terms.payoutPkh,
       history: toOps(state.history), poolTxid: state.txid, poolVout: state.vout, reserveBefore: state.reserveSats,
     });
-    return this.assemble({
-      state, unlockingHex: spend.unlockingHex, funding: args.funding,
-      outputs: [{ scriptHex: spend.payoutScriptHex, satoshis: state.reserveSats }],
-    });
+
+    // Graduation is ANYONECANPAY|SINGLE, so the covenant pins only output 0 (the payout) and the
+    // graduator MAY take change at output 1. Without that, triggering a graduation would cost a
+    // stranger their entire funding UTXO — a needless disincentive on a permissionless action.
+    const outputs = [{ scriptHex: spend.payoutScriptHex, satoshis: state.reserveSats }];
+    const estSize = state.scriptHex.length / 2 + 500;
+    const fee = Math.ceil(estSize * this.feeRate);
+    const change = args.changeScriptHex ? args.funding.satoshis - fee : 0;
+    if (args.changeScriptHex && change < 0) throw new Error(`funding ${args.funding.satoshis} is short of the ${fee}-sat fee`);
+    if (change >= DUST) outputs.push({ scriptHex: args.changeScriptHex!, satoshis: change });
+
+    const built = await this.assemble({ state, unlockingHex: spend.unlockingHex, funding: args.funding, outputs });
+    return { ...built, released: state.reserveSats, payoutScriptHex: spend.payoutScriptHex };
   }
 
   /** Assemble [pool input (covenant unlock), funding input] -> outputs, and interpreter-check it. */

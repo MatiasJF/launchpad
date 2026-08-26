@@ -1,6 +1,39 @@
 # Project State
 
-_Last updated: 2026-08-26 — by: trustless track — permissionless sequencing proven under REAL mainnet contention; all 3 protocol properties met_
+_Last updated: 2026-08-26 — by: trustless track — permissionless GRADUATION proven on mainnet; every covenant path now run end-to-end_
+
+## Trustless track · phase 5a (2026-08-26) — permissionless GRADUATION ✅ PROVEN ON MAINNET (15/15)
+
+Graduation was the last covenant path never driven on a live pool. It is now closed, and with it
+the **full lifecycle: deploy → buy → sell → graduate, all on mainnet.**
+
+- **A STRANGER graduated the pool.** Pool `75f84209…:0` (k=1, supply=24) was bought out to exactly
+  `sold == supply` (A +14, B +10), then graduated by a **freshly generated key holding no tokens,
+  no operator role and no relationship to the pool** (`82e5dd53…`). No signature is required by the
+  covenant — that is the point.
+- **The graduator could not touch the money.** Verified against the on-chain tx: the full **846-sat
+  reserve went to the payout committed at deploy**, output 0 is the payout (pinned by the covenant),
+  **nothing leaked to a third destination**, and the stranger was **net −1,727 sats** — it *paid* to
+  graduate and extracted nothing.
+- **The final ledger survives the pool UTXO.** After graduation `resolveLedgerPool` still returns
+  `graduated: true` plus every holder balance — exactly the list real STAS is minted against.
+  Losing it would strand every contributor, so this is asserted explicitly.
+- Guards proven: cannot graduate before sell-out, cannot buy past a sold-out curve, cannot graduate
+  twice.
+- **Two code improvements this surfaced:** `buildGraduate` now lets the graduator take **change**
+  (ANYONECANPAY|SINGLE pins only output 0), so triggering a graduation costs a stranger a fee rather
+  than their entire UTXO — a permissionless action shouldn't carry a needless disincentive. And
+  `resolveLedgerPool` no longer reports *any* unparseable spend as a graduation: it confirms the
+  spend really pays the committed payout the full reserve, so a parser gap can't masquerade as
+  "the sale completed".
+- **Honest note on the first run (12/13):** the one failure was a **bad assertion in my test**, not
+  a defect — it compared the graduator's own change against the reserve, two unrelated amounts. I
+  verified the actual property against the recorded chain data, rewrote the assertion to test what
+  matters (graduator net-negative, no third destination, payout ≠ graduator), and re-ran the whole
+  flow live for a clean **15/15**.
+- Mainnet spend across phases 2–5a: **~67k sats** (156,820 → 89,562).
+- **Next: the SMT migration** (Limit A — tx size is O(holders); pool txs are already ~22 KB).
+  Still open besides that: decentralised discovery, and Limit B (~25 trades/window/pool).
 
 ## Trustless track · phase 4 (2026-08-26) — permissionless sequencing ✅ PROVEN UNDER REAL CONTENTION (14/14)
 

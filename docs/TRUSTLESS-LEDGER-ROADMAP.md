@@ -131,8 +131,26 @@ burst are in tension for a curve — pick per launch (§7).**
    refund went 605 → 715 (B's buy moved it up again — a loser can be repriced either way). The
    covenant will not honour a stale quote, so a UI should re-quote and confirm rather than blindly
    retry; `submit()` returns `attempts` and `repriced` for exactly that.
-5. **Remove the operator from the critical path** — permissionless graduation (anyone triggers
-   the mint once sold out); decentralize overlay hosting for discovery.
+5. **Remove the operator from the critical path.**
+   **5a. Permissionless graduation — ✅ PROVEN END-TO-END ON MAINNET (15/15).** The last covenant
+   path that had never run on a live pool. Pool `75f84209…:0` (k=1, supply=24) was bought out to
+   exactly `sold == supply` (A +14, B +10), then graduated by a **STRANGER** — a freshly generated
+   key holding no tokens, no operator role and no relationship to the pool (`82e5dd53…`). Verified
+   on chain: the full **846-sat reserve went to the payout committed at deploy**, output 0 is the
+   payout (pinned by the covenant), **no value leaked to any third destination**, and the graduator
+   was **net −1,727 sats** — it *paid* to graduate and extracted nothing. Guards proven too: cannot
+   graduate before sell-out, cannot buy past a sold-out curve, cannot graduate twice.
+   **The final ledger survives the pool UTXO** — after graduation `resolveLedgerPool` still returns
+   `graduated: true` plus every holder balance, which is exactly the list real STAS is minted
+   against; losing it would strand every contributor.
+   `buildGraduate` now lets the graduator take **change** (ANYONECANPAY|SINGLE pins only output 0),
+   so triggering a graduation costs a stranger a fee rather than their whole UTXO — otherwise a
+   permissionless action carries a needless disincentive.
+   `resolveLedgerPool` no longer calls *any* unparseable spend a graduation: it confirms the spend
+   actually pays the committed payout the full reserve, so a parser gap can't masquerade as "the
+   sale completed".
+   **5b. Decentralised discovery — STILL OPEN.** A client must still be told a genesis txid from
+   somewhere; that is the last place an operator is load-bearing.
 6. **Prove it** — a mainnet round-trip **buy → sell → graduate**, driven by the open client,
    **chain-only (no operator, no DB)**, reconstructing the ledger from chain each step. This is
    the demo that settles the trustless claim.
@@ -179,11 +197,12 @@ party can steal, censor or lock funds — buy is keyless, sell is holder-signed,
 permissionless to a destination fixed at deploy, and **sequencing the single hot UTXO needs no
 operator** (proven under real contention). The remaining operator role is zero on the trade path.
 
-Still open, and honestly not protocol-completeness: **phase 5** (permissionless graduation is
-*built* but not yet exercised end-to-end on mainnet; decentralised overlay hosting for discovery
-still relies on knowing a genesis txid), the **SMT migration** for Limit A (tx size is O(holders)
-today), and Limit B — **~25 trades per confirmation window per pool**, which contention recovery
-does not change: the loop makes losers land eventually, it does not raise throughput.
+Every covenant path — buy, sell, graduate — has now run end to end on mainnet, and the full
+lifecycle is closed. Still open: **decentralised discovery** (a client must be told a genesis
+txid — the last operator touchpoint, §5b), the **SMT migration** for Limit A (tx size is
+O(holders) today: these pool txs are already ~22 KB), and Limit B — **~25 trades per confirmation
+window per pool**, which contention recovery does not change: the loop makes losers land
+eventually, it does not raise throughput.
 
 **Reference pools (keep — the July pool became unverifiable when a DB reset lost its terms):**
 | pool | terms | state | note |
@@ -192,10 +211,12 @@ does not change: the loop makes losers land eventually, it does not raise throug
 | `84e72674c5fdf6dc2a62f51255b6c3a157e16370be9d2130ab9b10307e4da6af:0` | k=1, supply=60 | sold 15, reserve 666 | phase-3 open-client proof (§5.3) |
 | `cd55e7538ba0c393…:0` | k=1, supply=60 | sold 40, reserve 1366 | abandoned mid-run (fee-estimate bug); left as-is — recovering 1.3k sats would cost ~3.4k in fees |
 | `31820de7626df95349ea5ffab5cb20421fa398f5a81a5d8b4bd7df577dec265b:0` | k=1, supply=200 | sold 59, reserve 2316, 2 holders | phase-4 contention proof (§5.4); history `+40 +20 +10 -11`, two of them raced |
+| `75f842099dda03afc45087dda18a43cc7cb86d51f40a2ef64fb5cfd92b566c96:0` | k=1, supply=24 | **GRADUATED** (`82e5dd53…`) | phase-5a proof; terminal — reserve released to the committed payout, ledger A=14 B=10 still reconstructible |
+| `7d87322dce2c619a…:0` | k=1, supply=24 | GRADUATED (`2ac4e0c8…`) | first graduation run; 12/13 — the one failure was a bad test assertion (compared the graduator's own change to the reserve), not a defect |
 | `a0ae17e2df16ba57…:0`, `1828ba336c8145ea…:0` | k=1, supply=200 | partial | earlier phase-4 attempts abandoned on a dust-floor guard; the guard was correct, the test's hardcoded sell amount was not |
 
 Re-verify any of them: `node packages/curve/service/dist/service/verify-open-client-mainnet.js --resolve <genesisTxid> <supply>`.
-Total mainnet spend across phases 2–4: **~54.5k sats** from the test wallet (156,820 → 102,306).
+Total mainnet spend across phases 2–5a: **~67k sats** from the test wallet (156,820 → 89,562).
 
 **Next (phase 5 — remove the last operator touchpoints):** exercise **permissionless graduation**
 end-to-end on mainnet (the covenant path is built and unit-tested, but no live pool has been driven

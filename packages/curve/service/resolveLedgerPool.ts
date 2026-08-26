@@ -196,7 +196,22 @@ export async function resolveLedgerPool(
     const op = parseLedgerOp(vin.scriptSig?.hex ?? '');
 
     if (!op) {
-      // No ledger op → graduation (terminal): the reserve was released, pool not re-locked.
+      // No ledger op parsed. That SHOULD mean graduation (terminal): the reserve was released to
+      // the address fixed at deploy and the pool did not re-lock. But "unparseable" and "graduated"
+      // are not the same claim — silently reporting a graduation for any script we failed to read
+      // would turn a parser gap into a false "the sale completed". Confirm it: a real graduation
+      // pays the committed payout script the full reserve.
+      const payoutScript = `76a914${terms.payoutPkh.toLowerCase()}88ac`;
+      const releasedTo = (spendTx.vout ?? []).find(
+        (o) => (o.scriptPubKey?.hex ?? '').toLowerCase() === payoutScript && satsOf(o.value) === reserveSats,
+      );
+      if (!releasedTo) {
+        return {
+          error:
+            `hop ${hop + 1} (${spender.spendingTxid.slice(0, 10)}…): the pool was spent by a transaction that is ` +
+            `neither a buy/sell we can parse nor a graduation paying ${reserveSats} sats to the committed payout`,
+        };
+      }
       return {
         txid: spender.spendingTxid, vout: -1, scriptHex: '', reserveSats: 0,
         sold: history.reduce((s, o) => s + o.delta, 0n),
