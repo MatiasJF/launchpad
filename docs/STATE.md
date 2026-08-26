@@ -1,6 +1,34 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: ADR-030 wired into the open client — chain reconstruction + client complete_
+_Last updated: 2026-08-27 — by: ADR-030 audit package + solvency suite; two covenants, two audits_
+
+## ADR-030 audit package (2026-08-27) — `docs/AUDIT-PREP-MERKLE-LEDGER.md` + solvency suite (41/41)
+
+The audit doc we had described the ADR-027/Option B covenant. ADR-030 is a **different contract
+with a different trust model**, so it gets its own package rather than an edit — findings do not
+transfer between them, and both docs now say so.
+
+- **Trust model is materially simpler to audit:** there is **no operator key anywhere** in ADR-030.
+  Buy is keyless, sell is holder-signed, graduation is permissionless to a destination fixed at
+  deploy. So there is no key-compromise drain vector — all risk sits in covenant logic.
+- **Covers** 12 money-critical invariants, 7 ranked drain vectors, and — deliberately — the
+  **accepted design properties** an auditor should call out rather than silently "fix", plus a
+  **"gaps in our own testing"** section (the Script has not been fuzzed; fold equivalence is tested,
+  not proven; multi-slot holders untested on mainnet; DEPTH boundary unexercised; the 8-byte balance
+  ceiling untested).
+- **New: `test/merkle-solvency.test.mjs`.** ADR-027 had 13/13 adversarial drain tests and ADR-030
+  had none — an audit package that omitted that would have claimed more assurance than existed.
+  Now 41/41 total, including a 40-seed buy/sell fuzz asserting the invariants after EVERY operation
+  and a full-exit test proving the reserve returns to exactly the seed.
+- **Two findings from writing it, both now in the contract comments and the doc:**
+  1. **The curve's `/2` never truncates** — `d·(2s+d+1)` is always even — so there is no rounding
+     in anyone's favour, anywhere.
+  2. **Buy and sell are exact inverses, so the pool has ZERO spread.** It is precisely solvent,
+     never over-collateralised, and **nothing but miner fees discourages wash trading**. That is a
+     product decision to make consciously, not a bug.
+  Both contracts previously carried a "rounded against the seller" comment, which was wrong. The
+  ADR-030 comment is corrected; the edit was verified **inert** by recompiling and confirming the
+  script hex and ABI are byte-identical, so the deployed pool is unaffected.
 
 ## ADR-030 open client (2026-08-27) — reconstruction + client ✅ (16/16 from chain · 24/24 offline)
 

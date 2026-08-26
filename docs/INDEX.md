@@ -21,7 +21,8 @@ present, not implemented.
 - Research: UTXO concurrency / serialization patterns → `docs/research/UTXO-CONCURRENCY-PATTERNS.md`
 - Research: comparable decentralized crowdfunding protocols (Eth/Cosmos/Cardano) → `docs/research/task-6-decentralized-crowdfunding-protocols.md`
 - Operator key custody (HSM/KMS signer for production; contract + provider recipes) → `docs/OPERATOR-KEY-CUSTODY.md`
-- Covenant audit prep (audit surface, invariants, drain vectors for an external auditor) → `docs/COVENANT-AUDIT-PREP.md`
+- Covenant audit prep — Option B / ADR-028-029, the SHIPPED operator-gated curve (audit surface, invariants 1-8, drain vectors) → `docs/COVENANT-AUDIT-PREP.md`
+- Covenant audit prep — ADR-030 trustless Merkle-ledger curve (NO operator key; invariants 1-12, drain vectors 1-7, accepted design properties incl. zero spread + 65,536-holder ceiling, and our own testing gaps) → `docs/AUDIT-PREP-MERKLE-LEDGER.md`
 - Trustless bonding-curve protocol roadmap (ledger track; scaling limits, SMT mandate, open client) → `docs/TRUSTLESS-LEDGER-ROADMAP.md`
 
 ## Domain & data

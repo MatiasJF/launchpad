@@ -178,7 +178,11 @@ export class MerkleLedgerPool extends SmartContract {
     assert(idx < this.holderCount, 'slot not allocated');
     assert(MerkleLedgerPool.merkleRoot(MerkleLedgerPool.leaf(owner, oldBal), path, siblings) == this.root, 'ledger proof (sell)');
 
-    // refund along the curve, rounded against the seller (the pool keeps the remainder)
+    // Refund along the curve. NOTE: this division is EXACT, never a rounding in the pool's favour
+    // — d*(2s+d+1) is always even (if d is even so is the product; if d is odd then 2s+d+1 is).
+    // So buy and sell are exact inverses and the pool carries NO spread: it is precisely solvent,
+    // never over-collateralised, and nothing here discourages wash trading but miner fees.
+    // Proven in test/merkle-solvency.test.mjs.
     const newSold: bigint = this.sold - amount;
     const refund: bigint = (this.k * amount * (2n * newSold + amount + 1n)) / 2n;
 
