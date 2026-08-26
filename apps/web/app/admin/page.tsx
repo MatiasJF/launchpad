@@ -5,7 +5,7 @@ import { SiteHeader } from '../../components/SiteHeader';
 import { SiteFooter } from '../../components/SiteFooter';
 import { Button, Tabs } from '../../components/ui';
 import { isAdmin } from '../../lib/auth';
-import { adminLogin, adminLogout, setProjectStatus, deleteProjectForm } from '../../lib/actions';
+import { adminLogin, adminLogout, setProjectStatus, deleteProjectForm, adminSweepDeliveries } from '../../lib/actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,8 +94,14 @@ async function AllListings() {
   );
 }
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ swept?: string; delivered?: string; failed?: string; error?: string }>;
+}) {
   const admin = await isAdmin();
+  const sp = (await searchParams) ?? {};
+  const sweptN = sp.swept != null ? Number(sp.swept) : null;
 
   return (
     <>
@@ -152,6 +158,32 @@ export default async function AdminPage() {
                         Delete any project (removes its token, sale and orders — on-chain tokens are unaffected).
                       </p>
                       <AllListings />
+                    </section>
+                  ),
+                },
+                {
+                  id: 'ops',
+                  label: 'Deliveries',
+                  content: (
+                    <section>
+                      <p className="mb-3 text-sm text-muted">
+                        Complete any stuck paid-but-undelivered STAS buys (self-heal). This runs the same
+                        sweep as the scheduled cron (<code>/api/cron/sweep-deliveries</code>) — use it to
+                        drain deliveries on demand. It only completes already-paid orders (never creates or
+                        misdirects tokens) and spends operator fees.
+                      </p>
+                      {sweptN != null && (
+                        <div className="card mb-3 p-3 text-sm">
+                          Sweep done — checked <strong>{sweptN}</strong>, delivered{' '}
+                          <strong>{sp.delivered ?? 0}</strong>, failed{' '}
+                          <strong>{sp.failed ?? 0}</strong>.
+                        </div>
+                      )}
+                      <form action={adminSweepDeliveries}>
+                        <button className="btn btn-primary" type="submit">
+                          Sweep stuck deliveries
+                        </button>
+                      </form>
                     </section>
                   ),
                 },
