@@ -1,6 +1,39 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: ADR-030 audit package + solvency suite; two covenants, two audits_
+_Last updated: 2026-08-27 — by: ADR-030 audit gaps closed — Script attacked (34/34), boundaries + multi-slot proven_
+
+## ADR-030 audit gaps (2026-08-27) — four of five closed
+
+Working through the "gaps in our own testing" list in `docs/AUDIT-PREP-MERKLE-LEDGER.md`, cheapest
+first, spending sats only where the chain was genuinely required.
+
+- **Script ATTACKED, 34/34** (`service/verify-merkle-adversarial.ts`). The earlier negative tests
+  were mostly caught by scrypt-ts simulating the method while BUILDING the unlock — a client-side
+  guard, not the covenant, and an attacker does not use our builder. This suite builds a VALID
+  unlock then surgically rewrites its bytes: tampered/zeroed/swapped/short siblings, flipped path
+  bits, claiming another holder's slot, `isNew` flipped both ways, inflated/deflated
+  `oldBal`/`delta`/`newReserve`, redirected and inflated payouts, a third output on a sell, swapped
+  outputs, substituted pubkey, three graduation redirections. All repelled; honest baselines still
+  validate in the same run.
+  **The first version of this suite was WRONG and reported 20 false criticals** — mutating a bsv-js
+  `Script.chunks` array does not change `toHex()`, so every "attack" silently re-ran the honest
+  spend. The tell was the *shape*: every unlock-tampering case "succeeded" while every
+  output-tampering case was correctly repelled — a harness signature, not a vulnerability
+  signature. Chunks are now serialised manually and `rewrite()` throws if a tamper produces
+  identical bytes. Recorded in the BSV field notes.
+- **DEPTH boundary + 8-byte balance ceiling, off-chain** (45/45): slot 65,535 proves against the
+  same root as slot 0, path bits round-trip across the full index range, the balance ceiling THROWS
+  rather than wrapping, and neighbouring balances stay distinct. Noted as a **deploy-time
+  constraint**: nothing on-chain bounds `k` or `supply`.
+- **Multi-slot holders PROVEN on mainnet, 12/12** (`verify-merkle-multislot-mainnet.ts`, pool
+  `baf0d0e3…:0`). A holder was given two slots by hand — deliberately doing what a third-party
+  client might — then sold from each. Reconstruction found all three slots, aggregated the
+  duplicate holder correctly, kept `sold == Σ balances`, and byte-matched the tip. Both design
+  claims confirmed live.
+- **Still open (correctly):** genuine randomised/mutational fuzzing of the Script, and a formal
+  argument that the off-chain and in-script Merkle folds are equivalent. Both are named in the
+  audit doc as work for the external auditor.
+- Wallet funded to 500k sats; this arc spent ~28k.
 
 ## ADR-030 audit package (2026-08-27) — `docs/AUDIT-PREP-MERKLE-LEDGER.md` + solvency suite (41/41)
 

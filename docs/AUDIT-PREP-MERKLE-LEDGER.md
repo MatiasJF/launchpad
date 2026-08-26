@@ -119,6 +119,9 @@ no off-chain provenance gate to defeat.*
   + proof correctness, forged-balance rejection, stale-proof rejection) and `merkle-solvency.test.mjs`
   (exact division, no-spread, telescoping, a 40-seed buy/sell fuzz asserting the invariants after
   EVERY operation, and a full-exit test showing the reserve returns to exactly the seed).
+- **Multi-slot mainnet lifecycle, 12/12** (`service/verify-merkle-multislot-mainnet.ts`) — pool
+  `baf0d0e3a82ffbb43a298644d3409a75b935845438a5de0be5261ace31fdad81:0`, a holder occupying two
+  slots and selling from both.
 - **Adversarial Script attacks, 34/34** (`service/verify-merkle-adversarial.ts`) — builds a VALID
   unlock and then surgically rewrites its bytes, so the covenant (not our builder) is what rejects.
   Covers tampered/zeroed/swapped/short-length siblings, flipped path bits, claiming another
@@ -149,8 +152,13 @@ no off-chain provenance gate to defeat.*
   scriptNum encodings of `oldBal`/`delta`/`newReserve`. **Please fuzz it properly.**
 - **No formal argument that the off-chain and in-script folds are equivalent.** They agree on every
   case we test; equivalence has not been proven.
-- **Multi-slot holders are untested on mainnet.** Permitted by design, exercised off-chain, never
-  driven live.
+- **Multi-slot holders — now PROVEN on mainnet** (`service/verify-merkle-multislot-mainnet.ts`,
+  12/12, pool `baf0d0e3…:0`). A holder was given TWO slots by hand — deliberately doing what a
+  third-party client might, since our own client always reuses a holder's first slot — then sold
+  from each. History `slot0*+20 slot1*+20 slot2*+20 slot0−12 slot2−10`; the chain reconstruction
+  found all three slots, aggregated the duplicate holder's balance correctly, kept
+  `sold == Σ balances`, and byte-matched the on-chain tip. Confirms both design claims: the reserve
+  is unaffected, and reconstruction survives because it replays RECORDED slot indices.
 - **DEPTH boundary — now covered off-chain** (`merkle-solvency.test.mjs`): the highest addressable
   slot (65,535) proves against the same root as slot 0, and path bits round-trip across the full
   index range. Still untested: the covenant's behaviour at genuine slot exhaustion, which would take
