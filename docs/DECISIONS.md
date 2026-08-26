@@ -298,3 +298,39 @@ Append-only; newest at the bottom. Template per entry:
   (`9c5c114d…`, full 3,786-sat reserve released to the committed payout). The locking script
   measured **exactly 11,864 B at every step**, holder count notwithstanding — the ADR's claim,
   on chain.
+
+## ADR-031 · No spread on the trustless curve; attack the fee FLOOR instead · Accepted · 2026-08-27
+
+- **Context.** ADR-030's curve has zero spread: `buyCost(s,d) == sellRefund(s+d,d)` exactly, so the
+  pool is precisely solvent, never over-collateralised, and nothing but miner fees discourages wash
+  trading. Adding a spread is a covenant change and therefore a re-audit, so the decision had to be
+  made before the external audit, not after. Modelled in `packages/curve/service/model-spread.ts`
+  against measured numbers rather than argued.
+- **Decision: NO spread.** The curve stays exactly symmetric.
+- **Why.** Three measured reasons:
+  1. **The deterrent already exists.** Every pool spend is ~24.7 KB, so a round trip costs **7,410
+     sats** in miner fees at 0.15 sat/B. A 1% spread only becomes the dominant deterrent above
+     **~741,000 sats per trade**; below that it is noise next to the chain's own charge.
+  2. **The revenue is negligible.** On a realistic pool (k=1, supply=1,000, full raise 500,500
+     sats), a **5%** spread on a 30% exit yields **7,508 sats** — two transactions' worth of miner
+     fee. At 0.5% it is 751 sats. That does not pay for an audit cycle.
+  3. **It costs provable properties.** Today `d·(2s+d+1)` is always even so the `/2` is EXACT, and
+     solvency is an equality. A spread makes `refund·(100−f)/100` truncate; the truncation is safe
+     (it always favours the pool, and splitting a sell to dodge it costs more in both fee and miner
+     fees — verified in the model), but the invariant weakens to `>=` and the auditor gains a
+     rounding direction to verify that currently does not exist.
+- **What the model surfaced instead — the real problem.** The fee floor is **regressive**: a
+  10,000-sat trade pays **74%** in miner fees, a 100,000-sat trade **7.4%**, because every pool
+  spend is ~24.7 KB regardless of trade size. ADR-030 bounded the GROWTH; the FLOOR remains
+  ~3,705 sats/trade because the ~11.8 KB contract appears twice (successor script + sighash
+  preimage). **This curve is uneconomic below roughly 500,000 sats per trade** — a real product
+  constraint that had not been stated anywhere.
+- **Consequences / follow-up.** Effort goes to the floor, not to a spread:
+  1. **Fee-rate calibration** — 0.15 sat/B was chosen conservatively and never tested. Establish
+     empirically what miners actually accept AND MINE for transactions of this size (acceptance
+     into a mempool is not the same as being mined, and a stuck 24 KB transaction is worse than an
+     overpaid one). At 0.05 a round trip is 2,470 sats; at 0.01, 494.
+  2. **Batch settlement** — already the Limit B mitigation in `TRUSTLESS-LEDGER-ROADMAP.md`;
+     amortises the floor across N buyers, at the cost of a semi-trusted sequencer.
+- **Reversibility.** Low cost now, high cost later: adding a spread after the audit means a new
+  contract, a re-audit, and pools deployed under the old terms staying on the old script.
