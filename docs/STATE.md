@@ -90,8 +90,17 @@ PROVEN ON MAINNET (via `e2e:app`, 2026-08-26):** a real stuck paid-but-undeliver
 delivery skipped) was detected by `getPendingStasDeliveries` and self-healed by `sweepPendingStasDeliveries`
 (swept 1, delivered 1, DB order → `settled` with delivery txid `b76c8553`). Also hardened the broadcast
 path: `broadcastRawTx` now backoff-retries transient WoC 429/5xx/network (definitive rejects still return
-immediately) — a production robustness win. **Remaining:** (2) monitoring events, (3) trigger wiring
-(admin control / cron). Earlier build note below.
+immediately) — a production robustness win. **Piece 2 — monitoring ✅:** the sweep now writes a
+`stas_delivery_sweep_failed` Event (entity `Order`) for any delivery it couldn't complete, so persistent
+stuck deliveries are queryable, not just returned in the response. **Piece 3 — automated trigger ✅ built:**
+`apps/web/app/api/cron/sweep-deliveries/route.ts` — a `CRON_SECRET`-gated (or admin-session) GET/POST that
+calls `sweepPendingStasDeliveries` with a small per-call limit (default 5, cap 25) so each tick finishes
+fast; schedule it (Vercel cron / any external cron hitting `?secret=$CRON_SECRET`) to self-heal stuck
+deliveries with no human. Set `CRON_SECRET` in `apps/web/.env` before scheduling. Web typecheck green.
+The route wraps the mainnet-proven sweep; the full cron→route→sweep chain is verifiable by running the app.
+Delivery robustness is functionally complete (auto-sweep + monitoring + automated trigger); optional
+follow-up: a dedicated admin "Sweep deliveries" button (the route already accepts an admin session).
+Earlier build note below.
 `sweepPendingStasDeliveries({ saleId?, limit? })` (`apps/web/lib/stas-actions.ts`) completes EVERY stuck
 `curve_buy` (pending/settling, `paymentTxid` set, `txid` null), oldest-first, delegating each to the
 idempotent `deliverStasToBuyer` — so a stuck buy self-heals without the buyer clicking "Complete delivery".

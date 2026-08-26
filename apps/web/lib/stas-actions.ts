@@ -566,8 +566,17 @@ export async function sweepPendingStasDeliveries(input?: { saleId?: string; limi
     // SEQUENTIAL: each delivery spends + advances the single operator vault UTXO.
     for (const o of rows) {
       const res = await deliverStasToBuyer({ orderId: o.id });
-      if (res.ok && res.txid) delivered.push({ orderId: o.id, txid: res.txid });
-      else failed.push({ orderId: o.id, error: res.error ?? 'unknown delivery error' });
+      if (res.ok && res.txid) {
+        delivered.push({ orderId: o.id, txid: res.txid });
+      } else {
+        const error = res.error ?? 'unknown delivery error';
+        failed.push({ orderId: o.id, error });
+        // Monitoring: persist a failure Event so a delivery the sweep couldn't complete is
+        // visible/queryable (not just returned in this response), for an operator to inspect.
+        try {
+          await prisma.event.create({ data: { entity: 'Order', entityId: o.id, type: 'stas_delivery_sweep_failed', payloadHash: error.slice(0, 120) } });
+        } catch { /* best-effort monitoring — never fail the sweep on an event write */ }
+      }
     }
     return { ok: true, swept: rows.length, delivered, failed };
   } catch (e) {
