@@ -244,6 +244,11 @@
     border-radius: 50%;
     background: var(--tone, var(--c-info));
   }
+  /* Live pills render their own pulsing dot (StatusPill) — drop the static ::before dot
+     so only the pulsing one shows, not two. */
+  .pill-live::before {
+    display: none;
+  }
 
   .chip {
     @apply cursor-pointer rounded-full border font-mono text-xs font-semibold text-muted transition;
