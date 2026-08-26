@@ -92,10 +92,26 @@ burst are in tension for a curve — pick per launch (§7).**
    genuinely-unspent output and for one whose spend is in the mempool but not yet indexed, so a read
    moments after a trade reports a **stale tip and a short history**. `resolveLedgerPool` re-checks
    an apparent tip (`tipRechecks`, default 2) before concluding.
-3. **Open client library** — package buy/sell construction (compiled ledger-state + `ledgerTx`)
-   into a standalone lib taking `(wallet, genesisTxid)`, resolving state from chain — no server
-   actions, no DB. This is the "anyone builds a UI" boundary. (scrypt-ts must compile with
-   `tsc`, not esbuild/tsx — a known constraint; ship the compiled service in the lib.)
+3. **Open client library — ✅ BUILT + MAINNET-PROVEN (19/20 → 20/20 after a test-constant fix).**
+   `packages/curve/service/ledgerClient.ts` — `LedgerPoolClient(genesisTxid, {k, supply, payoutPkh})`
+   with `state()` · `quoteBuy/quoteSell/quoteSellFee` · `balanceOf` · `buildBuy` · `buildSell` ·
+   `buildGraduate` · `broadcast`, plus `LedgerPoolClient.genesisScript(terms)` to OPEN a pool.
+   Depends on nothing of ours: no server actions, no Prisma, no operator, no stored state.
+   **Wallet-agnostic** — it never sees a key: callers pass a funding input + an @bsv/sdk
+   `UnlockingScriptTemplate` (what `new P2PKH().unlock(priv)` returns, and what a BRC-100 adapter
+   can implement) and, for sells, a `Holder` that signs one 32-byte digest. Every build re-resolves
+   state from chain and interpreter-checks the assembled bytes, so a client cannot broadcast a
+   spend the covenant would reject or build against a tip it read earlier.
+   **Acceptance test** `verify-open-client-mainnet.ts` — a full mainnet round trip using ONLY the
+   client: OPEN (genesis `84e72674…:0`) → READ (sold 0) → BUY 40 keyless (`c6e1b0dc…`) → RE-READ
+   from a *second* client built from scratch → SELL 25 holder-signed with **no operator co-signature
+   in the path** (`2e8cf89a…`) → a *third* fresh client rebuilds the pool and **byte-matches the
+   on-chain tip** → 4 guard assertions (refuses overspend / beyond-supply / underfunded / dust
+   refund). `--resolve <genesisTxid> [supply]` reads any existing pool.
+   *(scrypt-ts constraint holds: ship the **compiled** service — tsc, not esbuild/tsx.)*
+   **Protocol constraint surfaced:** a sell's fee input is consumed WHOLE (0xc1 pins exactly two
+   outputs, so no change is possible) — sellers must pre-size an exact fee UTXO, which
+   `quoteSellFee()` returns and the harness demonstrates as a two-tx flow.
 4. **Permissionless sequencing** — sell is already holder-signed; the client self-assembles
    against the resolved tip and retries on outpoint-move ("loser re-signs", no operator
    sequencer).
@@ -140,12 +156,27 @@ unverifiable):** genesis `3e2474045088c9eb8ba484a723294d4c92a09d4348f67a88241d4c
 k=1, supply=100, payoutPkh `121c7ea8310c…` (client). Re-verify any time with:
 `node packages/curve/service/dist/service/verify-reconstruct-mainnet.js --resolve <genesisTxid>`.
 
-**Next (phase 3 — the open client):** package buy/sell construction + `resolveLedgerPool` into a
-standalone library taking `(wallet, genesisTxid)` with no server actions and no DB — the "anyone
-builds a UI" boundary. The mainnet harness already builds every covenant spend without the app or
-Prisma (`verify-reconstruct-mainnet.ts` does deploy/buy/sell against a flat key), so phase 3 is
-largely extracting that into a published surface + a wallet adapter. Note the scrypt-ts constraint:
-ship the **compiled** service (tsc, not esbuild/tsx).
+**✅ Phase 3 done — the open client `LedgerPoolClient` is built and MAINNET-proven (see §5.3).**
+**Protocol properties 1 and 2 of 3 are now met:** on-chain is the source of truth, and an open
+client constructs the spends. Property 3 (no party can steal/censor/lock) is *mostly* inherent —
+buy is keyless, sell is holder-signed, graduation is permissionless and fixed-destination — with
+the open item being permissionless **sequencing** of the single hot UTXO (phase 4).
+
+**Reference pools (keep — the July pool became unverifiable when a DB reset lost its terms):**
+| pool | terms | state | note |
+|---|---|---|---|
+| `3e2474045088c9eb8ba484a723294d4c92a09d4348f67a88241d4c824d6d9a2c:0` | k=1, supply=100 | sold 30, reserve 1011, 2 holders | phase-2 proof (§5.2) |
+| `84e72674c5fdf6dc2a62f51255b6c3a157e16370be9d2130ab9b10307e4da6af:0` | k=1, supply=60 | sold 15, reserve 666 | phase-3 open-client proof (§5.3) |
+| `cd55e7538ba0c393…:0` | k=1, supply=60 | sold 40, reserve 1366 | abandoned mid-run (fee-estimate bug); left as-is — recovering 1.3k sats would cost ~3.4k in fees |
+
+Re-verify any of them: `node packages/curve/service/dist/service/verify-open-client-mainnet.js --resolve <genesisTxid> <supply>`.
+Total mainnet spend across phases 2–3: **~24.5k sats** from the test wallet.
+
+**Next (phase 4 — permissionless sequencing):** sell is already holder-signed and the client already
+self-assembles against the freshly-resolved tip, so what remains is the **contention loop** — on an
+outpoint-move rejection (`txn-mempool-conflict` / `Missing inputs`), re-resolve and re-sign
+("loser re-signs"), with no operator sequencer. That plus permissionless graduation (phase 5) closes
+property 3. Note Limit B still stands: ~25 trades per confirmation window per pool (§3).
 
 Related: `docs/research/decentralized-funding-strategy.md` (the trust-model analysis + open
 questions), `docs/DECISIONS.md` ADR-026 (keyless buy) / ADR-027 (ledger) / ADR-029 (why Option B

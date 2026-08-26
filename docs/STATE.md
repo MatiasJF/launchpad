@@ -1,6 +1,40 @@
 # Project State
 
-_Last updated: 2026-08-26 — by: trustless track — DB-free ledger resolution PROVEN ON MAINNET (10/10)_
+_Last updated: 2026-08-26 — by: trustless track — the OPEN CLIENT is mainnet-proven; protocol properties 1 & 2 of 3 met_
+
+## Trustless track · phase 3 (2026-08-26) — open client `LedgerPoolClient` ✅ MAINNET-PROVEN
+
+The "anyone can build a UI over it" boundary now exists as code:
+`packages/curve/service/ledgerClient.ts` — `LedgerPoolClient(genesisTxid, {k, supply, payoutPkh})`
+with `state()` · `quoteBuy/quoteSell/quoteSellFee` · `balanceOf` · `buildBuy` · `buildSell` ·
+`buildGraduate` · `broadcast`, plus `LedgerPoolClient.genesisScript(terms)` to open a pool.
+
+- **Depends on nothing of ours** — no server actions, no Prisma, no operator, no stored state.
+- **Wallet-agnostic, never sees a key.** Callers pass a funding input + an @bsv/sdk
+  `UnlockingScriptTemplate` (`new P2PKH().unlock(priv)`, or a BRC-100 adapter), and for sells a
+  `Holder` that signs one 32-byte digest — that signature IS the claim to the balance.
+- **Safe by construction:** every build re-resolves state from chain and runs the assembled bytes
+  through the interpreter, so a client can't broadcast a spend the covenant rejects, or build
+  against a tip it read earlier.
+- **Full mainnet round trip using ONLY the client** (`verify-open-client-mainnet.ts`): OPEN
+  (genesis `84e72674…:0`, k=1 supply=60) → READ (sold 0) → BUY 40 keyless (`c6e1b0dc…`) → RE-READ
+  from a *second* client built from scratch → SELL 25 holder-signed, **no operator co-signature
+  anywhere in the path** (`2e8cf89a…`) → a *third* fresh client rebuilds it and **byte-matches the
+  on-chain tip** → 4 guards (refuses overspend / beyond-supply / underfunded / dust refund).
+  Final 20/20 (one run showed 19/20 — a wrong constant in the test, not the code: `hops` equals the
+  op count, 2 here, and I'd copied 3 from the 3-op phase-2 pool).
+- **Protocol constraint surfaced:** a sell's fee input is consumed WHOLE (0xc1 pins exactly two
+  outputs → no change), so sellers must pre-size an exact fee UTXO — `quoteSellFee()` returns it and
+  the harness demonstrates the two-tx flow.
+- **Two live-run lessons:** (1) the sell fee estimate double-counted the pool script (once in the
+  preimage, once in the successor) and demanded ~50% too much — caught before broadcast, cost
+  nothing; there's now a drift check asserting the real sat/byte rate. (2) WoC `/unspent` listed an
+  already-spent output → `258: txn-mempool-conflict`; the harness now verifies candidates against
+  `/spent` first (the field-note rule) and accepts unconfirmed change.
+- **Properties 1 and 2 of 3 met.** Next: phase 4, permissionless sequencing (the "loser re-signs"
+  contention loop). Research track — does not block the shipped Option B.
+- **Reference pools + total mainnet spend (~24.5k sats) recorded in the roadmap** so every pool
+  stays re-verifiable — the July pool became unverifiable when a DB reset lost its terms.
 
 ## Trustless track · phase 2 (2026-08-26) — `resolveLedgerPool` ✅ MAINNET-PROVEN (10/10)
 
