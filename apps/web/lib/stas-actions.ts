@@ -323,7 +323,10 @@ export async function recordStasBuy(input: {
           scriptHex: input.newPool.scriptHex,
           reserveSats: BigInt(Math.floor(input.newPool.reserveSats)),
           sold: BigInt(Math.floor(input.newPool.sold)),
-          status: input.newPool.sold >= Number(pool.supply) ? 'graduated' : 'live',
+          // STAS pools DON'T graduate — buyers already hold real wallet STAS, so "sold out"
+          // just means further BUYS are capped by supply (buildStasBuyTx rejects delta over
+          // remaining); SELLING back must stay open, so the pool remains 'live'.
+          status: 'live',
         },
       });
       const order = await tx.order.create({

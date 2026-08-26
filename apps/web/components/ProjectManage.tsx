@@ -6,7 +6,6 @@ import { IssueButton } from './IssueButton';
 import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
 import { updateProjectMeta, updateSaleSchedule, deleteProject, updateSaleEscrow } from '../lib/actions';
-import { CurvePoolDeploy } from './CurvePoolDeploy';
 import { StasPoolManage } from './StasPoolManage';
 import { getPledgesForAssembly, markAssemblyBroadcast } from '../lib/escrow-actions';
 import { getBatchForSale, markOrdersSettled } from '../lib/order-actions';
@@ -603,20 +602,18 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                     )}
                   </div>
                 ) : (
-                  // No pool yet — offer both the trustless (ledger/linear) and wallet-STAS variants.
-                  <>
-                    <CurvePoolDeploy saleId={p.sale.id} />
-                    <div className="text-center font-mono text-[0.7rem] uppercase tracking-[0.08em] text-faint">— or —</div>
-                    <StasPoolManage
-                      saleId={p.sale.id}
-                      slug={p.slug}
-                      ticker={p.token?.ticker ?? ''}
-                      name={p.name}
-                      description={p.description}
-                      logoUrl={p.logoUrl}
-                      website={p.website}
-                    />
-                  </>
+                  // No pool yet — the wallet-STAS curve (ADR-028) is THE launch variant, so it's
+                  // the only deploy option here. (The trustless ledger/linear deploy is deferred
+                  // per ADR-029 and no longer offered in the UI to avoid the wrong-card mistake.)
+                  <StasPoolManage
+                    saleId={p.sale.id}
+                    slug={p.slug}
+                    ticker={p.token?.ticker ?? ''}
+                    name={p.name}
+                    description={p.description}
+                    logoUrl={p.logoUrl}
+                    website={p.website}
+                  />
                 )}
               </div>
             )}
