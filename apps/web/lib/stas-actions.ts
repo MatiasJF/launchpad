@@ -520,6 +520,61 @@ export async function completePendingStasDelivery(input: { orderId: string; buye
   }
 }
 
+/**
+ * OPERATOR / SYSTEM sweep: complete EVERY stuck STAS delivery (all buyers), so a
+ * paid-but-undelivered buy SELF-HEALS without the buyer manually clicking "Complete
+ * delivery" — shrinking the paid-but-undelivered window from "until the buyer notices"
+ * to "next sweep". Finds `curve_buy` orders in `pending`/`settling` whose reserve buy
+ * landed (`paymentTxid` set) but with NO delivery yet (`txid` null), OLDEST-FIRST, and
+ * delegates each to the idempotent `deliverStasToBuyer` (which atomically claims
+ * pending→settling and short-circuits on `order.txid`, so overlapping sweeps — or a sweep
+ * racing a buyer's manual retry — never double-deliver).
+ *
+ * SEQUENTIAL by necessity: each delivery spends the SINGLE operator vault UTXO and advances
+ * it (the next delivery resolves the new tip via resolveCurrentPool), so deliveries cannot
+ * run in parallel — a sweep processes one order at a time. BOUNDED by `limit` (default 25),
+ * so a large backlog drains across several sweeps rather than one unbounded run; a failing
+ * delivery is recorded and the sweep continues (it does not abort the whole batch).
+ *
+ * NOT buyer-scoped — this completes deliveries for anyone, so the CALLER MUST gate it behind
+ * the operator/admin (ADR-020) or a trusted cron; never expose it unauthenticated. It only
+ * ever completes legitimate already-paid deliveries (it cannot create or misdirect tokens —
+ * deliverStasToBuyer delivers to each order's own recorded `receiveAddress`).
+ */
+export async function sweepPendingStasDeliveries(input?: { saleId?: string; limit?: number }): Promise<{
+  ok: boolean;
+  swept: number;
+  delivered: { orderId: string; txid: string }[];
+  failed: { orderId: string; error: string }[];
+  error?: string;
+}> {
+  const delivered: { orderId: string; txid: string }[] = [];
+  const failed: { orderId: string; error: string }[] = [];
+  try {
+    const limit = Math.max(1, Math.min(100, input?.limit ?? 25));
+    const rows = await prisma.order.findMany({
+      where: {
+        ...(input?.saleId ? { saleId: input.saleId } : {}),
+        kind: 'curve_buy',
+        state: { in: ['pending', 'settling'] },
+        txid: null, // no delivery yet
+        paymentTxid: { not: null }, // the reserve buy (TX-A) actually landed — only sweep PAID buys
+      },
+      orderBy: { createdAt: 'asc' }, // FIFO — oldest stuck deliveries first
+      take: limit,
+    });
+    // SEQUENTIAL: each delivery spends + advances the single operator vault UTXO.
+    for (const o of rows) {
+      const res = await deliverStasToBuyer({ orderId: o.id });
+      if (res.ok && res.txid) delivered.push({ orderId: o.id, txid: res.txid });
+      else failed.push({ orderId: o.id, error: res.error ?? 'unknown delivery error' });
+    }
+    return { ok: true, swept: rows.length, delivered, failed };
+  } catch (e) {
+    return { ok: false, swept: delivered.length + failed.length, delivered, failed, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 3 · SELL (ADR-028). A stas sell is TWO sequenced txs (see stasSellAssembly.ts
 // for WHY it is not atomic — the covenant's ANYONECANPAY_ALL sell pins EXACTLY two

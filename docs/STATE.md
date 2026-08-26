@@ -62,6 +62,45 @@ clean per-wallet accounting: mint contract `0544c94c` (issuance `c1f2f380`) → 
 `authentic:true` → refund TX2 `6f974890` (→ CLIENT, seller=client). **Client Δ −3,095 sats**
 (seed 546 + mint/buy fees), **operator Δ −1,141 sats** (delivery+refund fees only — never the client's
 funds). ~4.2k/round-trip (546 seed recoverable from the throwaway pool). Client funded 200k → ~40+ runs.
+Robust under back-to-back runs (2 consecutive passed; spendable balance dips as change goes deep-unconfirmed
+then self-heals on confirmation — `operator:fuel split` gives parallel shallow roots for sustained bursts).
+
+## ✅✅✅ FULL-STACK REAL-PRODUCT LIFECYCLE PROVEN ON MAINNET (2026-08-26)
+
+`apps/web/scripts/e2e-app.mjs` (`pnpm --filter @launchpad/web e2e:app`) drives the **REAL Next.js
+server actions + REAL Prisma DB + mainnet** — the actual code the app's buttons call — NOT the
+covenant-only `e2e-stas` harness. It stubs ONLY Next's cache/routing/cookies (`scripts/lib/stub-next.mjs`,
+an ESM loader that intercepts `server-only`/`next/cache`/`next/navigation`/`next/headers` with no-ops) so
+the `'use server'` actions import into a plain tsx script; everything else is real. Two-party: CLIENT
+flat key = owner/admin/buyer/seller (via `FlatKeyWallet`), OPERATOR key co-signs delivery+refund INSIDE
+the real `deliverStasToBuyer`/`finalizeStasSell`. **Passed FIRST run (2026-08-26):** create project
+(`createProject`) → approve (`setProjectStatus`) + `updateSaleEscrow`→bonding_curve → deploy
+(`createStasPool`+`markStasPoolDeployed`) → mint (`prepareStasMint`+`issueStasGenesis`+`recordStasMint`,
+issuance `5877a5ba`) → buy (`prepareStasBuy`/`recordStasBuy`→Order→`deliverStasToBuyer`, delivery
+`55dba34c`) → sell (`prepareStasSell`/`recordStasSell`/`finalizeStasSell`, return `ed5d5144`, refund
+`be580900`). Writes the real DB, so the project shows in the app: **`/sale/e2e-app-1787740581904`**.
+Client Δ −3,094 · operator Δ −2,282. This validates the real server-action + DB orchestration, not just
+the covenant. Remaining human step: the on-screen UI pass (browser + BSV Desktop) — the one layer that
+can't be automated (UI hard-wires the BRC-100 `WalletClient`).
+
+## 🏗️ Delivery robustness (in progress, 2026-08-26)
+
+Shrinking/auto-recovering the split-buy paid-but-undelivered window. **Piece 1 — auto-sweep ✅ built +
+PROVEN ON MAINNET (via `e2e:app`, 2026-08-26):** a real stuck paid-but-undelivered order (buy recorded,
+delivery skipped) was detected by `getPendingStasDeliveries` and self-healed by `sweepPendingStasDeliveries`
+(swept 1, delivered 1, DB order → `settled` with delivery txid `b76c8553`). Also hardened the broadcast
+path: `broadcastRawTx` now backoff-retries transient WoC 429/5xx/network (definitive rejects still return
+immediately) — a production robustness win. **Remaining:** (2) monitoring events, (3) trigger wiring
+(admin control / cron). Earlier build note below.
+`sweepPendingStasDeliveries({ saleId?, limit? })` (`apps/web/lib/stas-actions.ts`) completes EVERY stuck
+`curve_buy` (pending/settling, `paymentTxid` set, `txid` null), oldest-first, delegating each to the
+idempotent `deliverStasToBuyer` — so a stuck buy self-heals without the buyer clicking "Complete delivery".
+SEQUENTIAL (each delivery spends+advances the single vault UTXO), BOUNDED (`limit` default 25), continues
+past a failing delivery, idempotent (never double-delivers). NOT buyer-scoped → the caller MUST gate it
+(operator/admin ADR-020, or a trusted cron). Web typecheck green. The on-chain delivery mechanic is already
+mainnet-proven (harness); the sweep adds DB orchestration over it — app-level test (seed a stuck order →
+sweep → deliver) is next. **Remaining:** (2) broadcast-retry hardening in deliverStasToBuyer, (3) delivery
+attempt/failure monitoring events, (4) wire a trigger (admin control or cron).
 
 **✅ FRESH FULL ROUND-TRIP RE-PROVEN ON MAINNET (2026-08-26):** deploy `ffbda423` → mint (issuance
 `ded13344`) → buy TX-A `92ec2bec` → deliver TX-B `21478e23` → sell return TX1 `6b0f4f03` (back-to-genesis

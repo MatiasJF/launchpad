@@ -207,27 +207,37 @@ export async function broadcastRawTx(
   if (typeof txHex !== 'string' || !/^[0-9a-fA-F]+$/.test(txHex) || txHex.length % 2 !== 0) {
     return { ok: false, error: 'invalid raw tx hex' };
   }
-  try {
-    const res = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ txhex: txHex }),
-      cache: 'no-store',
-    });
-    const body = (await res.text()).trim();
-    // Already-in-mempool / already-known is a success for our purposes: the node
-    // has the tx. (WoC surfaces the node's policy string.)
-    if (/already known|already in|txn-already|257/i.test(body)) {
-      return { ok: true, txid: expectedTxid ?? '' };
+  // Retry TRANSIENT failures (429 rate-limit, 5xx, network) with backoff — WoC's free
+  // tier rate-limits under load. A DEFINITIVE reject (4xx like "Missing inputs", where the
+  // parent tx hasn't propagated yet) returns immediately so the caller's parent-rebroadcast
+  // retry still drives it. "Already known" is success (the node already has the tx), so a
+  // retried broadcast is idempotent-safe.
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let lastErr = 'broadcast failed';
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ txhex: txHex }),
+        cache: 'no-store',
+      });
+      const body = (await res.text()).trim();
+      if (/already known|already in|txn-already|257/i.test(body)) {
+        return { ok: true, txid: expectedTxid ?? '' };
+      }
+      if (res.status === 429) { lastErr = `WoC 429 (rate-limited)`; await sleep(2500 + attempt * 2500); continue; }
+      if (res.status >= 500) { lastErr = `WoC ${res.status}: ${body.slice(0, 80)}`; await sleep(1200 + attempt * 1200); continue; }
+      if (!res.ok) return { ok: false, error: `WoC ${res.status}: ${body}` }; // definitive reject — caller handles
+      const txid = body.replace(/^"|"$/g, '');
+      if (/^[0-9a-fA-F]{64}$/.test(txid)) return { ok: true, txid };
+      return { ok: false, error: `unexpected broadcast response: ${body}` };
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
+      await sleep(1200 + attempt * 1200); // network error → retry
     }
-    if (!res.ok) return { ok: false, error: `WoC ${res.status}: ${body}` };
-    // Success body is the txid, usually JSON-quoted.
-    const txid = body.replace(/^"|"$/g, '');
-    if (/^[0-9a-fA-F]{64}$/.test(txid)) return { ok: true, txid };
-    return { ok: false, error: `unexpected broadcast response: ${body}` };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+  return { ok: false, error: lastErr };
 }
 
 /**
