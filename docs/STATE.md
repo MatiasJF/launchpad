@@ -1,6 +1,36 @@
 # Project State
 
-_Last updated: 2026-08-26 — by: ADR-030 bounded-size Merkle ledger — full lifecycle proven on mainnet; Limit A solved_
+_Last updated: 2026-08-27 — by: ADR-030 wired into the open client — chain reconstruction + client complete_
+
+## ADR-030 open client (2026-08-27) — reconstruction + client ✅ (16/16 from chain · 24/24 offline)
+
+The bounded-size covenant is now a first-class protocol target, not just a contract:
+
+- **`src/merkleLedgerReconstruct.ts`** — parses an ADR-030 spend back into its op. Unlike the
+  ADR-027 parser it must also recover the **slot index** and the **append flag**, because this
+  covenant addresses balances by slot: reconstructing by "the owner's first slot" would be a guess,
+  and an open protocol means another client may legitimately append a second slot for an existing
+  holder. Layout verified against real compiled output, not assumed
+  (buy 39 chunks / `OP_0`; sell 40 / `OP_1`; graduate 2 / `OP_2`).
+- **`service/resolveMerkleLedgerPool.ts`** — DB-free resolution: live outpoint, reserve, `sold`,
+  `holderCount`, per-slot and per-holder balances, the Merkle root, and the full history. The walk
+  is self-verifying per hop, guards WoC's mempool lag on the tip, and refuses to report an
+  unparseable spend as a graduation.
+- **`service/merkleLedgerClient.ts`** — `MerkleLedgerPoolClient`, the ADR-030 twin of
+  `LedgerPoolClient`: `state`/`quoteBuy`/`quoteSell`/`quoteSellFee`/`balanceOf`/`buildBuy`/
+  `buildSell`/`buildGraduate`/`submitBuy`/`submitSell`/`broadcast`, plus `genesisScript(terms)`.
+  Never sees a key; every build re-resolves and interpreter-checks the bytes; carries the same
+  "loser re-signs" contention loop.
+- **One design correction while wiring it:** slot re-derivation was happening in three places. All
+  paths now funnel through `normalizeOps`/`replayMerkleSlots`, so a history read off the chain is
+  replayed by its RECORDED slots and only a history we authored gets slots assigned by policy.
+- **Proven against the live mainnet pool from yesterday** (`4c6faf97…:0`) at **zero sats cost** —
+  reads only: 6 hops, terminal graduation detected, exact history `slot0*+25 slot1*+25 slot0+10
+  slot0−11 slot1+31`, A=24, and **holder B (`1957fa7a…`) recovered from chain alone** (that key was
+  random and no longer exists locally). `service/verify-merkle-resolve.ts`, 16/16.
+- Parser round-trip guards added to the offline suite (now **24/24**) so a regression is caught
+  without needing a live pool.
+- Test wallet untouched today: **~44k sats**.
 
 ## ADR-030 (2026-08-26) — bounded-size Merkle ledger ✅ MAINNET-PROVEN (6/6 live · 16/16 offline · 14 tree tests)
 

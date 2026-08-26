@@ -11,6 +11,7 @@ import {
   computeGraduate, stateFromHistory, buyCost, sellRefund, Op, PoolTerms,
 } from './merkleLedgerState';
 import { validateAssembledCovenantInput } from '../src/covenant';
+import { parseMerkleOp } from '../src/merkleLedgerReconstruct';
 import { Transaction, Script as SdkScript, PrivateKey, P2PKH } from '@bsv/sdk';
 import { bsv } from 'scrypt-ts';
 
@@ -167,6 +168,31 @@ async function main() {
     const notSold = computeGraduate({ terms: TERMS, history: h3, poolTxid: TXID, poolVout: 0, reserveBefore: r3 });
     return interpreterAccepts(notSold.sourceLockHex, r3, notSold.unlockingHex, [{ scriptHex: notSold.payoutScriptHex, satoshis: r3 }]);
   });
+
+  console.log('\n=== 9. PARSER ROUND-TRIP: unlocks reparse to the ops that built them ===');
+  // The reconstruction parser is money-critical and reads raw bytes by fixed offsets, so it is
+  // guarded here rather than only against a live pool: build each unlock, parse it back, and
+  // require the op to match what we asked for — slot index and append flag included.
+  const rtAppend = parseMerkleOp(buy0.unlockingHex);
+  check('buy (append) reparses', rtAppend?.ownerPkh === aPkh && rtAppend.delta === 5n && rtAppend.isNew === true && rtAppend.slotIndex === 0, JSON.stringify(rtAppend));
+  const rtAppend2 = parseMerkleOp(buy2.unlockingHex);
+  check('buy (second holder) reparses to slot 1', rtAppend2?.ownerPkh === cPkh && rtAppend2.delta === 3n && rtAppend2.isNew === true && rtAppend2.slotIndex === 1, JSON.stringify(rtAppend2));
+  const rtUpdate = parseMerkleOp(buy3.unlockingHex);
+  check('buy (update) reparses with isNew=false on the existing slot', rtUpdate?.ownerPkh === aPkh && rtUpdate.delta === 2n && rtUpdate.isNew === false && rtUpdate.slotIndex === 0, JSON.stringify(rtUpdate));
+  const rtSell = parseMerkleOp(sell.unlockingHex);
+  check('sell reparses with a NEGATIVE delta', rtSell?.ownerPkh === aPkh && rtSell.delta === -4n && rtSell.slotIndex === 0, JSON.stringify(rtSell));
+  check('graduate carries no ledger op', parseMerkleOp(grad.unlockingHex) === null);
+  check('parser rejects a P2PKH script', parseMerkleOp('76a914' + '11'.repeat(20) + '88ac') === null);
+  check('parser rejects truncated input', parseMerkleOp(buy0.unlockingHex.slice(0, 200)) === null);
+
+  // a slot index above 0 must survive the path-bit encoding (bit 0 is the least significant)
+  const many: Op[] = [];
+  for (let i = 0; i < 5; i++) many.push({ ownerPkh: B.crypto.Hash.sha256ripemd160(Buffer.from(`p${i}`)).toString('hex'), delta: 1n });
+  const sixth = B.crypto.Hash.sha256ripemd160(Buffer.from('p5')).toString('hex');
+  const rBefore = 546 + Number(buyCost(TERMS_K, 5n, 1n));
+  const buy6 = computeBuySpend({ terms: TERMS, history: many, ownerPkh: sixth, delta: 1n, poolTxid: TXID, poolVout: 0, reserveBefore: 546, newReserve: rBefore });
+  const rt6 = parseMerkleOp(buy6.unlockingHex);
+  check('slot index 5 survives the path-bit round trip', rt6?.slotIndex === 5, JSON.stringify(rt6));
 
   console.log(`\n=== ${pass} passed, ${fail} failed ===`);
   process.exit(fail ? 1 : 0);

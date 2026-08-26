@@ -214,3 +214,36 @@ export function replayMerkle(history: { ownerPkh: string; delta: bigint }[]): Me
   }
   return led;
 }
+
+/**
+ * Rebuild the ledger from SLOT-ADDRESSED ops parsed off-chain (`merkleLedgerReconstruct.ts`).
+ *
+ * `replayMerkle` above re-derives each holder's slot with `indexOf` — fine when WE built the
+ * history, but a reconstruction must follow what the chain actually did. A third-party client may
+ * legitimately append a second slot for an owner who already has one (harmless to the reserve, see
+ * ADR-030, but it changes the tree), so the slot index recorded in each spend is authoritative.
+ * Applying it verbatim is what makes the rebuilt root match the on-chain root.
+ */
+export function replayMerkleSlots(
+  ops: { ownerPkh: string; slotIndex: number; delta: bigint; isNew: boolean }[],
+): MerkleLedger {
+  const led = new MerkleLedger();
+  for (const op of ops) {
+    if (op.isNew) {
+      if (op.slotIndex !== led.holderCount) {
+        throw new Error(`append at slot ${op.slotIndex} but holderCount is ${led.holderCount} — the covenant forbids this, so the history is not what it claims`);
+      }
+      led.insert(op.ownerPkh, op.delta);
+    } else {
+      const cur = led.get(op.slotIndex);
+      if (!cur) throw new Error(`op targets unallocated slot ${op.slotIndex}`);
+      if (cur.ownerPkh.toLowerCase() !== op.ownerPkh.toLowerCase()) {
+        throw new Error(`slot ${op.slotIndex} belongs to ${cur.ownerPkh.slice(0, 10)}…, not ${op.ownerPkh.slice(0, 10)}…`);
+      }
+      const next = cur.balance + op.delta;
+      if (next < 0n) throw new Error(`slot ${op.slotIndex} oversold (${cur.balance} ${op.delta})`);
+      led.update(op.slotIndex, next);
+    }
+  }
+  return led;
+}

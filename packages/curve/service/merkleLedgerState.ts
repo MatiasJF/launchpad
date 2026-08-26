@@ -11,7 +11,7 @@
  * the holder count. What a spend carries instead is a DEPTH-sibling inclusion proof, constant size.
  */
 import { MerkleLedgerPool, DEPTH } from '../src/contracts/merkleLedgerPool';
-import { MerkleLedger, replayMerkle, leafHash, EMPTY_LEAF, EMPTY_ROOT } from '../src/merkleLedger';
+import { MerkleLedger, replayMerkle, replayMerkleSlots, leafHash, EMPTY_LEAF, EMPTY_ROOT } from '../src/merkleLedger';
 import { PubKeyHash, PubKey, Sig, toByteString, FixedArray, ByteString, bsv } from 'scrypt-ts';
 import artifact from '../artifacts/merkleLedgerPool.json';
 
@@ -64,15 +64,62 @@ export function genesisScript(terms: PoolTerms): string {
   return instance(0n, EMPTY_ROOT, 0n, terms).lockingScript.toHex();
 }
 
+/** A slot-addressed op, as parsed back off the chain. */
+export interface SlotOp { ownerPkh: string; slotIndex: number; delta: bigint; isNew: boolean }
+
+/**
+ * Assign slots to a plain `(ownerPkh, delta)` history using this client's own policy: a new holder
+ * appends, an existing one reuses their FIRST slot. Only valid for a history WE authored.
+ */
+export function toSlotOps(history: Op[]): SlotOp[] {
+  const led = new MerkleLedger();
+  const out: SlotOp[] = [];
+  for (const op of history) {
+    const i = led.indexOf(op.ownerPkh);
+    if (i === -1) {
+      const slotIndex = led.holderCount;
+      led.insert(op.ownerPkh, op.delta);
+      out.push({ ownerPkh: op.ownerPkh, slotIndex, delta: op.delta, isNew: true });
+    } else {
+      led.update(i, led.get(i)!.balance + op.delta);
+      out.push({ ownerPkh: op.ownerPkh, slotIndex: i, delta: op.delta, isNew: false });
+    }
+  }
+  return out;
+}
+
+const isSlotOp = (o: unknown): o is SlotOp => typeof (o as SlotOp)?.slotIndex === 'number';
+
+/**
+ * Accept either shape, and always replay by SLOT.
+ *
+ * Re-deriving a holder's slot with `indexOf` is right for a history we built, but it is a GUESS
+ * for one read off the chain: an open protocol means other clients exist, and one may append a
+ * second slot for a holder who already has one (harmless to the reserve — see ADR-030 — but it
+ * moves the tree). Guessing differently from the chain yields a root that doesn't match, so every
+ * path funnels through here and replays the recorded indices.
+ */
+export function normalizeOps(history: Op[] | SlotOp[]): SlotOp[] {
+  if (history.length === 0) return [];
+  return isSlotOp(history[0]) ? (history as SlotOp[]) : toSlotOps(history as Op[]);
+}
+
 /** Rebuild the tree + totals from an ordered op history (the chain-reconstruction entry point). */
-export function stateFromHistory(history: Op[]): { ledger: MerkleLedger; sold: bigint; holderCount: bigint } {
-  const ledger = replayMerkle(history);
-  return { ledger, sold: history.reduce((s, o) => s + o.delta, 0n), holderCount: BigInt(ledger.holderCount) };
+export function stateFromHistory(history: Op[] | SlotOp[]): { ledger: MerkleLedger; sold: bigint; holderCount: bigint } {
+  const ops = normalizeOps(history);
+  const ledger = replayMerkleSlots(ops);
+  return { ledger, sold: ops.reduce((s, o) => s + o.delta, 0n), holderCount: BigInt(ledger.holderCount) };
 }
 
 /** The locking script for a given history — used to assert a byte-match against the chain. */
-export function poolScriptForHistory(history: Op[], terms: PoolTerms): string {
+export function poolScriptForHistory(history: Op[] | SlotOp[], terms: PoolTerms): string {
   const { ledger, sold, holderCount } = stateFromHistory(history);
+  return instance(sold, ledger.root(), holderCount, terms).lockingScript.toHex();
+}
+
+/** The locking script for SLOT-ADDRESSED ops — what a chain reconstruction asserts against. */
+export function poolScriptForSlotOps(ops: SlotOp[], terms: PoolTerms): string {
+  const { ledger, sold, holderCount } = stateFromHistory(ops);
   return instance(sold, ledger.root(), holderCount, terms).lockingScript.toHex();
 }
 
@@ -86,7 +133,7 @@ export interface Spend { unlockingHex: string; sourceLockHex: string; nextLockin
 
 /** BUY: credit `delta` to `ownerPkh`, appending a slot if they are new. */
 export function computeBuySpend(args: {
-  terms: PoolTerms; history: Op[]; ownerPkh: string; delta: bigint;
+  terms: PoolTerms; history: Op[] | SlotOp[]; ownerPkh: string; delta: bigint;
   poolTxid: string; poolVout: number; reserveBefore: number; newReserve: number;
 }): Spend & { cost: bigint } {
   const { terms, history, ownerPkh, delta, poolTxid, poolVout, reserveBefore, newReserve } = args;
@@ -127,7 +174,7 @@ function rootFrom(index: number, leaf: Buffer, siblings: Buffer[]): Buffer {
 }
 
 interface SellArgs {
-  terms: PoolTerms; history: Op[]; ownerPkh: string; amount: bigint;
+  terms: PoolTerms; history: Op[] | SlotOp[]; ownerPkh: string; amount: bigint;
   poolTxid: string; poolVout: number; reserveBefore: number; payoutScriptHex: string;
 }
 
@@ -181,7 +228,7 @@ export function computeSellUnlock(args: SellArgs & { ownerPubHex: string; sigDer
 
 /** GRADUATE (terminal): release the whole reserve to the committed payout. */
 export function computeGraduate(args: {
-  terms: PoolTerms; history: Op[]; poolTxid: string; poolVout: number; reserveBefore: number;
+  terms: PoolTerms; history: Op[] | SlotOp[]; poolTxid: string; poolVout: number; reserveBefore: number;
 }): { unlockingHex: string; sourceLockHex: string; payoutScriptHex: string } {
   const { terms, history, poolTxid, poolVout, reserveBefore } = args;
   const { ledger, sold, holderCount } = stateFromHistory(history);
