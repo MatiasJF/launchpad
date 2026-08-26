@@ -22,6 +22,7 @@ present, not implemented.
 - Research: comparable decentralized crowdfunding protocols (Eth/Cosmos/Cardano) → `docs/research/task-6-decentralized-crowdfunding-protocols.md`
 - Operator key custody (HSM/KMS signer for production; contract + provider recipes) → `docs/OPERATOR-KEY-CUSTODY.md`
 - Covenant audit prep (audit surface, invariants, drain vectors for an external auditor) → `docs/COVENANT-AUDIT-PREP.md`
+- Trustless bonding-curve protocol roadmap (ledger track; scaling limits, SMT mandate, open client) → `docs/TRUSTLESS-LEDGER-ROADMAP.md`
 
 ## Domain & data
 
