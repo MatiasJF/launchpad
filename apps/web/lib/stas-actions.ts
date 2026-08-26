@@ -546,10 +546,13 @@ export async function sweepPendingStasDeliveries(input?: { saleId?: string; limi
   swept: number;
   delivered: { orderId: string; txid: string }[];
   failed: { orderId: string; error: string }[];
+  deadLettered: string[];
   error?: string;
 }> {
+  const MAX_DELIVERY_ATTEMPTS = 3; // after this many sweep failures, stop retrying a doomed order
   const delivered: { orderId: string; txid: string }[] = [];
   const failed: { orderId: string; error: string }[] = [];
+  const deadLettered: string[] = [];
   try {
     const limit = Math.max(1, Math.min(100, input?.limit ?? 25));
     const rows = await prisma.order.findMany({
@@ -565,6 +568,18 @@ export async function sweepPendingStasDeliveries(input?: { saleId?: string; limi
     });
     // SEQUENTIAL: each delivery spends + advances the single operator vault UTXO.
     for (const o of rows) {
+      // DEAD-LETTER: after MAX_DELIVERY_ATTEMPTS sweep failures, stop retrying a doomed
+      // delivery (e.g. an old order whose vault/STAS state is gone → the built tx fails
+      // mandatory-script-verify). Mark it 'failed' (a valid terminal Order.state) so it
+      // leaves the pending set and surfaces for MANUAL operator resolution (investigate /
+      // refund the buyer). Attempts are counted from the monitoring Events (no schema change).
+      const priorFailures = await prisma.event.count({ where: { entity: 'Order', entityId: o.id, type: 'stas_delivery_sweep_failed' } });
+      if (priorFailures >= MAX_DELIVERY_ATTEMPTS) {
+        await prisma.order.update({ where: { id: o.id }, data: { state: 'failed' } });
+        await prisma.event.create({ data: { entity: 'Order', entityId: o.id, type: 'stas_delivery_deadlettered', payloadHash: `${priorFailures} failed sweep attempts` } }).catch(() => {});
+        deadLettered.push(o.id);
+        continue;
+      }
       const res = await deliverStasToBuyer({ orderId: o.id });
       if (res.ok && res.txid) {
         delivered.push({ orderId: o.id, txid: res.txid });
@@ -578,9 +593,9 @@ export async function sweepPendingStasDeliveries(input?: { saleId?: string; limi
         } catch { /* best-effort monitoring — never fail the sweep on an event write */ }
       }
     }
-    return { ok: true, swept: rows.length, delivered, failed };
+    return { ok: true, swept: rows.length, delivered, failed, deadLettered };
   } catch (e) {
-    return { ok: false, swept: delivered.length + failed.length, delivered, failed, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, swept: delivered.length + failed.length, delivered, failed, deadLettered, error: e instanceof Error ? e.message : String(e) };
   }
 }
 

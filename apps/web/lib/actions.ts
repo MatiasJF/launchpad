@@ -338,5 +338,5 @@ export async function adminSweepDeliveries(form: FormData): Promise<void> {
   const { sweepPendingStasDeliveries } = await import('./stas-actions');
   const res = await sweepPendingStasDeliveries({ saleId, limit: 25 });
   revalidatePath('/admin');
-  redirect(`/admin?swept=${res.swept ?? 0}&delivered=${res.delivered?.length ?? 0}&failed=${res.failed?.length ?? 0}`);
+  redirect(`/admin?swept=${res.swept ?? 0}&delivered=${res.delivered?.length ?? 0}&failed=${res.failed?.length ?? 0}&deadlettered=${res.deadLettered?.length ?? 0}`);
 }

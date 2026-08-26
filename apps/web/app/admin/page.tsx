@@ -97,7 +97,7 @@ async function AllListings() {
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ swept?: string; delivered?: string; failed?: string; error?: string }>;
+  searchParams?: Promise<{ swept?: string; delivered?: string; failed?: string; deadlettered?: string; error?: string }>;
 }) {
   const admin = await isAdmin();
   const sp = (await searchParams) ?? {};
@@ -176,7 +176,14 @@ export default async function AdminPage({
                         <div className="card mb-3 p-3 text-sm">
                           Sweep done — checked <strong>{sweptN}</strong>, delivered{' '}
                           <strong>{sp.delivered ?? 0}</strong>, failed{' '}
-                          <strong>{sp.failed ?? 0}</strong>.
+                          <strong>{sp.failed ?? 0}</strong>, dead-lettered{' '}
+                          <strong>{sp.deadlettered ?? 0}</strong>.
+                          {Number(sp.failed ?? 0) > 0 && (
+                            <span className="block text-faint">
+                              Failed deliveries retry next sweep; after 3 failures an order is
+                              marked <code>failed</code> for manual resolution (refund the buyer).
+                            </span>
+                          )}
                         </div>
                       )}
                       <form action={adminSweepDeliveries}>
