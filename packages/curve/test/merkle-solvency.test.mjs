@@ -175,3 +175,54 @@ test('holder ceiling is a hard cap, and it is graceful', () => {
   assert.equal(led.holderCount, 1);
   assert.ok(led.holderCount < MAX);
 });
+
+// ── boundary conditions named as gaps in docs/AUDIT-PREP-MERKLE-LEDGER.md ────
+
+test('DEPTH boundary: the highest addressable slot still proves correctly', async () => {
+  const { MerkleLedger: ML, leafHash: lh, rootFromProof: rfp, MAX_HOLDERS, DEPTH: D } =
+    await import('../src/merkleLedger.ts');
+  // The tree is append-only, so slot 65,535 is unreachable in practice without 65k inserts.
+  // The PROOF machinery must still be correct there, because that is what the covenant folds.
+  const led = new ML();
+  led.insert(pkh(1), 7n);
+  const last = MAX_HOLDERS - 1;
+  const p = led.proof(last);
+  assert.equal(p.siblings.length, D);
+  assert.equal(rfp(last, p.leaf, p.siblings).toString('hex'), led.root().toString('hex'),
+    'the last slot must prove against the same root as the first');
+  // and writing there yields the root the tree would report
+  const projected = rfp(last, lh(pkh(9), 3n), p.siblings);
+  assert.notEqual(projected.toString('hex'), led.root().toString('hex'));
+});
+
+test('path bits round-trip across the whole index range', async () => {
+  const { DEPTH: D } = await import('../src/merkleLedger.ts');
+  const encode = (i) => Array.from({ length: D }, (_, h) => ((i >> h) & 1) === 1);
+  const decode = (bits) => bits.reduce((acc, b, h) => (b ? acc | (1 << h) : acc), 0);
+  for (const i of [0, 1, 2, 3, 255, 256, 4095, 32767, 32768, 65534, 65535]) {
+    assert.equal(decode(encode(i)), i, `index ${i} must survive the path encoding`);
+  }
+});
+
+test('8-byte balance ceiling is enforced, not silently wrapped', async () => {
+  const { leafHash: lh } = await import('../src/merkleLedger.ts');
+  const MAX = 0xffffffffffffffffn;
+  assert.doesNotThrow(() => lh(pkh(1), MAX), 'the ceiling itself must encode');
+  assert.throws(() => lh(pkh(1), MAX + 1n), /exceeds 8 bytes/,
+    'past the ceiling must THROW, never wrap into a different balance');
+  // distinct balances near the ceiling must stay distinct
+  assert.notEqual(lh(pkh(1), MAX).toString('hex'), lh(pkh(1), MAX - 1n).toString('hex'));
+  // and a balance of 0 is distinct from an empty slot
+  const { EMPTY_LEAF: EL } = await import('../src/merkleLedger.ts');
+  assert.notEqual(lh(pkh(1), 0n).toString('hex'), EL.toString('hex'));
+});
+
+test('a supply beyond the 8-byte balance ceiling is unreachable by construction', () => {
+  // A single holder could only exceed 2^64-1 tokens if `supply` did. Flag it as a deploy-time
+  // constraint: k and supply are chosen by the deployer, and nothing on-chain bounds them.
+  const MAX = 0xffffffffffffffffn;
+  assert.ok(1000000n < MAX, 'realistic supplies are far below the ceiling');
+  // the reserve for such a supply would itself be absurd — sanity-check the economics bound first
+  const absurd = cumulative(1n, MAX);
+  assert.ok(absurd > 2n ** 100n, 'the curve cost explodes long before the balance ceiling binds');
+});

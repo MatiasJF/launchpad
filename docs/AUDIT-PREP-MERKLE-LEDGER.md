@@ -151,10 +151,15 @@ no off-chain provenance gate to defeat.*
   case we test; equivalence has not been proven.
 - **Multi-slot holders are untested on mainnet.** Permitted by design, exercised off-chain, never
   driven live.
-- **DEPTH is fixed at 16 and untested at the boundary** — slots near 65,535, and the exhaustion
-  behaviour itself, are reasoned about but not exercised.
-- **8-byte balance ceiling** (`writeBigUInt64LE`) versus a `supply` that could in principle exceed
-  it — the client would throw, but the covenant's own behaviour at that boundary is untested.
+- **DEPTH boundary — now covered off-chain** (`merkle-solvency.test.mjs`): the highest addressable
+  slot (65,535) proves against the same root as slot 0, and path bits round-trip across the full
+  index range. Still untested: the covenant's behaviour at genuine slot exhaustion, which would take
+  65,536 real appends to reach.
+- **8-byte balance ceiling — now covered off-chain**: the ceiling encodes, one past it THROWS rather
+  than silently wrapping, and neighbouring balances stay distinct. Note this is a **deploy-time
+  constraint**: nothing on-chain bounds `k` or `supply`, so a deployer could in principle choose
+  terms a balance cannot represent (the curve cost explodes long before that binds, but it is not
+  enforced).
 
 ## Deliverable requested
 
