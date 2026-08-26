@@ -83,6 +83,19 @@ Client Δ −3,094 · operator Δ −2,282. This validates the real server-actio
 the covenant. Remaining human step: the on-screen UI pass (browser + BSV Desktop) — the one layer that
 can't be automated (UI hard-wires the BRC-100 `WalletClient`).
 
+**✅ MANUAL UI PASS COMPLETE (2026-08-26)** — the maintainer ran the full flow in the running app with a
+real BRC-100 wallet (BSV Desktop): create project (`testa`) → admin approve → deploy STAS pool → mint →
+buy 5 (delivered) → sell 5 (return `78824279` + operator refund `9a1bf00c`), pool back to sold 0 / reserve
+546. Both the automated (`e2e:app`) and manual (UI) passes now confirm the product end-to-end on mainnet.
+Three real UI issues surfaced + fixed during the pass: (1) **STAS pools were graduating** on sold-out and
+the sale page showed "sale isn't open yet", blocking sells — fixed: a sold-out STAS pool stays `live`
+(buying capped by supply, selling open), since buyers already hold real wallet STAS (nothing to graduate
+to). (2) The manage page offered TWO deploy cards (trustless ledger/linear + wallet-STAS) and the wrong one
+is easy to click — removed the ledger/linear card; the wallet-STAS card is the only deploy option (ADR-029).
+(3) Default demo supply 5 → 25 so one buy doesn't instantly sell out. Also set `ADMIN_SECRET` in `.env`
+(needed for /admin). UX follow-ups noted: sold-out state could show "sold out — selling open" explicitly;
+the "register settled purchases" panel display when already delivered.
+
 ## 🏗️ Delivery robustness (in progress, 2026-08-26)
 
 Shrinking/auto-recovering the split-buy paid-but-undelivered window. **Piece 1 — auto-sweep ✅ built +
