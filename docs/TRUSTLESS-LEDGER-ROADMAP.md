@@ -25,7 +25,16 @@ job is to remove those two dependencies.
 
 ## 3. The two scaling limits (decide these at step 1)
 
-### Limit A — transaction SIZE (ledger-specific, SOLVABLE)
+### Limit A — transaction SIZE — ✅ SOLVED (ADR-030, mainnet-proven)
+Superseded by **ADR-030**: the ledger is now a 32-byte Merkle root over fixed-depth (16) holder
+slots, with a 512-byte inclusion proof per spend. Measured on mainnet: the locking script is
+**11,864 B regardless of holder count** (`service/verify-merkle-mainnet.ts`, 6/6, pool
+`4c6faf97…:0`) against 10,884 + 64·holders for the HashedMap. Contract
+`src/contracts/merkleLedgerPool.ts`, tree `src/merkleLedger.ts`, state service
+`service/merkleLedgerState.ts`. Break-even ~18 holders; unbounded advantage above that.
+The original analysis, kept for context:
+
+#### (original) Limit A — transaction SIZE (ledger-specific, SOLVABLE)
 A `HashedMap` that embeds every holder makes the covenant output **O(holders)** — huge,
 expensive txs as the pool grows (the reason Option B exists). **Mandate: a fixed-depth Sparse
 Merkle Tree, not the HashedMap.** State holds only the **root (32 B)**; each unlock carries an
@@ -216,7 +225,10 @@ eventually, it does not raise throughput.
 | `a0ae17e2df16ba57…:0`, `1828ba336c8145ea…:0` | k=1, supply=200 | partial | earlier phase-4 attempts abandoned on a dust-floor guard; the guard was correct, the test's hardcoded sell amount was not |
 
 Re-verify any of them: `node packages/curve/service/dist/service/verify-open-client-mainnet.js --resolve <genesisTxid> <supply>`.
-Total mainnet spend across phases 2–5a: **~67k sats** from the test wallet (156,820 → 89,562).
+Total mainnet spend across phases 2–5a plus the ADR-030 covenant: **~113k sats** from the test
+wallet (156,820 → ~44k). The wallet was consolidated once mid-run
+(`service/consolidate-test-wallet.ts`) — the harnesses fund a run from a SINGLE input, so a
+fragmented wallet fails with "no verified-unspent UTXO > N" while holding plenty.
 
 **Next (phase 5 — remove the last operator touchpoints):** exercise **permissionless graduation**
 end-to-end on mainnet (the covenant path is built and unit-tested, but no live pool has been driven

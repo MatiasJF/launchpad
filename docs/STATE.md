@@ -1,6 +1,42 @@
 # Project State
 
-_Last updated: 2026-08-26 — by: trustless track — permissionless GRADUATION proven on mainnet; every covenant path now run end-to-end_
+_Last updated: 2026-08-26 — by: ADR-030 bounded-size Merkle ledger — full lifecycle proven on mainnet; Limit A solved_
+
+## ADR-030 (2026-08-26) — bounded-size Merkle ledger ✅ MAINNET-PROVEN (6/6 live · 16/16 offline · 14 tree tests)
+
+**Limit A is solved.** The ADR-027 ledger embedded every holder in the covenant; measured, that is
+~64 B of script per holder, present in BOTH the successor script and the sighash preimage — ~128 B
+per holder per trade, a ~150 KB transaction at 1,000 holders. The fee was survivable; the real cost
+was that reconstruction downloads every hop, so client verification grew as **O(trades × holders)**.
+
+Replaced by a **32-byte Merkle root** over a fixed-depth (16) array of holder slots plus a
+`holderCount`, with a **512-byte inclusion proof** per spend — constant in holder count.
+
+- **Measured on mainnet: the locking script is 11,864 B at EVERY step**, holders notwithstanding
+  (`service/verify-merkle-mainnet.ts`, pool `4c6faf97…:0`, k=1 supply=80): deploy → append A
+  (`676a7baf…`) → append B (`41056d43…`) → **update A's existing slot** (`0ad2a6af…`) →
+  holder-signed sell (`5caf3de5…`) → buy out (`44f2b5dc…`) → **graduate** (`9c5c114d…`, full
+  3,786-sat reserve to the committed payout). HashedMap at the same point: 10,884 + 64·holders.
+- **Indexed slots, not a pkh-keyed SMT** — a 160-bit key needs a 160-level path (~5 KB proofs) or a
+  compact bitmap encoding that is much harder to verify in Script, and this is already the largest
+  audit surface in the system. Slot indexing gives a 16-step sha256 loop.
+- **It removes a whole class of bug.** `LedgerPool.buy` needed an `isNew` flag plus a
+  NON-MEMBERSHIP proof, because `HashedMap.set` could otherwise overwrite a live balance and break
+  `sold == sum(balances)` — a reserve drain. Here every spend proves the CURRENT value of the slot
+  it touches, so nothing can be reset; a new holder proves the slot at exactly `holderCount` is
+  EMPTY. Duplicate slots for one holder are harmless (the sum is conserved). It also removes the
+  per-spend **history replay**, since state is now three scalars.
+- **The scrypt-ts successor trap bit again** — building an instance via the CONSTRUCTOR with the
+  desired state yields a script that does not byte-match the chain, and the covenant's `hashOutputs`
+  check fails. Must construct at genesis then MUTATE (same lesson as ADR-027's replay); now
+  documented in `merkleLedgerState.ts`.
+- **New tooling:** `service/measure-ledger-size.ts` (the measurement behind the ADR) and
+  `service/consolidate-test-wallet.ts` — the harnesses fund a run from a SINGLE input, so a
+  fragmented wallet fails with "no verified-unspent UTXO > N" while holding plenty.
+- **Limit B is untouched:** this bounds SIZE, not throughput. ~25 trades per confirmation window
+  per pool still stands.
+- **Test wallet is low: ~44k sats left** (156,820 at the start of this arc). Enough for one more
+  modest mainnet run, not several.
 
 ## Trustless track · phase 5a (2026-08-26) — permissionless GRADUATION ✅ PROVEN ON MAINNET (15/15)
 

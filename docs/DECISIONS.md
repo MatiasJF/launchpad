@@ -291,4 +291,10 @@ Append-only; newest at the bottom. Template per entry:
   prototype; deployed ADR-027 pools are unaffected. **Limit B is untouched** — this bounds SIZE,
   not throughput; ~25 trades per confirmation window per pool still stands.
 - **Status of proof.** Offline 16/16 through the @bsv/sdk interpreter over the exact assembled
-  bytes (`service/verify-merkle-pool.ts`) plus 14 off-chain tree tests; mainnet proof pending.
+  bytes (`service/verify-merkle-pool.ts`) plus 14 off-chain tree tests, AND the full lifecycle on
+  **mainnet 6/6** (`service/verify-merkle-mainnet.ts`, pool `4c6faf97…:0`, k=1 supply=80):
+  deploy → append A (`676a7baf…`) → append B (`41056d43…`) → **update A's existing slot**
+  (`0ad2a6af…`) → holder-signed sell (`5caf3de5…`) → buy out (`44f2b5dc…`) → graduate
+  (`9c5c114d…`, full 3,786-sat reserve released to the committed payout). The locking script
+  measured **exactly 11,864 B at every step**, holder count notwithstanding — the ADR's claim,
+  on chain.
