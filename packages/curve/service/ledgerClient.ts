@@ -70,6 +70,17 @@ export interface BuiltTx {
 export interface BuiltBuy extends BuiltTx { cost: bigint; newReserve: number }
 export interface BuiltSell extends BuiltTx { refund: bigint; reserveAfter: number; feePaid: number }
 
+/**
+ * Did this broadcast fail because the pool outpoint moved under us (someone else's trade landed
+ * first), rather than because the transaction is actually invalid? Only the former is retryable.
+ * A node reports a vanished input as `txn-mempool-conflict` (a mempool tx already spends it) or
+ * `Missing inputs` (already mined/gone); `txn-already-known` means our own tx is in fact in, so
+ * treating it as retryable is safe — the next attempt re-resolves and sees it.
+ */
+function isOutpointConflict(msg: string): boolean {
+  return /txn-mempool-conflict|missing inputs|txn-already-known|258:|bad-txns-inputs-missingorspent/i.test(msg);
+}
+
 const p2pkhScriptHex = (pkh: string) => `76a914${pkh.toLowerCase()}88ac`;
 const toOps = (h: { ownerPkh: string; delta: bigint }[]): Op[] => h.map((o) => ({ ownerPkh: o.ownerPkh, delta: o.delta.toString() }));
 
@@ -280,6 +291,57 @@ export class LedgerPoolClient {
     const v = validateAssembledCovenantInput(rawTx, { scriptHex: state.scriptHex, satoshis: state.reserveSats }, 0);
     if (!v.ok) throw new Error(`covenant input failed the interpreter: ${v.error}`);
     return { rawTx, txid: tx.id('hex') as string, spentPool: { txid: state.txid, vout: state.vout } };
+  }
+
+  /**
+   * PERMISSIONLESS SEQUENCING — "the loser re-signs" (ADR-027 phase 4).
+   *
+   * The pool is a single hot UTXO, so two clients that build against the same tip will collide:
+   * one lands, the other is rejected because the outpoint it spends no longer exists. There is no
+   * operator sequencer to prevent that and none is needed — the loser simply re-resolves the tip,
+   * rebuilds, RE-SIGNS, and tries again. Ordering is decided by the network, not by a privileged
+   * party, which is what makes the sequencing permissionless.
+   *
+   * Note the honest consequence: a rebuilt trade is re-priced at the NEW curve position, because
+   * the winner moved `sold`. A loser therefore pays more for a buy (or receives less for a sell)
+   * than the quote they first saw — the covenant will not honour a stale price. Callers that care
+   * should re-quote and confirm rather than blindly retrying; `maxAttempts` bounds the loop.
+   *
+   * `state` (if given) is used for the FIRST attempt only; every retry re-resolves from chain.
+   */
+  private async submit<T extends BuiltTx>(
+    build: (state: ResolvedLedgerPool) => Promise<T>,
+    opts: { state?: ResolvedLedgerPool; maxAttempts?: number } = {},
+  ): Promise<T & { txid: string; attempts: number; repriced: boolean }> {
+    const maxAttempts = opts.maxAttempts ?? 4;
+    let state = opts.state;
+    let lastErr = '';
+    const firstTip = state ? `${state.txid}:${state.vout}` : '';
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const s = state ?? (await this.state());
+      state = undefined; // only the caller's state seeds attempt 1; retries always re-resolve
+      const built = await build(s);
+      try {
+        const txid = await this.broadcast(built.rawTx);
+        return { ...built, txid, attempts: attempt, repriced: !!firstTip && `${s.txid}:${s.vout}` !== firstTip };
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : String(e);
+        if (!isOutpointConflict(lastErr)) throw e; // a real failure, not a race — surface it
+        // someone else moved the pool between our read and our broadcast: re-resolve and re-sign
+        await new Promise((r) => setTimeout(r, 1200 * attempt));
+      }
+    }
+    throw new Error(`lost the sequencing race ${maxAttempts}x (last: ${lastErr})`);
+  }
+
+  /** BUY, retrying through contention. See `submit`. */
+  async submitBuy(args: Parameters<LedgerPoolClient['buildBuy']>[0] & { maxAttempts?: number }) {
+    return this.submit((state) => this.buildBuy({ ...args, state }), { state: args.state, maxAttempts: args.maxAttempts });
+  }
+
+  /** SELL, retrying through contention — the holder re-signs each rebuilt attempt. See `submit`. */
+  async submitSell(args: Parameters<LedgerPoolClient['buildSell']>[0] & { maxAttempts?: number }) {
+    return this.submit((state) => this.buildSell({ ...args, state }), { state: args.state, maxAttempts: args.maxAttempts });
   }
 
   /** Broadcast, retrying transient failures. Returns the txid. */

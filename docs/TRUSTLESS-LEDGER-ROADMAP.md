@@ -112,9 +112,25 @@ burst are in tension for a curve — pick per launch (§7).**
    **Protocol constraint surfaced:** a sell's fee input is consumed WHOLE (0xc1 pins exactly two
    outputs, so no change is possible) — sellers must pre-size an exact fee UTXO, which
    `quoteSellFee()` returns and the harness demonstrates as a two-tx flow.
-4. **Permissionless sequencing** — sell is already holder-signed; the client self-assembles
-   against the resolved tip and retries on outpoint-move ("loser re-signs", no operator
-   sequencer).
+4. **Permissionless sequencing — ✅ BUILT + MAINNET-PROVEN under REAL contention (14/14).**
+   `LedgerPoolClient.submitBuy` / `submitSell` wrap the build in a bounded contention loop: on an
+   outpoint-move rejection the client re-resolves the tip, rebuilds, **re-signs**, and retries. No
+   operator sequencer exists in the path — ordering is decided by the network.
+   `isOutpointConflict()` distinguishes a race (`txn-mempool-conflict`, `Missing inputs`,
+   `txn-already-known`) from a genuinely invalid spend, which is surfaced immediately rather than
+   retried, so the loop cannot mask real bugs.
+   **Proven with actual conflicting broadcasts on mainnet** (`verify-sequencing-mainnet.ts`, pool
+   `31820de7…:0`): two holders built buys against the SAME tip; A landed (`d1902f08…`) and B's
+   pre-built tx was **rejected by the node with `258: txn-mempool-conflict`**, then recovered in 2
+   attempts (`d3bdfb7f…`). A sell race followed — B moved the tip under A's sell, and A rebuilt,
+   **re-signed** and landed (`3fa3af76…`); the test asserts one fresh signature per attempt, which
+   is the "loser re-signs" property directly. Final: 4 ops replayed, none lost, reconstruction
+   byte-matched the tip.
+   **Honest consequence (documented in the API):** a rebuilt trade is **re-priced at the new curve
+   position**. Observed live: B's buy went 210 → 1010 sats (A's win moved `sold` up), and A's sell
+   refund went 605 → 715 (B's buy moved it up again — a loser can be repriced either way). The
+   covenant will not honour a stale quote, so a UI should re-quote and confirm rather than blindly
+   retry; `submit()` returns `attempts` and `repriced` for exactly that.
 5. **Remove the operator from the critical path** — permissionless graduation (anyone triggers
    the mint once sold out); decentralize overlay hosting for discovery.
 6. **Prove it** — a mainnet round-trip **buy → sell → graduate**, driven by the open client,
@@ -156,11 +172,18 @@ unverifiable):** genesis `3e2474045088c9eb8ba484a723294d4c92a09d4348f67a88241d4c
 k=1, supply=100, payoutPkh `121c7ea8310c…` (client). Re-verify any time with:
 `node packages/curve/service/dist/service/verify-reconstruct-mainnet.js --resolve <genesisTxid>`.
 
-**✅ Phase 3 done — the open client `LedgerPoolClient` is built and MAINNET-proven (see §5.3).**
-**Protocol properties 1 and 2 of 3 are now met:** on-chain is the source of truth, and an open
-client constructs the spends. Property 3 (no party can steal/censor/lock) is *mostly* inherent —
-buy is keyless, sell is holder-signed, graduation is permissionless and fixed-destination — with
-the open item being permissionless **sequencing** of the single hot UTXO (phase 4).
+**✅ Phases 2, 3 and 4 done — all MAINNET-proven (see §5.2 / §5.3 / §5.4).**
+**All three protocol properties from §1 are now met for the ledger pool:** on-chain is the source
+of truth (`resolveLedgerPool`), an open client constructs the spends (`LedgerPoolClient`), and no
+party can steal, censor or lock funds — buy is keyless, sell is holder-signed, graduation is
+permissionless to a destination fixed at deploy, and **sequencing the single hot UTXO needs no
+operator** (proven under real contention). The remaining operator role is zero on the trade path.
+
+Still open, and honestly not protocol-completeness: **phase 5** (permissionless graduation is
+*built* but not yet exercised end-to-end on mainnet; decentralised overlay hosting for discovery
+still relies on knowing a genesis txid), the **SMT migration** for Limit A (tx size is O(holders)
+today), and Limit B — **~25 trades per confirmation window per pool**, which contention recovery
+does not change: the loop makes losers land eventually, it does not raise throughput.
 
 **Reference pools (keep — the July pool became unverifiable when a DB reset lost its terms):**
 | pool | terms | state | note |
@@ -168,15 +191,17 @@ the open item being permissionless **sequencing** of the single hot UTXO (phase 
 | `3e2474045088c9eb8ba484a723294d4c92a09d4348f67a88241d4c824d6d9a2c:0` | k=1, supply=100 | sold 30, reserve 1011, 2 holders | phase-2 proof (§5.2) |
 | `84e72674c5fdf6dc2a62f51255b6c3a157e16370be9d2130ab9b10307e4da6af:0` | k=1, supply=60 | sold 15, reserve 666 | phase-3 open-client proof (§5.3) |
 | `cd55e7538ba0c393…:0` | k=1, supply=60 | sold 40, reserve 1366 | abandoned mid-run (fee-estimate bug); left as-is — recovering 1.3k sats would cost ~3.4k in fees |
+| `31820de7626df95349ea5ffab5cb20421fa398f5a81a5d8b4bd7df577dec265b:0` | k=1, supply=200 | sold 59, reserve 2316, 2 holders | phase-4 contention proof (§5.4); history `+40 +20 +10 -11`, two of them raced |
+| `a0ae17e2df16ba57…:0`, `1828ba336c8145ea…:0` | k=1, supply=200 | partial | earlier phase-4 attempts abandoned on a dust-floor guard; the guard was correct, the test's hardcoded sell amount was not |
 
 Re-verify any of them: `node packages/curve/service/dist/service/verify-open-client-mainnet.js --resolve <genesisTxid> <supply>`.
-Total mainnet spend across phases 2–3: **~24.5k sats** from the test wallet.
+Total mainnet spend across phases 2–4: **~54.5k sats** from the test wallet (156,820 → 102,306).
 
-**Next (phase 4 — permissionless sequencing):** sell is already holder-signed and the client already
-self-assembles against the freshly-resolved tip, so what remains is the **contention loop** — on an
-outpoint-move rejection (`txn-mempool-conflict` / `Missing inputs`), re-resolve and re-sign
-("loser re-signs"), with no operator sequencer. That plus permissionless graduation (phase 5) closes
-property 3. Note Limit B still stands: ~25 trades per confirmation window per pool (§3).
+**Next (phase 5 — remove the last operator touchpoints):** exercise **permissionless graduation**
+end-to-end on mainnet (the covenant path is built and unit-tested, but no live pool has been driven
+to `sold == supply` and graduated by a non-owner), and decentralise **discovery** — today a client
+must be told a genesis txid, which is the last place an operator is load-bearing. After that, the
+open engineering items are the **SMT migration** (Limit A) and the batch-settlement R&D (Limit B).
 
 Related: `docs/research/decentralized-funding-strategy.md` (the trust-model analysis + open
 questions), `docs/DECISIONS.md` ADR-026 (keyless buy) / ADR-027 (ledger) / ADR-029 (why Option B

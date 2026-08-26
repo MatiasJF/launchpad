@@ -1,6 +1,36 @@
 # Project State
 
-_Last updated: 2026-08-26 — by: trustless track — the OPEN CLIENT is mainnet-proven; protocol properties 1 & 2 of 3 met_
+_Last updated: 2026-08-26 — by: trustless track — permissionless sequencing proven under REAL mainnet contention; all 3 protocol properties met_
+
+## Trustless track · phase 4 (2026-08-26) — permissionless sequencing ✅ PROVEN UNDER REAL CONTENTION (14/14)
+
+The single hot pool UTXO no longer needs an operator to sequence it.
+`LedgerPoolClient.submitBuy` / `submitSell` wrap a build in a bounded contention loop: on an
+outpoint-move rejection the client **re-resolves the tip, rebuilds, re-signs** and retries.
+Ordering is decided by the network, not by any privileged party.
+
+- **`isOutpointConflict()`** separates a race (`txn-mempool-conflict`, `Missing inputs`,
+  `txn-already-known`) from a genuinely invalid spend, which is surfaced immediately — the loop
+  must not mask real bugs, and a test asserts exactly that.
+- **Proven with actual conflicting broadcasts on mainnet** (`verify-sequencing-mainnet.ts`, pool
+  `31820de7…:0`, k=1 supply=200): two holders built buys against the SAME tip; A landed
+  (`d1902f08…`) and B's pre-built tx was **rejected by the node with `258: txn-mempool-conflict`**,
+  then recovered in 2 attempts (`d3bdfb7f…`). Then a SELL race — B moved the tip under A's sell and
+  A rebuilt, **re-signed** and landed (`3fa3af76…`); the test counts signatures and asserts one
+  fresh signature per attempt, which is the "loser re-signs" property directly. Final ledger: 4 ops
+  replayed (`+40 +20 +10 -11`), none lost, reconstruction byte-matched the tip.
+- **Honest consequence, now in the API:** a rebuilt trade is **re-priced at the new curve
+  position** — observed live, B's buy went 210 → 1010 sats, and A's sell refund went 605 → 715 (a
+  loser can be repriced either way). The covenant won't honour a stale quote, so a UI should
+  re-quote and confirm rather than blindly retry; `submit()` returns `attempts` and `repriced`.
+- **All three protocol properties from the roadmap §1 are now met** for the ledger pool. The
+  operator's role on the trade path is zero.
+- **Still open (not protocol-completeness):** permissionless graduation is *built* but never driven
+  end-to-end on a live pool; discovery still needs a genesis txid from somewhere; the SMT migration
+  (Limit A, tx size is O(holders)); and Limit B — **~25 trades per confirmation window per pool**,
+  which contention recovery does NOT change (it makes losers land eventually, not faster).
+- Mainnet spend across phases 2–4: **~54.5k sats** (156,820 → 102,306). Research track — does not
+  block the shipped Option B.
 
 ## Trustless track · phase 3 (2026-08-26) — open client `LedgerPoolClient` ✅ MAINNET-PROVEN
 
