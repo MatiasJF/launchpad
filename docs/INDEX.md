@@ -20,6 +20,7 @@ present, not implemented.
 - Decentralized funding strategy (on-chain enforcement map, trustless crowdfunding + curve, phased roadmap) → `docs/research/decentralized-funding-strategy.md`
 - Research: UTXO concurrency / serialization patterns → `docs/research/UTXO-CONCURRENCY-PATTERNS.md`
 - Research: comparable decentralized crowdfunding protocols (Eth/Cosmos/Cardano) → `docs/research/task-6-decentralized-crowdfunding-protocols.md`
+- Operator key custody (HSM/KMS signer for production; contract + provider recipes) → `docs/OPERATOR-KEY-CUSTODY.md`
 
 ## Domain & data
 

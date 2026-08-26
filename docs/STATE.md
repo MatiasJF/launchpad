@@ -96,6 +96,20 @@ is easy to click — removed the ledger/linear card; the wallet-STAS card is the
 (needed for /admin). UX follow-ups noted: sold-out state could show "sold out — selling open" explicitly;
 the "register settled purchases" panel display when already delivered.
 
+## 🔐 Operator key → HSM/KMS ready (2026-08-26)
+
+The operator co-sign key (the reserve-security boundary, ADR-029) signing is now PLUGGABLE
+(`apps/web/lib/operator-wallet.ts`), selected by `OPERATOR_SIGNER`: `local` (default —
+`OPERATOR_KEY` in `.env`, dev/testing) or `remote`/`kms`/`hsm` (production — POST the 32-byte
+digest to an HSM/KMS-backed endpoint `OPERATOR_SIGNER_URL`; the private key never enters the
+app; `getOperator()` reads the public `OPERATOR_PUBKEY`). Low-S canonicalization applied to BOTH
+backends. No call sites changed. Verified: local mode still yields valid low-S sigs with the SAME
+pkh `84f96c45…` (all existing pools + the harness keep working). Provider recipes (AWS KMS
+ECC_SECG_P256K1, GCP, YubiHSM), the HTTP contract, the **pubkey-must-match-deployed-pools** migration
+note, and the honest caveat (HSM protects key material, not signing authorization → give the signer
+its own policy) → `docs/OPERATOR-KEY-CUSTODY.md`. Remaining (human/infra): provision the HSM/KMS +
+signer service, set the envs, verify `getOperator().pkh` matches the pools' `operatorPkh`.
+
 ## 🏗️ Delivery robustness (in progress, 2026-08-26)
 
 Shrinking/auto-recovering the split-buy paid-but-undelivered window. **Piece 1 — auto-sweep ✅ built +
