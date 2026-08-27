@@ -111,3 +111,28 @@ Two failures in one:
 
 Also: `issueStasGenesis` prompts the wallet **once**, not twice — CONTRACT and ISSUE are built in a
 single action. My walkthrough said twice, which had the user watching for a prompt that never comes.
+
+
+## A delivery recorded under the wrong identity is invisible to the person it is for (2026-08-27)
+
+The graduation mint delivered correctly on mainnet (`19b510826b9d` — a 1,439-byte STAS output for
+60 tokens at the holder's pkh). The holder still could not claim it, and the reason was not on
+chain at all.
+
+`getClaimables` finds a buyer's tokens by **`buyerIdentity`**. A graduation delivery is run by the
+PROJECT, so the Order carried the project's identity, not the holder's — and we never learn a
+holder's identity key in the first place. A trustless-curve balance is keyed to a **derived pkh**,
+which is all we ever see. So every holder who was not also the project owner would have seen
+nothing, forever, while their tokens sat correctly on chain in an address they control.
+
+It looked fine in testing only because the owner and the holder were the same wallet.
+
+> **When the party who performs an action is not the party it is for, an identity-keyed lookup is
+> wrong by construction.** Key the record to something the recipient can independently derive — here
+> the pkh their wallet re-derives on demand — and test with the two parties distinct.
+
+The related mistake was mine too: I had hidden the claim card entirely for this variant, on the
+grounds that a pre-graduation holding is a ledger entry and not wallet STAS. True before
+graduation, wrong after it — a binary hide where the answer was conditional. There is now a
+dedicated card that looks up by pkh and, before the project mints, says so plainly instead of
+reporting "no settled orders" to someone owed 60 tokens.

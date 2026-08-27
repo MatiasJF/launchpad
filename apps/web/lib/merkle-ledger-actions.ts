@@ -394,11 +394,14 @@ export async function recordMerkleDelivery(input: {
     const p = await prisma.curvePool.findUnique({ where: { saleId: input.saleId }, include: { sale: { include: { token: { include: { project: true } } } } } });
     if (!p || p.variant !== 'merkle') return { ok: false, error: 'no merkle pool' };
     if (!(await isProjectOwner(p.sale.token.project.id, input.identityPubkey))) return { ok: false, error: 'not the project owner' };
-    const already = await prisma.order.findFirst({ where: { saleId: input.saleId, kind: 'curve_graduation_mint', receiveAddress: input.ownerPkh } });
+    const already = await prisma.order.findFirst({ where: { saleId: input.saleId, kind: 'curve_graduation_mint', receiveAddress: input.ownerPkh.toLowerCase() } });
     if (already) return { ok: false, error: 'this holder has already been delivered' };
     await prisma.order.create({
       data: {
-        saleId: input.saleId, buyerIdentity: input.identityPubkey, receiveAddress: input.ownerPkh,
+        // buyerIdentity is the PROJECT's (they ran the mint) — it is NOT the holder's, and must
+        // never be used to find a holder's claim. `receiveAddress` carries the holder's ledger pkh,
+        // lowercased so the claim lookup can match it exactly.
+        saleId: input.saleId, buyerIdentity: input.identityPubkey, receiveAddress: input.ownerPkh.toLowerCase(),
         kind: 'curve_graduation_mint', tokens: BigInt(Math.floor(input.amount)), satsPaid: BigInt(0),
         state: 'settled', paymentTxid: input.txid, txid: input.txid,
       },
@@ -407,4 +410,39 @@ export async function recordMerkleDelivery(input: {
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * A holder's claimable graduation deliveries, keyed by their LEDGER PKH.
+ *
+ * The generic `getClaimables` matches on `buyerIdentity`, which cannot work here: the mint is run
+ * by the project, so the delivery Order carries the PROJECT's identity, not the holder's — and we
+ * never learn a holder's identity key at all, only the derived pkh their ledger balance was keyed
+ * to. Matching on `buyerIdentity` therefore showed a holder nothing, and only appeared to work when
+ * the project owner and the holder happened to be the same wallet.
+ *
+ * A holder's wallet can re-derive this pkh on demand, so it is the right key. Not gated: anyone may
+ * ask what a given pkh is owed, which is the same property the final ledger already has.
+ */
+export async function getMerkleClaimables(saleId: string, ownerPkh: string): Promise<
+  { orderId: string; txid: string; tokens: number; slug: string; ticker: string }[]
+> {
+  if (!/^[0-9a-fA-F]{40}$/.test(ownerPkh)) return [];
+  const orders = await prisma.order.findMany({
+    where: { saleId, kind: 'curve_graduation_mint', state: 'settled', txid: { not: null }, receiveAddress: ownerPkh.toLowerCase() },
+    include: { sale: { include: { token: { include: { project: true } } } } },
+    orderBy: { updatedAt: 'desc' },
+  });
+  // hide ones the holder already registered, so a claimed token stops re-appearing
+  const registered = await prisma.event.findMany({
+    where: { entity: 'Order', type: 'registered', entityId: { in: orders.map((o) => o.id) } },
+    select: { entityId: true },
+  });
+  const done = new Set(registered.map((e) => e.entityId));
+  return orders
+    .filter((o) => !done.has(o.id))
+    .map((o) => ({
+      orderId: o.id, txid: o.txid!, tokens: Number(o.tokens),
+      slug: o.sale.token.project.slug, ticker: o.sale.token.ticker,
+    }));
 }

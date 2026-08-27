@@ -11,6 +11,7 @@ import { LedgerTradeCard } from '../../../components/LedgerTradeCard';
 import { MerkleTradeCard } from '../../../components/MerkleTradeCard';
 import { StasTradeCard } from '../../../components/StasTradeCard';
 import { ClaimTokens } from '../../../components/ClaimTokens';
+import { MerkleClaimTokens } from '../../../components/MerkleClaimTokens';
 import { Markdown } from '../../../components/Markdown';
 import { SpvExplainer } from '../../../components/SpvExplainer';
 import { StatusPill, Tabs } from '../../../components/ui';
@@ -175,10 +176,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           </div>
 
           <aside>
-            {/* A trustless-curve holding is a ledger entry inside the covenant, not wallet STAS, so
-                there is nothing to "register". Showing this card told a holder of 60 tokens that
-                they had none — actively misleading, so it is hidden for that variant. */}
-            {s.curve?.variant !== 'merkle' && <ClaimTokens slug={s.slug} />}
+            {/* A trustless-curve holding is a ledger entry, not wallet STAS, so the generic claim
+                card cannot find it — it matches on buyerIdentity, and a graduation delivery carries
+                the PROJECT's identity, never the holder's. MerkleClaimTokens looks up by the
+                holder's ledger pkh instead, which their wallet re-derives. */}
+            {s.curve?.variant === 'merkle'
+              ? <MerkleClaimTokens saleId={s.saleId} slug={s.slug} graduated={s.curve.status === 'graduated'} />
+              : <ClaimTokens slug={s.slug} />}
             <Link
               href={`/project/${s.slug}/manage`}
               className="mt-4 block text-center font-mono text-xs text-faint underline underline-offset-2 hover:text-muted"
