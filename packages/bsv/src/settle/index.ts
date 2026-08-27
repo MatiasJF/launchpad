@@ -157,10 +157,14 @@ export async function transferStas(
   }
 
   // 7. TX1: funding output sized to TX2's fee.
-  //    FEE_RATE is sat/BYTE. We use 0.1 sat/byte (= 100 sat/KB) — the covenant-tx
-  //    floor, comfortably above the mempool eviction threshold that was killing the
-  //    underpaid covenant txs (0.011 sat/byte) so the STAS return tx clears on the
-  //    same round-trip. A miner floor keeps a tiny tx from dropping below relay minimum.
+  //    FEE_RATE is sat/BYTE. NOTE on the "0.011 sat/byte eviction" this comment used to
+  //    cite as a threshold: that figure was a SYMPTOM, not a policy. The 2026-08-04 bug
+  //    sized every output at a flat 34 bytes, ignoring the ~3.5KB covenant script, so a
+  //    ~7KB tx paid the 40-sat MIN_FEE floor — which works out to ~0.011 sat/byte. The fix
+  //    was sizing from ACTUAL bytes (still in place); the rate itself was never measured.
+  //    It has been now — see ADR-031 and service/calibrate-fee-rate.ts. Left at 0.1 here
+  //    because these are stas-js transfer paths, not the covenant spends that calibration
+  //    covered, and lowering them needs its own measurement.
   const FEE_RATE = 0.1;
   const MIN_FEE = 40; // sats — floor so a small tx still relays
   const estTx2Size =

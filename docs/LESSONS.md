@@ -195,3 +195,27 @@ Recovery was: copy the genuinely-new untracked files aside, `git reset --hard ma
 survive it), then re-apply the intended edits onto the correct versions. Re-applying by hand rather
 than resolving a diff mattered — the earlier edits had been made against stale files, so "keeping"
 them would have preserved the reversion.
+
+## A cited "eviction threshold" that was really a floor-hit (2026-08-27)
+
+Lowering Option B's fee rate, I hit a comment warning that 0.011 sat/byte was "the mempool eviction
+threshold that was killing the underpaid covenant txs" — and I had just set 0.01, below it. I
+stopped and went to the original finding.
+
+It was not a threshold. The 2026-08-04 bug sized every output at a flat 34 bytes, ignoring the
+~3.5 KB covenant script, so a ~7 KB transaction paid the **40-sat `MIN_FEE` floor**. "0.011 sat/byte"
+is simply 40 ÷ 3,683 — the arithmetic *result* of hitting that floor, never a rate anyone chose or
+tested. The real fix (size from actual bytes) was correct and is still in place; the rate beside it
+was picked conservatively and never measured.
+
+> A number that appears in a post-mortem is not automatically a measurement. Check whether it was
+> *chosen* or *observed*, and whether anyone tested the thing it is now being used to justify.
+
+Corrected the comment in both places rather than leave a false threshold for the next person.
+
+**And the measurement that settled it was not the probe.** Padded OP_RETURN probes at the right size
+said 0.0011 sat/B was mineable, but those are standalone transactions with confirmed parents. What
+actually decided it was six REAL covenant spends from earlier mainnet runs — a sell at 0.0099, buys
+at 0.0122, graduations at 0.0163 — all sitting on 51-64 confirmations. Purpose-built probes tell you
+what the network accepts; your own transaction history tells you what it does with the shape you
+actually broadcast.

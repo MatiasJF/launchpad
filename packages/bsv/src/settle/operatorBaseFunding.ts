@@ -90,7 +90,10 @@ export async function signOperatorP2pkhInput(args: {
  * Fee-input sizing. TX1 here is a SMALL flat-key P2PKH split tx (N inputs + 2 P2PKH
  * outputs of 34 B each — genuinely 34 B, unlike the ~3.5 KB covenant outputs the
  * curve txs carry), so the 2×34 output sizing below is correct. The RATE is raised
- * to 0.1 sat/byte to match the covenant txs so nothing on the path underpays.
+ * to 0.1 sat/byte. NOTE: this used to say "to match the covenant txs", but the covenant rate is now
+ * 0.01 (measured — ADR-031). This is left at 0.1 deliberately: these are small P2PKH funding txs
+ * where MIN_FEE=40 dominates anyway, so lowering it would change almost nothing while adding
+ * unmeasured risk to the shipped path.
  */
 const FEE_RATE = 0.1;
 const MIN_FEE = 40;
