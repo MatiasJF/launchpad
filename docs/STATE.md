@@ -1,6 +1,33 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: graduation mint built; the one unenforced step is now visible, not hidden_
+_Last updated: 2026-08-27 — by: full trustless lifecycle proven on mainnet through the UI, twice; one key per holder_
+
+## Trustless curve — COMPLETE END-TO-END ON MAINNET (2026-08-27)
+
+Two full lifecycles driven through the real UI by the project owner, on mainnet, with no operator
+anywhere in the trade path.
+
+**Pool 2 (`trustless` / $tr2, genesis `38d331f7…`)** is the one that matters, because it ran on the
+UNIFIED holder key:
+`deploy → buy 40 (077f56f3) → sell 20 (ebd44176) → buy 40 to sell out (fd71afc5) → graduate
+(7f0d9147) → mint (1b8d8fc4) → deliver (9041c8c9)`.
+
+**The sell signed correctly under `counterparty: 'self'`** — the single risk in unifying the holder
+identity, since the covenant's `checkSig` needs `getPublicKey` and `createSignature` to agree. It
+had never been driven on mainnet with that derivation. It works, so the unification is proven rather
+than assumed. And the delivery landed on the right key:
+`ledger pkh 525f9831… == delivery 9041c8c9 vout 0` — one address is now the ledger identity, the
+STAS address, and what the wallet displays.
+
+**Pool 1 (`trust`, genesis `4cdd07f3…`)** ran before the fix and exposed the bug: its tokens sit at
+the LEGACY holder key (`19b51082:0`, still unspent). `MerkleClaimTokens` derives both keys and
+offers "Move to wallet & register" for legacy holdings.
+
+**A second bug this surfaced:** registering a delivery marks the Order registered, which hides it
+from the claim list. Pool 1's registration "succeeded" while sending the tokens somewhere the wallet
+does not surface — so the claim that would let the holder sweep them was hidden too. The stale event
+was cleared and the claim is available again. The sweep path now moves BEFORE registering, so the
+mark only happens once the tokens are in the right place.
 
 ## Graduation mint (2026-08-27) — closing the dead end the manual pass found
 
