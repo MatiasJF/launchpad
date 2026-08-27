@@ -79,7 +79,7 @@ export function MerkleGraduationMint({ saleId, slug, ticker, name, description, 
       const rec = await recordMerkleMint({ saleId, identityPubkey: identity, issuanceTxid: bc2.txid || res.genesisTxid, tokenId: res.tokenId });
       if (!rec.ok) throw new Error(rec.error);
       setIssuanceTxid(bc2.txid || res.genesisTxid);
-      setNote('minted — now deliver to each holder below');
+      setNote('minted — give it a few seconds to propagate, then deliver to each holder below');
       await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setNote(null); }
     finally { setBusy(false); }
@@ -96,11 +96,27 @@ export function MerkleGraduationMint({ saleId, slug, ticker, name, description, 
       const wallet = await getWalletClient();
       const { publicKey: identity } = await wallet.getPublicKey({ identityKey: true });
 
-      setNote(`resolving the token UTXO…`);
-      const cur = await resolveCurrentPool(issuanceTxid!);
-      if ('error' in cur) throw new Error(cur.error);
-      const info = await getOutputInfo(cur.txid, cur.vout);
-      if (!info) throw new Error('could not read the token output');
+      // A freshly-broadcast issuance is not immediately readable: WhatsOnChain indexes it a few
+      // seconds later, and the first version of this shipped with no wait at all, so clicking
+      // Deliver right after Mint failed with a bare "could not read the token output" that said
+      // nothing about why. Retry, and name the real cause if it never appears.
+      setNote('resolving the token UTXO…');
+      let cur: { txid: string; vout: number } | null = null;
+      let info: { scriptHex: string; satoshis: number } | null = null;
+      for (let i = 0; i < 8 && !info; i++) {
+        const r = await resolveCurrentPool(issuanceTxid!);
+        if (!('error' in r)) {
+          cur = r;
+          info = await getOutputInfo(r.txid, r.vout);
+        }
+        if (!info) {
+          setNote(`waiting for the issuance to propagate… (${i + 1}/8)`);
+          await new Promise((res) => setTimeout(res, 3000));
+        }
+      }
+      if (!cur || !info) {
+        throw new Error('the issuance is not visible on-chain yet — wait a few seconds and click Deliver again');
+      }
       const beef = await getSourceBeefDeep(cur.txid);
 
       // A holder's ledger identity IS a pkh, so the STAS goes to that same P2PKH address —

@@ -89,3 +89,25 @@ showing a cheerful "Graduated".
 **Deploy costs more than the seed suggests.** The wallet builds the deploy transaction itself and
 priced it at 0.10 sat/B — 1,207 sats for the 12 KB output — so a "546 sat" pool actually cost 1,753.
 Our own calibrated 0.01 rate only applies to transactions we assemble.
+
+
+## A freshly-broadcast transaction is not immediately readable (2026-08-27, graduation mint)
+
+The graduation mint worked on the first try (issuance `a70f7be3`, a correct 1,439-byte STAS output
+for 60 tokens). Delivery then failed with **`could not read the token output`** — and the mint was
+fine. WhatsOnChain indexes a broadcast transaction a few seconds later, and the UI enabled
+**Deliver** the instant the mint broadcast, with no wait at all. Re-running the same read path a
+minute later returned everything cleanly.
+
+Two failures in one:
+- **No propagation wait between a write and the read that depends on it.** Delivery now retries for
+  ~24 s before giving up.
+- **The error named the symptom, not the cause.** "Could not read the token output" is true and
+  useless; it now says the issuance is not visible on chain yet and to try again shortly.
+
+> Any step that reads back something we just broadcast needs a retry, and its failure message should
+> name propagation explicitly — otherwise a transient race reads as a broken mint, which is exactly
+> the wrong thing for a user to conclude about money they have just spent.
+
+Also: `issueStasGenesis` prompts the wallet **once**, not twice — CONTRACT and ISSUE are built in a
+single action. My walkthrough said twice, which had the user watching for a prompt that never comes.
