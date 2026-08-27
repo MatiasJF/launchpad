@@ -222,7 +222,17 @@ permissionless to a destination fixed at deploy, and **sequencing the single hot
 operator** (proven under real contention). The remaining operator role is zero on the trade path.
 
 Every covenant path — buy, sell, graduate — has now run end to end on mainnet, and the full
-lifecycle is closed. Still open: **decentralised discovery** (a client must be told a genesis
+lifecycle is closed.
+
+**The graduation mint remains the one unenforced step**, and there are now two responses to it,
+recorded in `docs/DECISIONS.md`:
+- **ADR-031 (done)** — the settlement record makes unminted debt public per project, shown before a
+  buyer commits. Disclosure, not enforcement.
+- **ADR-032 (PROPOSED)** — a delivery bond: graduation splits the reserve, and holders can claim
+  their share of the bond after a deadline if the project has not delivered. Economic enforcement.
+  Blocked on one honest question — a delivered holder could still claim (double-dipping), and
+  preventing that would need the covenant to verify a STAS mint, which is impossible because
+  **STAS ownership is P2PKH and a covenant can never custody STAS.** Still open: **decentralised discovery** (a client must be told a genesis
 txid — the last operator touchpoint, §5b), the **SMT migration** for Limit A (tx size is
 O(holders) today: these pool txs are already ~22 KB), and Limit B — **~25 trades per confirmation
 window per pool**, which contention recovery does not change: the loop makes losers land

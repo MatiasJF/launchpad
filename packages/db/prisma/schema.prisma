@@ -126,6 +126,11 @@ model CurvePool {
   // overloading it would make a merkle pool unverifiable the moment the tip advanced.
   genesisTxid     String?
   genesisVout     Int?     @default(0)
+  // merkle variant: set once when the pool graduates, so the settlement record (how much is owed
+  // to holders, and for how long) can be shown WITHOUT re-walking the chain on every page load.
+  // `sold` is snapshotted at the same moment and is the total owed — the covenant is spent by then,
+  // so it can never change again.
+  graduatedAt     DateTime?
   scriptHex       String? // current pool locking script
   status          String   @default("draft") // draft | live | graduated
   createdAt       DateTime @default(now())

@@ -287,16 +287,90 @@ export async function recordMerkleTrade(input: {
   }
 }
 
-/** Mark a pool graduated once the terminal spend is on chain (a cache update — the chain decides). */
+/**
+ * Mark a pool graduated once the terminal spend is on chain (a cache update — the chain decides).
+ *
+ * Also SNAPSHOTS the debt: how much is owed to holders, and when the clock started. The covenant is
+ * spent by this point so `sold` can never change again, which means the settlement record can be
+ * read straight from the database instead of re-walking the chain on every page load. The chain
+ * stays the authority — this caches a value that is now immutable.
+ */
 export async function recordMerkleGraduate(input: { saleId: string; graduateTxid: string }): Promise<{ ok: boolean; error?: string }> {
   try {
     const p = await prisma.curvePool.findUnique({ where: { saleId: input.saleId } });
     if (!p || p.variant !== 'merkle') return { ok: false, error: 'no merkle pool' };
-    await prisma.curvePool.update({ where: { saleId: input.saleId }, data: { status: 'graduated' } });
+
+    let sold = p.sold;
+    if (p.genesisTxid && p.payoutPkh) {
+      const state = await resolveMerklePool({
+        genesisTxid: p.genesisTxid, genesisVout: p.genesisVout ?? 0,
+        k: p.k.toString(), supply: p.supply.toString(), payoutPkh: p.payoutPkh,
+      });
+      if (!('error' in state)) sold = BigInt(state.sold);
+    }
+
+    await prisma.curvePool.update({
+      where: { saleId: input.saleId },
+      data: { status: 'graduated', sold, graduatedAt: new Date() },
+    });
     await prisma.sale.update({ where: { id: input.saleId }, data: { status: 'finalized' } });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export interface SettlementRecord {
+  /** graduated pools that still owe holders undelivered tokens */
+  outstanding: { slug: string; ticker: string; owed: number; delivered: number; daysSince: number }[];
+  /** graduated pools where every holder has been delivered */
+  settled: { slug: string; ticker: string; owed: number }[];
+  totalOutstanding: number;
+  /** days since the OLDEST unsettled graduation — the number that actually signals neglect */
+  oldestDays: number;
+}
+
+/**
+ * A project's track record at honouring the one step the covenant cannot enforce.
+ *
+ * The graduation mint is a promise, not an enforcement (see the header above). The mitigation is
+ * that the promise is PUBLIC and permanent: this reports, per project, how much it still owes
+ * holders from graduated pools and for how long. It is not a guarantee — nothing here forces
+ * anyone to mint — but it makes neglect visible before someone buys into the next sale, which is
+ * the only leverage that exists short of a covenant that enforces delivery.
+ *
+ * Reads the snapshot taken at graduation, so it costs no chain walk. Callable by anyone.
+ */
+export async function getProjectSettlementRecord(projectSlug: string): Promise<SettlementRecord> {
+  const empty: SettlementRecord = { outstanding: [], settled: [], totalOutstanding: 0, oldestDays: 0 };
+  try {
+    const pools = await prisma.curvePool.findMany({
+      where: { variant: 'merkle', status: 'graduated', sale: { token: { project: { slug: projectSlug } } } },
+      include: { sale: { include: { token: { include: { project: true } } } } },
+    });
+    if (pools.length === 0) return empty;
+
+    const out: SettlementRecord = { ...empty, outstanding: [], settled: [] };
+    for (const p of pools) {
+      const owed = Number(p.sold);
+      if (owed <= 0) continue;
+      const delivered = (await prisma.order.findMany({
+        where: { saleId: p.saleId, kind: 'curve_graduation_mint' }, select: { tokens: true },
+      })).reduce((s, o) => s + Number(o.tokens), 0);
+
+      const slug = p.sale.token.project.slug;
+      const ticker = p.sale.token.ticker;
+      if (delivered >= owed) { out.settled.push({ slug, ticker, owed }); continue; }
+
+      const since = p.graduatedAt ?? p.updatedAt;
+      const daysSince = Math.max(0, Math.floor((Date.now() - since.getTime()) / 86_400_000));
+      out.outstanding.push({ slug, ticker, owed, delivered, daysSince });
+      out.totalOutstanding += owed - delivered;
+      out.oldestDays = Math.max(out.oldestDays, daysSince);
+    }
+    return out;
+  } catch {
+    return empty;
   }
 }
 
