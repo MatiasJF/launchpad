@@ -8,8 +8,10 @@ import { BuyCard } from '../../../components/BuyCard';
 import { ContributeCard } from '../../../components/ContributeCard';
 import { CurveBuyCard } from '../../../components/CurveBuyCard';
 import { LedgerTradeCard } from '../../../components/LedgerTradeCard';
+import { MerkleTradeCard } from '../../../components/MerkleTradeCard';
 import { StasTradeCard } from '../../../components/StasTradeCard';
 import { ClaimTokens } from '../../../components/ClaimTokens';
+import { MerkleClaimTokens } from '../../../components/MerkleClaimTokens';
 import { Markdown } from '../../../components/Markdown';
 import { SpvExplainer } from '../../../components/SpvExplainer';
 import { StatusPill, Tabs } from '../../../components/ui';
@@ -119,7 +121,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         <div>
                           {s.type === 'bonding_curve' ? (
                             s.curve && s.curve.status === 'live' ? (
-                              s.curve.variant === 'stas' ? <StasTradeCard s={s} /> : s.curve.variant === 'ledger' ? <LedgerTradeCard s={s} /> : <CurveBuyCard s={s} />
+                              s.curve.variant === 'stas' ? <StasTradeCard s={s} /> : s.curve.variant === 'merkle' ? <MerkleTradeCard s={s} /> : s.curve.variant === 'ledger' ? <LedgerTradeCard s={s} /> : <CurveBuyCard s={s} />
                             ) : (
                               <div className="card p-6 text-sm text-muted">
                                 This bonding-curve sale isn't open yet — the project owner needs to deploy the pool (from their manage
@@ -174,7 +176,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           </div>
 
           <aside>
-            <ClaimTokens slug={s.slug} />
+            {/* A trustless-curve holding is a ledger entry, not wallet STAS, so the generic claim
+                card cannot find it — it matches on buyerIdentity, and a graduation delivery carries
+                the PROJECT's identity, never the holder's. MerkleClaimTokens looks up by the
+                holder's ledger pkh instead, which their wallet re-derives. */}
+            {s.curve?.variant === 'merkle'
+              ? <MerkleClaimTokens saleId={s.saleId} slug={s.slug} graduated={s.curve.status === 'graduated'} />
+              : <ClaimTokens slug={s.slug} />}
             <Link
               href={`/project/${s.slug}/manage`}
               className="mt-4 block text-center font-mono text-xs text-faint underline underline-offset-2 hover:text-muted"

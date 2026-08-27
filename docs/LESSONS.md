@@ -56,3 +56,120 @@ The detail is in `~/.claude/bsv-field-notes.md`; read that before touching anyth
 **Cost**: Mainnet proven (STATE.md:62,95 — delivery failures after deep unconfirmed chains). Analysis in docs/CURVE-SERIALIZATION-ANALYSIS.md. Throughput ceiling ~10-25 buys per confirmation cycle without mitigation.
 
 **Decision**: Defer curves entirely until post-instant-swap success (instant swap has zero serialization issues, each sale is independent). If curves demanded later, implement off-chain batch settlement first.
+
+
+## The UI can be right about the money and still lie to the user (2026-08-27, ADR-030 UI pass)
+
+A manual mainnet pass of the trustless curve completed the full lifecycle — deploy `4cdd07f3`,
+buy 40 `1157fe43`, sell 20 `b92919f7`, sell-out `441c2462`, graduate `f74ee5b2`. Every satoshi was
+correct when the transactions were downloaded and checked. Four things were still wrong, and none of
+them would have shown up in a headless test:
+
+- **The buy quote said 820 sats; the wallet asked for 1,143.** The difference is our `feeSats` (300)
+  plus the wallet's own fee to create the funding output (~23). The number was never wrong, it was
+  just *incomplete* — and a price that changes when the wallet opens destroys trust instantly. The
+  card now shows "820 to the curve + ~300 network fee = ~1,120".
+- **A sold-out pool rendered its status as "scheduled".** The pill was reading the stale `Sale` row
+  instead of the pool state that the rest of the card had just resolved from chain.
+- **"Your tokens — no settled orders to register" was shown to someone holding 60 tokens.** The
+  claim card is for wallet-held STAS; a trustless-curve holding is a ledger entry inside the
+  covenant. Technically accurate, completely misleading. Hidden for that variant.
+- **"you hold" silently read 0 until the wallet prompt returned**, because the balance is keyed to a
+  derived key we cannot know before asking. Now renders "—" until identified.
+
+**And one honest gap the pass exposed rather than a bug:** after graduation the holder still had 60
+in the final ledger, and **nothing mints it**. ADR-027/030 always specified that real STAS is minted
+to holders from the final ledger after graduation, but that step is not built. Selling back before
+graduation is currently the only way to realise value. The card now says so plainly instead of
+showing a cheerful "Graduated".
+
+> The takeaway: headless e2e proves the money moves correctly. It cannot tell you the interface is
+> describing a different transaction than the one the wallet is about to sign. Both are needed.
+
+**Deploy costs more than the seed suggests.** The wallet builds the deploy transaction itself and
+priced it at 0.10 sat/B — 1,207 sats for the 12 KB output — so a "546 sat" pool actually cost 1,753.
+Our own calibrated 0.01 rate only applies to transactions we assemble.
+
+
+## A freshly-broadcast transaction is not immediately readable (2026-08-27, graduation mint)
+
+The graduation mint worked on the first try (issuance `a70f7be3`, a correct 1,439-byte STAS output
+for 60 tokens). Delivery then failed with **`could not read the token output`** — and the mint was
+fine. WhatsOnChain indexes a broadcast transaction a few seconds later, and the UI enabled
+**Deliver** the instant the mint broadcast, with no wait at all. Re-running the same read path a
+minute later returned everything cleanly.
+
+Two failures in one:
+- **No propagation wait between a write and the read that depends on it.** Delivery now retries for
+  ~24 s before giving up.
+- **The error named the symptom, not the cause.** "Could not read the token output" is true and
+  useless; it now says the issuance is not visible on chain yet and to try again shortly.
+
+> Any step that reads back something we just broadcast needs a retry, and its failure message should
+> name propagation explicitly — otherwise a transient race reads as a broken mint, which is exactly
+> the wrong thing for a user to conclude about money they have just spent.
+
+Also: `issueStasGenesis` prompts the wallet **once**, not twice — CONTRACT and ISSUE are built in a
+single action. My walkthrough said twice, which had the user watching for a prompt that never comes.
+
+
+## A delivery recorded under the wrong identity is invisible to the person it is for (2026-08-27)
+
+The graduation mint delivered correctly on mainnet (`19b510826b9d` — a 1,439-byte STAS output for
+60 tokens at the holder's pkh). The holder still could not claim it, and the reason was not on
+chain at all.
+
+`getClaimables` finds a buyer's tokens by **`buyerIdentity`**. A graduation delivery is run by the
+PROJECT, so the Order carried the project's identity, not the holder's — and we never learn a
+holder's identity key in the first place. A trustless-curve balance is keyed to a **derived pkh**,
+which is all we ever see. So every holder who was not also the project owner would have seen
+nothing, forever, while their tokens sat correctly on chain in an address they control.
+
+It looked fine in testing only because the owner and the holder were the same wallet.
+
+> **When the party who performs an action is not the party it is for, an identity-keyed lookup is
+> wrong by construction.** Key the record to something the recipient can independently derive — here
+> the pkh their wallet re-derives on demand — and test with the two parties distinct.
+
+The related mistake was mine too: I had hidden the claim card entirely for this variant, on the
+grounds that a pre-graduation holding is a ledger entry and not wallet STAS. True before
+graduation, wrong after it — a binary hide where the answer was conditional. There is now a
+dedicated card that looks up by pkh and, before the project mints, says so plainly instead of
+reporting "no settled orders" to someone owed 60 tokens.
+
+
+## Two identities for one user is a bug generator (2026-08-27, ADR-030)
+
+Graduated tokens were delivered correctly on chain (`19b51082`, a 1,439-byte STAS output at the
+holder's pkh) and never appeared in the wallet's assets. The user asked the right question: *"might
+it be that it was sent to my wallet address but not to my wallet's STAS address?"* — and that was
+exactly it.
+
+The trustless curve had given every user **two** derived keys per sale:
+
+| purpose | derivation |
+|---|---|
+| ledger holder identity (signs sells) | `counterparty: 'anyone', forSelf: true` |
+| STAS token address (everywhere else in the app) | `counterparty: 'self'` |
+
+Different derivations, different pubkeys, different addresses. The graduation mint delivered to the
+LEDGER key, because that is who the ledger says is owed — which conflated **who is owed** with
+**where their tokens should land**. The tokens sat in an address the wallet controlled but did not
+surface.
+
+The `'anyone' + forSelf` choice was inherited from `LedgerTradeCard`, where it was picked only to
+make `getPublicKey` and `createSignature` agree for the covenant's `checkSig`. It was never a
+deliberate decision to give holders a second identity; it just propagated.
+
+**Fixed by unifying on `'self'`** — the derivation the rest of the app already uses — so a ledger
+balance and a token balance live under one key. `MerkleClaimTokens` still derives the legacy key so
+tokens already delivered there can be swept to the right address, and says so in the UI rather than
+silently doing an extra transaction.
+
+> When a key is chosen to satisfy a *signing* constraint, check what else that key becomes the
+> identity for. Here it silently became the delivery address, and the failure surfaced three phases
+> later as "my tokens aren't showing".
+
+**Still to verify:** the covenant sell signature under `'self'`. The Option B STAS transfer already
+pairs `getPublicKey`/`createSignature` this way, so it should hold — but it is a money-critical path
+and has not yet been driven on mainnet with the new derivation.

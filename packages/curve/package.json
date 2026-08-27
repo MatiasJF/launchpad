@@ -8,7 +8,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./covenant": "./src/covenant.ts",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./announce": {
+      "types": "./src/poolAnnounce.ts",
+      "default": "./src/poolAnnounce.ts"
+    }
   },
   "scripts": {
     "compile": "bash scripts/compile.sh",

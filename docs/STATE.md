@@ -1,6 +1,460 @@
 # Project State
 
-_Last updated: 2026-08-26 — by: product decision — ship Option B hybrid as the launch curve, atomic operator-cosigned buy (ADR-029)_
+_Last updated: 2026-08-27 — by: pool terms published on-chain; a genesis txid is now sufficient to read a pool_
+
+## Discovery (2026-08-27) — the terms are on-chain, so the database is no longer needed at all
+
+The last place we were load-bearing. Reading a pool needs its genesis outpoint AND its immutable
+terms; the outpoint was on-chain but the terms lived only in our database, so a client with the
+txid still had to ask us, and a holder whose project vanished could not reconstruct what they were
+owed.
+
+- **`packages/curve/src/poolAnnounce.ts`** — a **44-byte** OP_RETURN carrying the terms:
+  `OP_FALSE OP_RETURN 'BSVLP' 'mlp1' <k> <supply> <payoutPkh> [<ticker>]`. Provably unspendable, so
+  it costs only its bytes. Emitted as output 1 of the deploy (the covenant MUST stay output 0).
+- **`resolveMerklePoolFromGenesis(genesisTxid)`** reads a pool from the txid ALONE — no terms, no DB.
+- **It is unsigned, and that is fine.** Anyone can write an announcement claiming any terms. It is
+  safe because the terms are CHECKABLE: they rebuild the genesis locking script, which must
+  byte-match the covenant output at that outpoint. The script commits to k, supply and payoutPkh,
+  so a lie cannot survive. **Verified against the live mainnet pool `38d331f7…`** — true terms
+  byte-match; a payout swapped to an attacker, an understated supply and an inflated k are each
+  rejected. A hint the chain itself refuses to let you lie about.
+- Pools deployed before this carry no announcement and get a clear error telling the caller to
+  supply terms, rather than a crash.
+- **Still open: ENUMERATION.** Finding pools you were never told about needs an indexer or overlay —
+  nothing lets you scan the chain for a prefix unaided. The format is public and self-contained so
+  anyone can run one, which is the difference between a convenience and a dependency, but we have
+  not built it.
+
+## Trustless curve — COMPLETE END-TO-END ON MAINNET (2026-08-27)
+
+Two full lifecycles driven through the real UI by the project owner, on mainnet, with no operator
+anywhere in the trade path.
+
+**Pool 2 (`trustless` / $tr2, genesis `38d331f7…`)** is the one that matters, because it ran on the
+UNIFIED holder key:
+`deploy → buy 40 (077f56f3) → sell 20 (ebd44176) → buy 40 to sell out (fd71afc5) → graduate
+(7f0d9147) → mint (1b8d8fc4) → deliver (9041c8c9)`.
+
+**The sell signed correctly under `counterparty: 'self'`** — the single risk in unifying the holder
+identity, since the covenant's `checkSig` needs `getPublicKey` and `createSignature` to agree. It
+had never been driven on mainnet with that derivation. It works, so the unification is proven rather
+than assumed. And the delivery landed on the right key:
+`ledger pkh 525f9831… == delivery 9041c8c9 vout 0` — one address is now the ledger identity, the
+STAS address, and what the wallet displays.
+
+**Pool 1 (`trust`, genesis `4cdd07f3…`)** ran before the fix and exposed the bug: its tokens sit at
+the LEGACY holder key (`19b51082:0`, still unspent). `MerkleClaimTokens` derives both keys and
+offers "Move to wallet & register" for legacy holdings.
+
+**A second bug this surfaced:** registering a delivery marks the Order registered, which hides it
+from the claim list. Pool 1's registration "succeeded" while sending the tokens somewhere the wallet
+does not surface — so the claim that would let the holder sweep them was hidden too. The stale event
+was cleared and the claim is available again. The sweep path now moves BEFORE registering, so the
+mark only happens once the tokens are in the right place.
+
+## Graduation mint (2026-08-27) — closing the dead end the manual pass found
+
+The manual UI pass ended with a holder owning 60 tokens and **nothing to collect** — ADR-027/030
+always specified minting real STAS to holders from the final ledger after graduation, but that step
+had never been built. It is now.
+
+- **`getMerkleFinalLedger(saleId)`** recomputes the mint list from the **genesis transaction alone**
+  — who is owed what, plus what has already been delivered. Callable by ANYONE, so a holder can
+  verify their own claim without asking the project. Verified against the live graduated pool
+  `4cdd07f3…`: `5cf5d8a5… = 60`, from chain, with no database ledger.
+- **`prepareMerkleMint` / `recordMerkleMint` / `recordMerkleDelivery`** — owner-gated, and delivery
+  is idempotent per holder (a `curve_graduation_mint` Order is the guard), so re-running the
+  distribution loop cannot double-mint to someone already paid.
+- **`MerkleGraduationMint.tsx`** — owner mints the STAS genesis to their OWN key (no operator vault
+  on this track) and then delivers to each holder's P2PKH address, which is the same pkh their
+  ledger balance was keyed to.
+
+**The honest part.** This is the ONE step the covenant cannot enforce, and the UI says so in a
+warning panel rather than implying the chain has it covered. Atomic mint-at-graduation is
+impossible for the same reason the atomic buy was — a STAS token input may carry only token outputs
+plus one change output (ADR-029). What survives is **accountability, not enforcement**: the debt is
+permanent, public, and recomputable from chain forever, so a project that takes the reserve and
+never mints cannot hide it. That is weaker than everything preceding it and is documented as such.
+
+## ADR-030 UI (2026-08-27) — the trustless curve is visible and usable
+
+- **`MerklePoolManage.tsx`** (owner) — ONE signed step, and then the owner is done forever: no
+  inventory to mint, no operator key to keep online. States plainly that the payout address is fixed
+  at deploy and cannot be changed afterwards, including by the owner.
+- **`MerkleTradeCard.tsx`** (buyer/holder) — buy (keyless), sell (holder-signed), and a graduate
+  action that is offered to ANYONE once the curve sells out, because the covenant permits it.
+  Quotes are computed exactly as the covenant computes them, so the price shown is the price paid.
+  Warns below the 546-sat dust floor before the action can fail, and translates a lost sequencing
+  race into "someone else traded first, so the price moved" rather than a raw node error.
+- **Reused `buildLedgerBuyTx`/`SellTx`/`GraduateTx`** — those builders turned out to be
+  covenant-agnostic (they take a server-built unlock and assemble), so ADR-030 needed no new
+  transaction builder at all.
+- **Signing follows the PROVEN pattern**, not a new one: a per-sale derived holder key
+  (`protocolID` STAS, `keyID` slug, counterparty `'anyone'`, `forSelf: true`) used for BOTH
+  `getPublicKey` and `createSignature` — the combination already proven on mainnet in
+  `settle/twoTx/p2pkhInput.ts`. Using the identity key instead would fail the covenant's checkSig.
+- **The manage page now offers an EXPLICIT, labelled choice** between the two curves, showing one
+  card at a time and naming the real trade-off (wallet-portable but operator-settled, versus
+  unstoppable but ledger-entries-until-graduation). An earlier version offered two look-alike cards
+  side by side and a deploy landed on the wrong one; a permanent choice deserves a deliberate UI.
+- Sale page renders `variant === 'merkle'` → `MerkleTradeCard`.
+
+Verified: web build clean, 45/45 unit, and the mainnet app e2e still 33/33 through the real actions.
+
+## ADR-030 app wiring (2026-08-27) — the database is no longer the ledger ✅ 33/33 ON MAINNET
+
+The app can now run a trustless pool, and the difference from ADR-027 is the whole point of the
+track: **pool state is read from the BLOCKCHAIN, not from our database.**
+
+- **`packages/curve/service/cli.ts`** gains `merkle-genesis` / `merkle-resolve` / `merkle-buy` /
+  `merkle-sell-digest` / `merkle-sell-unlock` / `merkle-graduate`. `merkle-resolve` is the important
+  one — one call returns the live outpoint, reserve, `sold`, every balance, the root and the full
+  history, straight from chain.
+- **`apps/web/lib/merkle-ledger-service.ts`** — the child-process bridge (scrypt-ts never enters the
+  Next bundle), mirroring `ledger-service.ts`.
+- **`apps/web/lib/merkle-ledger-actions.ts`** — deliberately much thinner than `ledger-actions.ts`.
+  ADR-027 rebuilt state from recorded Orders, so the operator's DB was authoritative and a reset
+  genuinely lost a live pool once. Here the DB stores only the genesis outpoint and the immutable
+  terms; Orders are receipts. `markMerklePoolDeployed` re-resolves the outpoint against the chain
+  before trusting it, and graduation is deliberately NOT owner-gated because the covenant lets
+  anyone trigger it.
+- **DB migration `curve_pool_genesis_outpoint`** adds `genesisTxid` / `genesisVout`, kept SEPARATE
+  from `poolTxid` on purpose — that field tracks the moving tip for the other variants, and
+  overloading it would make a merkle pool unverifiable the moment the tip advanced (exactly how the
+  July pool's parameters were lost).
+- **Proven on mainnet through the real actions + real Prisma** (`pnpm --filter @launchpad/web
+  e2e:merkle`, 33/33): create → deploy → mark → read → buy → **re-read from chain** → holder-signed
+  sell → final read → guards. Asserts the DB holds no ledger mirror, and that every balance comes
+  back from the chain after each trade.
+
+**New standing practice, now in the harnesses:** download every broadcast transaction back from WoC
+and assert on the REAL size/fee/outputs (`service/wocInspect.ts` — `verifiedUnspent`, `inspectTx`,
+`reportTx`), and never trust `/unspent` without a `/spent` check. That immediately earned its keep:
+the downloaded sell tx showed **3,000 sats at 0.12 sat/B, 12x overpaid**, revealing that
+`prepareMerkleSell` never told callers how big the fee input must be — the sell's input is consumed
+WHOLE because the covenant pins exactly two outputs. The action now returns **`feeInputSats`**, and
+the same sell costs **247 sats at 0.0099 sat/B**. A computed-value-only test would never have shown it.
+
+## ADR-031 (2026-08-27) — no spread on the trustless curve; the fee FLOOR is the real problem
+
+Decided before the external audit, because adding a spread afterwards means a new contract, a
+re-audit, and pools stranded on the old script. Modelled against measured numbers
+(`packages/curve/service/model-spread.ts`), not argued.
+
+**Decision: NO spread.** The curve stays exactly symmetric. Three measured reasons:
+1. **The deterrent already exists** — a round trip costs **7,410 sats** in miner fees at 0.15 sat/B,
+   so a 1% spread only dominates above ~741,000 sats per trade.
+2. **Revenue is negligible** — 5% on a 30% exit of a 500,500-sat pool is **7,508 sats**, two
+   transactions' worth of fee. At 0.5% it is 751.
+3. **It costs provable properties** — the `/2` is currently EXACT and solvency is an equality; a
+   spread makes it truncate (safely — always toward the pool, and splitting a sell to dodge it
+   costs more) but weakens the invariant to `>=` and adds a rounding direction to audit.
+
+**What the model surfaced instead, and it matters more:** the fee floor is **regressive**. A
+10,000-sat trade pays **74%** in miner fees; 100,000 pays **7.4%**. ADR-030 bounded the growth, but
+the FLOOR stays ~3,705 sats/trade because the ~11.8 KB contract appears twice (successor script +
+sighash preimage). **This curve is uneconomic below roughly 500,000 sats per trade** — a real
+product constraint not previously stated anywhere.
+
+**Follow-up 1 — ✅ DONE. Fee rate is now 0.01 sat/B, a 15x cut, measured not guessed.**
+`service/calibrate-fee-rate.ts` is deliberately two-phase, because acceptance into a mempool proves
+nothing and an accepted-but-unmined transaction is WORSE than an overpaid one (it eats the ~25-deep
+unconfirmed-chain budget every successor shares). Result: pool-sized (24.7 KB) transactions at seven
+descending rates were **all seven MINED in block 964059** — including **0.001 sat/B = 25 sats for
+24,699 bytes**.
+
+The rate was deliberately NOT set at that floor — one sample, one mempool condition, asymmetric
+failure mode. **0.01 keeps a 10x margin** and still takes a round trip from **7,410 → 494 sats**; a
+100,000-sat trade pays **0.49%** instead of 7.41%. Confirmed with a REAL covenant spend rather than
+the padded probes: the whole ADR-030 lifecycle re-ran at the new rate (pool `9c4da0cb…:0`, graduation
+`876e6f51…`). Defaults updated in `ledgerClient.ts` + `merkleLedgerClient.ts`; Option B's
+`CURVE_FEE_RATE` deliberately left alone (it is the shipped path and out of scope here).
+
+**One harness assertion was wrong again, not the code:** the lifecycle's graduation check summed
+every output paying the payout SCRIPT, but this harness graduates with its own key, so the
+graduator's change lands on the same address and inflated the total (5,862 vs 3,786). On chain,
+output 0 was exactly 3,786 — the covenant behaved correctly. The check now asserts **output 0**,
+which is the one the covenant actually pins. The stranger-graduates test never showed this because
+there the change goes elsewhere.
+
+**Follow-up 2 (not started):** batch settlement, already the Limit B mitigation in the roadmap —
+amortises the floor across N buyers at the cost of a semi-trusted sequencer.
+
+## ADR-030 audit gaps (2026-08-27) — four of five closed
+
+Working through the "gaps in our own testing" list in `docs/AUDIT-PREP-MERKLE-LEDGER.md`, cheapest
+first, spending sats only where the chain was genuinely required.
+
+- **Script ATTACKED, 34/34** (`service/verify-merkle-adversarial.ts`). The earlier negative tests
+  were mostly caught by scrypt-ts simulating the method while BUILDING the unlock — a client-side
+  guard, not the covenant, and an attacker does not use our builder. This suite builds a VALID
+  unlock then surgically rewrites its bytes: tampered/zeroed/swapped/short siblings, flipped path
+  bits, claiming another holder's slot, `isNew` flipped both ways, inflated/deflated
+  `oldBal`/`delta`/`newReserve`, redirected and inflated payouts, a third output on a sell, swapped
+  outputs, substituted pubkey, three graduation redirections. All repelled; honest baselines still
+  validate in the same run.
+  **The first version of this suite was WRONG and reported 20 false criticals** — mutating a bsv-js
+  `Script.chunks` array does not change `toHex()`, so every "attack" silently re-ran the honest
+  spend. The tell was the *shape*: every unlock-tampering case "succeeded" while every
+  output-tampering case was correctly repelled — a harness signature, not a vulnerability
+  signature. Chunks are now serialised manually and `rewrite()` throws if a tamper produces
+  identical bytes. Recorded in the BSV field notes.
+- **DEPTH boundary + 8-byte balance ceiling, off-chain** (45/45): slot 65,535 proves against the
+  same root as slot 0, path bits round-trip across the full index range, the balance ceiling THROWS
+  rather than wrapping, and neighbouring balances stay distinct. Noted as a **deploy-time
+  constraint**: nothing on-chain bounds `k` or `supply`.
+- **Multi-slot holders PROVEN on mainnet, 12/12** (`verify-merkle-multislot-mainnet.ts`, pool
+  `baf0d0e3…:0`). A holder was given two slots by hand — deliberately doing what a third-party
+  client might — then sold from each. Reconstruction found all three slots, aggregated the
+  duplicate holder correctly, kept `sold == Σ balances`, and byte-matched the tip. Both design
+  claims confirmed live.
+- **Still open (correctly):** genuine randomised/mutational fuzzing of the Script, and a formal
+  argument that the off-chain and in-script Merkle folds are equivalent. Both are named in the
+  audit doc as work for the external auditor.
+- Wallet funded to 500k sats; this arc spent ~28k.
+
+## ADR-030 audit package (2026-08-27) — `docs/AUDIT-PREP-MERKLE-LEDGER.md` + solvency suite (41/41)
+
+The audit doc we had described the ADR-027/Option B covenant. ADR-030 is a **different contract
+with a different trust model**, so it gets its own package rather than an edit — findings do not
+transfer between them, and both docs now say so.
+
+- **Trust model is materially simpler to audit:** there is **no operator key anywhere** in ADR-030.
+  Buy is keyless, sell is holder-signed, graduation is permissionless to a destination fixed at
+  deploy. So there is no key-compromise drain vector — all risk sits in covenant logic.
+- **Covers** 12 money-critical invariants, 7 ranked drain vectors, and — deliberately — the
+  **accepted design properties** an auditor should call out rather than silently "fix", plus a
+  **"gaps in our own testing"** section (the Script has not been fuzzed; fold equivalence is tested,
+  not proven; multi-slot holders untested on mainnet; DEPTH boundary unexercised; the 8-byte balance
+  ceiling untested).
+- **New: `test/merkle-solvency.test.mjs`.** ADR-027 had 13/13 adversarial drain tests and ADR-030
+  had none — an audit package that omitted that would have claimed more assurance than existed.
+  Now 41/41 total, including a 40-seed buy/sell fuzz asserting the invariants after EVERY operation
+  and a full-exit test proving the reserve returns to exactly the seed.
+- **Two findings from writing it, both now in the contract comments and the doc:**
+  1. **The curve's `/2` never truncates** — `d·(2s+d+1)` is always even — so there is no rounding
+     in anyone's favour, anywhere.
+  2. **Buy and sell are exact inverses, so the pool has ZERO spread.** It is precisely solvent,
+     never over-collateralised, and **nothing but miner fees discourages wash trading**. That is a
+     product decision to make consciously, not a bug.
+  Both contracts previously carried a "rounded against the seller" comment, which was wrong. The
+  ADR-030 comment is corrected; the edit was verified **inert** by recompiling and confirming the
+  script hex and ABI are byte-identical, so the deployed pool is unaffected.
+
+## ADR-030 open client (2026-08-27) — reconstruction + client ✅ (16/16 from chain · 24/24 offline)
+
+The bounded-size covenant is now a first-class protocol target, not just a contract:
+
+- **`src/merkleLedgerReconstruct.ts`** — parses an ADR-030 spend back into its op. Unlike the
+  ADR-027 parser it must also recover the **slot index** and the **append flag**, because this
+  covenant addresses balances by slot: reconstructing by "the owner's first slot" would be a guess,
+  and an open protocol means another client may legitimately append a second slot for an existing
+  holder. Layout verified against real compiled output, not assumed
+  (buy 39 chunks / `OP_0`; sell 40 / `OP_1`; graduate 2 / `OP_2`).
+- **`service/resolveMerkleLedgerPool.ts`** — DB-free resolution: live outpoint, reserve, `sold`,
+  `holderCount`, per-slot and per-holder balances, the Merkle root, and the full history. The walk
+  is self-verifying per hop, guards WoC's mempool lag on the tip, and refuses to report an
+  unparseable spend as a graduation.
+- **`service/merkleLedgerClient.ts`** — `MerkleLedgerPoolClient`, the ADR-030 twin of
+  `LedgerPoolClient`: `state`/`quoteBuy`/`quoteSell`/`quoteSellFee`/`balanceOf`/`buildBuy`/
+  `buildSell`/`buildGraduate`/`submitBuy`/`submitSell`/`broadcast`, plus `genesisScript(terms)`.
+  Never sees a key; every build re-resolves and interpreter-checks the bytes; carries the same
+  "loser re-signs" contention loop.
+- **One design correction while wiring it:** slot re-derivation was happening in three places. All
+  paths now funnel through `normalizeOps`/`replayMerkleSlots`, so a history read off the chain is
+  replayed by its RECORDED slots and only a history we authored gets slots assigned by policy.
+- **Proven against the live mainnet pool from yesterday** (`4c6faf97…:0`) at **zero sats cost** —
+  reads only: 6 hops, terminal graduation detected, exact history `slot0*+25 slot1*+25 slot0+10
+  slot0−11 slot1+31`, A=24, and **holder B (`1957fa7a…`) recovered from chain alone** (that key was
+  random and no longer exists locally). `service/verify-merkle-resolve.ts`, 16/16.
+- Parser round-trip guards added to the offline suite (now **24/24**) so a regression is caught
+  without needing a live pool.
+- Test wallet untouched today: **~44k sats**.
+
+## ADR-030 (2026-08-26) — bounded-size Merkle ledger ✅ MAINNET-PROVEN (6/6 live · 16/16 offline · 14 tree tests)
+
+**Limit A is solved.** The ADR-027 ledger embedded every holder in the covenant; measured, that is
+~64 B of script per holder, present in BOTH the successor script and the sighash preimage — ~128 B
+per holder per trade, a ~150 KB transaction at 1,000 holders. The fee was survivable; the real cost
+was that reconstruction downloads every hop, so client verification grew as **O(trades × holders)**.
+
+Replaced by a **32-byte Merkle root** over a fixed-depth (16) array of holder slots plus a
+`holderCount`, with a **512-byte inclusion proof** per spend — constant in holder count.
+
+- **Measured on mainnet: the locking script is 11,864 B at EVERY step**, holders notwithstanding
+  (`service/verify-merkle-mainnet.ts`, pool `4c6faf97…:0`, k=1 supply=80): deploy → append A
+  (`676a7baf…`) → append B (`41056d43…`) → **update A's existing slot** (`0ad2a6af…`) →
+  holder-signed sell (`5caf3de5…`) → buy out (`44f2b5dc…`) → **graduate** (`9c5c114d…`, full
+  3,786-sat reserve to the committed payout). HashedMap at the same point: 10,884 + 64·holders.
+- **Indexed slots, not a pkh-keyed SMT** — a 160-bit key needs a 160-level path (~5 KB proofs) or a
+  compact bitmap encoding that is much harder to verify in Script, and this is already the largest
+  audit surface in the system. Slot indexing gives a 16-step sha256 loop.
+- **It removes a whole class of bug.** `LedgerPool.buy` needed an `isNew` flag plus a
+  NON-MEMBERSHIP proof, because `HashedMap.set` could otherwise overwrite a live balance and break
+  `sold == sum(balances)` — a reserve drain. Here every spend proves the CURRENT value of the slot
+  it touches, so nothing can be reset; a new holder proves the slot at exactly `holderCount` is
+  EMPTY. Duplicate slots for one holder are harmless (the sum is conserved). It also removes the
+  per-spend **history replay**, since state is now three scalars.
+- **The scrypt-ts successor trap bit again** — building an instance via the CONSTRUCTOR with the
+  desired state yields a script that does not byte-match the chain, and the covenant's `hashOutputs`
+  check fails. Must construct at genesis then MUTATE (same lesson as ADR-027's replay); now
+  documented in `merkleLedgerState.ts`.
+- **New tooling:** `service/measure-ledger-size.ts` (the measurement behind the ADR) and
+  `service/consolidate-test-wallet.ts` — the harnesses fund a run from a SINGLE input, so a
+  fragmented wallet fails with "no verified-unspent UTXO > N" while holding plenty.
+- **Limit B is untouched:** this bounds SIZE, not throughput. ~25 trades per confirmation window
+  per pool still stands.
+- **Test wallet is low: ~44k sats left** (156,820 at the start of this arc). Enough for one more
+  modest mainnet run, not several.
+
+## Trustless track · phase 5a (2026-08-26) — permissionless GRADUATION ✅ PROVEN ON MAINNET (15/15)
+
+Graduation was the last covenant path never driven on a live pool. It is now closed, and with it
+the **full lifecycle: deploy → buy → sell → graduate, all on mainnet.**
+
+- **A STRANGER graduated the pool.** Pool `75f84209…:0` (k=1, supply=24) was bought out to exactly
+  `sold == supply` (A +14, B +10), then graduated by a **freshly generated key holding no tokens,
+  no operator role and no relationship to the pool** (`82e5dd53…`). No signature is required by the
+  covenant — that is the point.
+- **The graduator could not touch the money.** Verified against the on-chain tx: the full **846-sat
+  reserve went to the payout committed at deploy**, output 0 is the payout (pinned by the covenant),
+  **nothing leaked to a third destination**, and the stranger was **net −1,727 sats** — it *paid* to
+  graduate and extracted nothing.
+- **The final ledger survives the pool UTXO.** After graduation `resolveLedgerPool` still returns
+  `graduated: true` plus every holder balance — exactly the list real STAS is minted against.
+  Losing it would strand every contributor, so this is asserted explicitly.
+- Guards proven: cannot graduate before sell-out, cannot buy past a sold-out curve, cannot graduate
+  twice.
+- **Two code improvements this surfaced:** `buildGraduate` now lets the graduator take **change**
+  (ANYONECANPAY|SINGLE pins only output 0), so triggering a graduation costs a stranger a fee rather
+  than their entire UTXO — a permissionless action shouldn't carry a needless disincentive. And
+  `resolveLedgerPool` no longer reports *any* unparseable spend as a graduation: it confirms the
+  spend really pays the committed payout the full reserve, so a parser gap can't masquerade as
+  "the sale completed".
+- **Honest note on the first run (12/13):** the one failure was a **bad assertion in my test**, not
+  a defect — it compared the graduator's own change against the reserve, two unrelated amounts. I
+  verified the actual property against the recorded chain data, rewrote the assertion to test what
+  matters (graduator net-negative, no third destination, payout ≠ graduator), and re-ran the whole
+  flow live for a clean **15/15**.
+- Mainnet spend across phases 2–5a: **~67k sats** (156,820 → 89,562).
+- **Next: the SMT migration** (Limit A — tx size is O(holders); pool txs are already ~22 KB).
+  Still open besides that: decentralised discovery, and Limit B (~25 trades/window/pool).
+
+## Trustless track · phase 4 (2026-08-26) — permissionless sequencing ✅ PROVEN UNDER REAL CONTENTION (14/14)
+
+The single hot pool UTXO no longer needs an operator to sequence it.
+`LedgerPoolClient.submitBuy` / `submitSell` wrap a build in a bounded contention loop: on an
+outpoint-move rejection the client **re-resolves the tip, rebuilds, re-signs** and retries.
+Ordering is decided by the network, not by any privileged party.
+
+- **`isOutpointConflict()`** separates a race (`txn-mempool-conflict`, `Missing inputs`,
+  `txn-already-known`) from a genuinely invalid spend, which is surfaced immediately — the loop
+  must not mask real bugs, and a test asserts exactly that.
+- **Proven with actual conflicting broadcasts on mainnet** (`verify-sequencing-mainnet.ts`, pool
+  `31820de7…:0`, k=1 supply=200): two holders built buys against the SAME tip; A landed
+  (`d1902f08…`) and B's pre-built tx was **rejected by the node with `258: txn-mempool-conflict`**,
+  then recovered in 2 attempts (`d3bdfb7f…`). Then a SELL race — B moved the tip under A's sell and
+  A rebuilt, **re-signed** and landed (`3fa3af76…`); the test counts signatures and asserts one
+  fresh signature per attempt, which is the "loser re-signs" property directly. Final ledger: 4 ops
+  replayed (`+40 +20 +10 -11`), none lost, reconstruction byte-matched the tip.
+- **Honest consequence, now in the API:** a rebuilt trade is **re-priced at the new curve
+  position** — observed live, B's buy went 210 → 1010 sats, and A's sell refund went 605 → 715 (a
+  loser can be repriced either way). The covenant won't honour a stale quote, so a UI should
+  re-quote and confirm rather than blindly retry; `submit()` returns `attempts` and `repriced`.
+- **All three protocol properties from the roadmap §1 are now met** for the ledger pool. The
+  operator's role on the trade path is zero.
+- **Still open (not protocol-completeness):** permissionless graduation is *built* but never driven
+  end-to-end on a live pool; discovery still needs a genesis txid from somewhere; the SMT migration
+  (Limit A, tx size is O(holders)); and Limit B — **~25 trades per confirmation window per pool**,
+  which contention recovery does NOT change (it makes losers land eventually, not faster).
+- Mainnet spend across phases 2–4: **~54.5k sats** (156,820 → 102,306). Research track — does not
+  block the shipped Option B.
+
+## Trustless track · phase 3 (2026-08-26) — open client `LedgerPoolClient` ✅ MAINNET-PROVEN
+
+The "anyone can build a UI over it" boundary now exists as code:
+`packages/curve/service/ledgerClient.ts` — `LedgerPoolClient(genesisTxid, {k, supply, payoutPkh})`
+with `state()` · `quoteBuy/quoteSell/quoteSellFee` · `balanceOf` · `buildBuy` · `buildSell` ·
+`buildGraduate` · `broadcast`, plus `LedgerPoolClient.genesisScript(terms)` to open a pool.
+
+- **Depends on nothing of ours** — no server actions, no Prisma, no operator, no stored state.
+- **Wallet-agnostic, never sees a key.** Callers pass a funding input + an @bsv/sdk
+  `UnlockingScriptTemplate` (`new P2PKH().unlock(priv)`, or a BRC-100 adapter), and for sells a
+  `Holder` that signs one 32-byte digest — that signature IS the claim to the balance.
+- **Safe by construction:** every build re-resolves state from chain and runs the assembled bytes
+  through the interpreter, so a client can't broadcast a spend the covenant rejects, or build
+  against a tip it read earlier.
+- **Full mainnet round trip using ONLY the client** (`verify-open-client-mainnet.ts`): OPEN
+  (genesis `84e72674…:0`, k=1 supply=60) → READ (sold 0) → BUY 40 keyless (`c6e1b0dc…`) → RE-READ
+  from a *second* client built from scratch → SELL 25 holder-signed, **no operator co-signature
+  anywhere in the path** (`2e8cf89a…`) → a *third* fresh client rebuilds it and **byte-matches the
+  on-chain tip** → 4 guards (refuses overspend / beyond-supply / underfunded / dust refund).
+  Final 20/20 (one run showed 19/20 — a wrong constant in the test, not the code: `hops` equals the
+  op count, 2 here, and I'd copied 3 from the 3-op phase-2 pool).
+- **Protocol constraint surfaced:** a sell's fee input is consumed WHOLE (0xc1 pins exactly two
+  outputs → no change), so sellers must pre-size an exact fee UTXO — `quoteSellFee()` returns it and
+  the harness demonstrates the two-tx flow.
+- **Two live-run lessons:** (1) the sell fee estimate double-counted the pool script (once in the
+  preimage, once in the successor) and demanded ~50% too much — caught before broadcast, cost
+  nothing; there's now a drift check asserting the real sat/byte rate. (2) WoC `/unspent` listed an
+  already-spent output → `258: txn-mempool-conflict`; the harness now verifies candidates against
+  `/spent` first (the field-note rule) and accepts unconfirmed change.
+- **Properties 1 and 2 of 3 met.** Next: phase 4, permissionless sequencing (the "loser re-signs"
+  contention loop). Research track — does not block the shipped Option B.
+- **Reference pools + total mainnet spend (~24.5k sats) recorded in the roadmap** so every pool
+  stays re-verifiable — the July pool became unverifiable when a DB reset lost its terms.
+
+## Trustless track · phase 2 (2026-08-26) — `resolveLedgerPool` ✅ MAINNET-PROVEN (10/10)
+
+Pool state now resolves **from WhatsOnChain alone — no operator DB**:
+`packages/curve/service/resolveLedgerPool.ts` returns the live outpoint, reserve, `sold`, every
+holder balance and the full op history from just `(genesisTxid, k, supply, payoutPkh)`.
+
+- **Self-verifying walk.** Each hop recomputes the expected successor from the ops parsed so far
+  and matches an output **byte-for-byte** — so the successor needs no prefix heuristic, a misparse
+  fails at its own hop, and graduation is detected naturally.
+- **Proven on a live mainnet pool** (`packages/curve/service/verify-reconstruct-mainnet.ts`):
+  deployed genesis `3e247404…:0` (k=1, supply=100), wrote a real 3-op multi-holder history —
+  A +40 `fb7197f7…`, B +20 `0bbe4c40…`, A −30 holder-signed `888f3724…` — then rebuilt it from the
+  genesis txid and nothing else: **reserve 1011, sold 30, A=10, B=20, reconstructed lockingScript
+  byte-matched the on-chain tip.** Holder B's pkh `275532e2…` was recovered **from chain alone**
+  (its key was a throwaway that no longer exists locally). Cost ~11k sats; every broadcast gated on
+  `validateAssembledCovenantInput` (the interpreter over the exact bytes), with a `--dry` mode.
+- **WoC quirk found + handled (cost one failed run):** `/tx/{txid}/{vout}/spent` returns the same
+  404 for a genuinely-unspent output and for one whose spend is in the mempool but **not yet
+  indexed** — so a read moments after a trade reports a **stale tip and a short history**. The
+  resolver now re-checks an apparent tip before concluding (`tipRechecks`, default 2). Added to the
+  BSV field notes (it generalises past this repo).
+- **Keep this pool's params** — the July ledger pool became unverifiable when a DB reset lost its
+  outpoint/terms. Re-verify any time:
+  `node packages/curve/service/dist/service/verify-reconstruct-mainnet.js --resolve <genesisTxid>`.
+- **Protocol property 1 of 3 ("on-chain is the source of truth") is met** for the ledger pool.
+  Next: phase 3, the open client library. Research track — does not block the shipped Option B.
+
+## Trustless track · phase 1 (2026-08-26) — ledger reconstruction linchpin ✅ BUILT + PROVEN (branch `trustless-ledger-reconstruct`)
+
+The trustless upgrade beyond Option B (a bonding-curve **protocol** anyone can build a UI over —
+`docs/TRUSTLESS-LEDGER-ROADMAP.md`) has its **phase-1 linchpin done and offline-proven**: the ADR-027
+ledger pool's state can be reconstructed **from chain alone, no operator DB**.
+
+- **What was built:** `packages/curve/src/ledgerReconstruct.ts` — `parseLedgerOp(unlockHex)` parses a
+  spent pool covenant input into its op `(ownerPkh, delta)` (layout verified vs real scrypt-ts output:
+  buy selector `OP_0`, delta@chunk 3; sell selector `OP_1`, amount@chunk 4 → `delta = −amount`;
+  graduate `OP_2` terminal). `reconstructLedgerHistory(genesisTxid, fetchSpendOf)` walks the successor
+  chain feeding those ops to the already-mainnet-proven `replay()` (now also exported as
+  `poolScriptForHistory` in `service/ledgerState.ts`).
+- **Proof (offline, no network):** `packages/curve/service/verify-reconstruct.ts` **17/17** — build a
+  real buy/sell/repeat-buy/sell-to-zero op sequence via the app's own code paths → collect the on-chain
+  unlock scripts → reconstruct from the scripts alone → the rebuilt `lockingScript` **byte-matches the
+  successor tip**, both by direct parse and by a genesis→tip chain-walk with an injected `fetchSpendOf`.
+  `@launchpad/curve` typecheck clean, 19/19 existing tests green.
+- **Why it matters:** the operator's database is now provably **non-authoritative** for the ledger
+  pool — the first of the three protocol properties (on-chain source of truth). This is a research
+  track, separate from and not blocking the shipped Option B (below).
+- **Next (phase 2):** back `fetchSpendOf` with a real WhatsOnChain spent-lookup + tx-fetch
+  (`resolveLedgerPool(genesisTxid)`, DB-free) and prove it against a **real mainnet ledger pool**;
+  handle WoC tip reorgs + spent-lookup lag there. Then the open client (phase 3).
 
 ## Decision (2026-08-26) — Option B is the launch curve · atomic buy (ADR-029)
 

@@ -257,3 +257,88 @@ Append-only; newest at the bottom. Template per entry:
   - **DEFER (explicit):** B-ledger / HashedMap (ADR-027), batch settlement / batching, Dutch & batch auctions. They stay on the roadmap as the *future* fully-trustless upgrade + viral-scale levers — **not launch blockers** at year-1 scale (20-30 projects × few contributors; one covenant per project already isolates them).
 - **Trust model (honest — MUST be labelled in-product):** trustless **pricing** both directions (the covenant caps amounts — nobody can be over/under-paid or diverted); **operator-assisted token movement** both directions (the operator can stall/censor, never mis-price or divert). A **compromised operator co-sign key drains the whole reserve** → the key is the load-bearing security boundary. Label the curve **"instant liquidity — operator-assisted," never "fully trustless."** This makes Option B the DEFAULT launch curve, reversing the strategy doc's positioning of it as a non-default variant; B-ledger becomes the later trustless upgrade.
 - **Consequences / build:** new **atomic buy assembly** merging `stasBuyAssembly` (covenant buy) with `operatorDeliver` (STAS transfer) into one tx; the server buy flow reverses so the operator participates at buy time. The split-buy "Complete delivery" recovery is kept ONLY for partial-failure recovery, not the happy path. **Mandatory before real money:** external covenant audit (ADR-026/027), HSM-grade custody for the operator key (or do not ship Option B), robust operator **fee-fuel management** (the mempool jam that blocked local testing), and honest in-product labelling. **Status:** decision only — no code changed yet; implementation to follow via orchestration.
+
+## ADR-030 · Bounded-size ledger: fixed-depth Merkle slots instead of an in-covenant HashedMap · Accepted · 2026-08-26
+
+- **Context.** ADR-027's `LedgerPool` keeps every holder inside the covenant as a `HashedMap`.
+  Measured (`packages/curve/service/measure-ledger-size.ts`): the contract code is a fixed 10,884 B
+  and each holder adds **~64 B of state**, which appears in BOTH the successor script and the
+  sighash preimage — **~128 B per holder per trade**. At 1,000 holders one buy is a **~150 KB**
+  transaction. The fee (~22.5k sats) is survivable; the real cost is that reconstruction must
+  download every hop, so a client's cost to verify the pool grows as **O(trades × holders)**. This
+  is "Limit A" in `docs/TRUSTLESS-LEDGER-ROADMAP.md`, and the reason Option B (ADR-028) exists.
+- **Decision.** Commit the ledger as a **32-byte Merkle root** over a **fixed-depth (16) array of
+  holder slots**, plus a `holderCount`. A spend carries an inclusion proof of exactly DEPTH sibling
+  hashes (**512 B, constant in holder count**). New contract `packages/curve/src/contracts/
+  merkleLedgerPool.ts`; off-chain tree `packages/curve/src/merkleLedger.ts`.
+- **Why indexed slots, not a key-addressed SMT.** A sparse Merkle tree keyed by a 160-bit pkh needs
+  a 160-level path (~5 KB proofs) or a compact bitmap encoding that is markedly harder to verify in
+  Script. This is already the largest audit surface in the system, so the simpler structure wins:
+  addressing by slot index gives a DEPTH-step verification loop of plain sha256.
+- **What it removes.** `LedgerPool.buy` needed an `isNew` flag backed by a **non-membership proof**,
+  because `HashedMap.set` could otherwise overwrite a live balance and break `sold == sum(balances)`
+  — a reserve drain. Indexed slots close that by construction: every spend must prove the CURRENT
+  value of the slot it touches, so nothing can be reset. A new holder proves the slot at exactly
+  `holderCount` is EMPTY. A holder ending up with two slots is harmless — the sum is conserved.
+  It also removes the **per-spend history replay**: state is three scalars, so no HashedMap has to
+  be rebuilt to derive a successor.
+- **Measured result.** Locking script **11,865 B at 0 holders and 11,867 B at 200** (the 2 B is
+  integer-encoding creep in `sold`/`holderCount` — O(log holders)) versus **23,684 B** for the
+  HashedMap at 200. Code floor is ~900 B higher, so the break-even is ~18 holders; above that the
+  advantage grows without bound.
+- **Consequences.** A second covenant to audit, and pool terms are not interchangeable with
+  ADR-027 pools (different script, different genesis). ADR-027's `LedgerPool` stays as the proven
+  prototype; deployed ADR-027 pools are unaffected. **Limit B is untouched** — this bounds SIZE,
+  not throughput; ~25 trades per confirmation window per pool still stands.
+- **Status of proof.** Offline 16/16 through the @bsv/sdk interpreter over the exact assembled
+  bytes (`service/verify-merkle-pool.ts`) plus 14 off-chain tree tests, AND the full lifecycle on
+  **mainnet 6/6** (`service/verify-merkle-mainnet.ts`, pool `4c6faf97…:0`, k=1 supply=80):
+  deploy → append A (`676a7baf…`) → append B (`41056d43…`) → **update A's existing slot**
+  (`0ad2a6af…`) → holder-signed sell (`5caf3de5…`) → buy out (`44f2b5dc…`) → graduate
+  (`9c5c114d…`, full 3,786-sat reserve released to the committed payout). The locking script
+  measured **exactly 11,864 B at every step**, holder count notwithstanding — the ADR's claim,
+  on chain.
+
+## ADR-031 · No spread on the trustless curve; attack the fee FLOOR instead · Accepted · 2026-08-27
+
+- **Context.** ADR-030's curve has zero spread: `buyCost(s,d) == sellRefund(s+d,d)` exactly, so the
+  pool is precisely solvent, never over-collateralised, and nothing but miner fees discourages wash
+  trading. Adding a spread is a covenant change and therefore a re-audit, so the decision had to be
+  made before the external audit, not after. Modelled in `packages/curve/service/model-spread.ts`
+  against measured numbers rather than argued.
+- **Decision: NO spread.** The curve stays exactly symmetric.
+- **Why.** Three measured reasons:
+  1. **The deterrent already exists.** Every pool spend is ~24.7 KB, so a round trip costs **7,410
+     sats** in miner fees at 0.15 sat/B. A 1% spread only becomes the dominant deterrent above
+     **~741,000 sats per trade**; below that it is noise next to the chain's own charge.
+  2. **The revenue is negligible.** On a realistic pool (k=1, supply=1,000, full raise 500,500
+     sats), a **5%** spread on a 30% exit yields **7,508 sats** — two transactions' worth of miner
+     fee. At 0.5% it is 751 sats. That does not pay for an audit cycle.
+  3. **It costs provable properties.** Today `d·(2s+d+1)` is always even so the `/2` is EXACT, and
+     solvency is an equality. A spread makes `refund·(100−f)/100` truncate; the truncation is safe
+     (it always favours the pool, and splitting a sell to dodge it costs more in both fee and miner
+     fees — verified in the model), but the invariant weakens to `>=` and the auditor gains a
+     rounding direction to verify that currently does not exist.
+- **What the model surfaced instead — the real problem.** The fee floor is **regressive**: a
+  10,000-sat trade pays **74%** in miner fees, a 100,000-sat trade **7.4%**, because every pool
+  spend is ~24.7 KB regardless of trade size. ADR-030 bounded the GROWTH; the FLOOR remains
+  ~3,705 sats/trade because the ~11.8 KB contract appears twice (successor script + sighash
+  preimage). **This curve is uneconomic below roughly 500,000 sats per trade** — a real product
+  constraint that had not been stated anywhere.
+- **Consequences / follow-up.** Effort goes to the floor, not to a spread:
+  1. **Fee-rate calibration — ✅ DONE, rate now 0.01 sat/B.** Measured on mainnet
+     (`service/calibrate-fee-rate.ts`): pool-sized (24.7 KB) transactions broadcast at seven
+     descending rates were **all seven mined in the same block (964059)** — including **0.001 sat/B,
+     i.e. 25 sats for 24,699 bytes**. The rate was deliberately NOT set at that floor: it is one
+     sample in one mempool condition, and the failure mode is asymmetric — overpaying costs a few
+     hundred satoshis, whereas a pool spend left unconfirmed eats the ~25-deep unconfirmed-chain
+     budget every successor shares. **0.01 sat/B keeps a 10x margin over the lowest observed mined
+     rate** and still cuts a round trip from **7,410 → 494 sats (15x)**; a 100,000-sat trade now
+     pays **0.49%** instead of 7.41%. Confirmed with a real covenant spend, not just the padded
+     probes: the full ADR-030 lifecycle re-ran at the new rate on pool `9c4da0cb…:0`
+     (deploy → 3 buys → sell → buy-out → graduate `876e6f51…`). Re-probe periodically; a rate that
+     works in a quiet mempool can fail in a busy one.
+  2. **Batch settlement** — already the Limit B mitigation in `TRUSTLESS-LEDGER-ROADMAP.md`;
+     amortises the floor across N buyers, at the cost of a semi-trusted sequencer.
+- **Reversibility.** Low cost now, high cost later: adding a spread after the audit means a new
+  contract, a re-audit, and pools deployed under the old terms staying on the old script.

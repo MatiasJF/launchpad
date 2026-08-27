@@ -64,6 +64,16 @@ export function genesisPoolScript(k: bigint, supply: bigint, payoutPkh: string):
   return replay([], k, supply, payoutPkh).lockingScript.toHex();
 }
 
+/**
+ * The pool locking script after replaying `history` — the reconstruction check: rebuild
+ * the op history from the on-chain unlock scripts (see src/ledgerReconstruct.ts), replay it
+ * here, and assert this byte-matches the on-chain pool tip's lockingScript. That proves the
+ * ledger was reconstructed from chain alone, with no DB.
+ */
+export function poolScriptForHistory(history: Op[], k: bigint, supply: bigint, payoutPkh: string): string {
+  return replay(history, k, supply, payoutPkh).lockingScript.toHex();
+}
+
 export interface BuySpend { unlockingHex: string; sourceLockHex: string; nextLockingHex: string }
 
 /** Build the pool-input unlock for a BUY crediting `ownerPkh` by `delta` (ANYONECANPAY|SINGLE). */

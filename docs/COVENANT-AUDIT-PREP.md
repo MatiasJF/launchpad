@@ -1,5 +1,11 @@
 # Covenant audit prep — Option B STAS bonding curve (ADR-028/029)
 
+> **Two covenants, two audits.** This document scopes the SHIPPED Option B curve (operator-gated,
+> wallet-held STAS). The trustless Merkle-ledger curve (ADR-030) is a different contract with a
+> different trust model — no operator key at all — so its drain vectors do not overlap with these.
+> It has its own package: **`docs/AUDIT-PREP-MERKLE-LEDGER.md`**. Audit whichever is being
+> deployed; findings do not transfer between them.
+
 For an external auditor. **No non-trivial reserve should go live before this audit passes**
 (ADR-026/027). This scopes exactly what to audit, the money-critical invariants, the
 reserve-drain vectors, and the existing evidence — so an auditor starts fast.
@@ -45,7 +51,11 @@ co-sign key is reserve-critical** (ADR-029) — audited separately as key custod
 
 ## Out of scope for THIS audit
 - The app/DB orchestration layer is not reserve-critical (the on-chain covenant is the authority); review it for correctness, not for fund safety.
-- The deferred trustless variants (`ledgerPool.ts` = ADR-027 HashedMap ledger, `linearCurvePool.ts` = ADR-026) are NOT part of the launch and are hidden in the UI — audit only if/when they ship (the HashedMap/SMT is a separate, larger audit surface).
+- The trustless variants are NOT part of the Option B launch and are hidden in the UI:
+  `linearCurvePool.ts` (ADR-026, buy-only) and `ledgerPool.ts` (ADR-027 HashedMap ledger — now
+  superseded as a PROTOTYPE by ADR-030, though deployed ADR-027 pools still exist on mainnet).
+  The trustless track's production covenant is `merkleLedgerPool.ts` (ADR-030), which has its own
+  audit package: **`docs/AUDIT-PREP-MERKLE-LEDGER.md`**. Audit it if/when that track ships.
 
 ## Deliverable requested from the audit
 A written finding-by-finding report on invariants 1–8 and the three drain vectors, with a
