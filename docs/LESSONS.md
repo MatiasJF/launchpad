@@ -56,3 +56,36 @@ The detail is in `~/.claude/bsv-field-notes.md`; read that before touching anyth
 **Cost**: Mainnet proven (STATE.md:62,95 — delivery failures after deep unconfirmed chains). Analysis in docs/CURVE-SERIALIZATION-ANALYSIS.md. Throughput ceiling ~10-25 buys per confirmation cycle without mitigation.
 
 **Decision**: Defer curves entirely until post-instant-swap success (instant swap has zero serialization issues, each sale is independent). If curves demanded later, implement off-chain batch settlement first.
+
+
+## The UI can be right about the money and still lie to the user (2026-08-27, ADR-030 UI pass)
+
+A manual mainnet pass of the trustless curve completed the full lifecycle — deploy `4cdd07f3`,
+buy 40 `1157fe43`, sell 20 `b92919f7`, sell-out `441c2462`, graduate `f74ee5b2`. Every satoshi was
+correct when the transactions were downloaded and checked. Four things were still wrong, and none of
+them would have shown up in a headless test:
+
+- **The buy quote said 820 sats; the wallet asked for 1,143.** The difference is our `feeSats` (300)
+  plus the wallet's own fee to create the funding output (~23). The number was never wrong, it was
+  just *incomplete* — and a price that changes when the wallet opens destroys trust instantly. The
+  card now shows "820 to the curve + ~300 network fee = ~1,120".
+- **A sold-out pool rendered its status as "scheduled".** The pill was reading the stale `Sale` row
+  instead of the pool state that the rest of the card had just resolved from chain.
+- **"Your tokens — no settled orders to register" was shown to someone holding 60 tokens.** The
+  claim card is for wallet-held STAS; a trustless-curve holding is a ledger entry inside the
+  covenant. Technically accurate, completely misleading. Hidden for that variant.
+- **"you hold" silently read 0 until the wallet prompt returned**, because the balance is keyed to a
+  derived key we cannot know before asking. Now renders "—" until identified.
+
+**And one honest gap the pass exposed rather than a bug:** after graduation the holder still had 60
+in the final ledger, and **nothing mints it**. ADR-027/030 always specified that real STAS is minted
+to holders from the final ledger after graduation, but that step is not built. Selling back before
+graduation is currently the only way to realise value. The card now says so plainly instead of
+showing a cheerful "Graduated".
+
+> The takeaway: headless e2e proves the money moves correctly. It cannot tell you the interface is
+> describing a different transaction than the one the wallet is about to sign. Both are needed.
+
+**Deploy costs more than the seed suggests.** The wallet builds the deploy transaction itself and
+priced it at 0.10 sat/B — 1,207 sats for the 12 KB output — so a "546 sat" pool actually cost 1,753.
+Our own calibrated 0.01 rate only applies to transactions we assemble.

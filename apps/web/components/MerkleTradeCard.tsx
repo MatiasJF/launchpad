@@ -108,7 +108,7 @@ export function MerkleTradeCard({ s }: { s: SaleCardVM }) {
         pool: { txid: prep.poolTxid, vout: prep.poolVout, scriptHex: prep.sourceLockHex, reserveBefore: prep.reserveBefore },
         unlockingHex: prep.unlockingHex, nextLockingHex: prep.nextLockingHex,
         newReserve: prep.newReserve, cost: prep.cost, sold: prep.sold, delta: amount,
-        feeSats: 300, // ADR-031: ~24.7KB at the calibrated 0.01 sat/B
+        feeSats: BUY_FEE_SATS, // ADR-031: ~24.7KB at the calibrated 0.01 sat/B
       });
       if (!built.ok) throw new Error(built.reason);
 
@@ -199,12 +199,15 @@ export function MerkleTradeCard({ s }: { s: SaleCardVM }) {
   const cost = quoteBuy(amount);
   const refund = quoteSell(Math.min(amount, held));
   const DUST = 546;
+  /** What we pass as `feeSats` on a buy — surfaced so the quote matches what the wallet asks for. */
+  const BUY_FEE_SATS = 300;
 
   return (
     <div className="card flex flex-col gap-5 p-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Trade {s.ticker}</h2>
-        <StatusPill status={pool?.graduated ? 'finalized' : s.status} />
+        {/* Reflect the POOL, not the sale row — a sold-out pool was rendering as "scheduled". */}
+        <StatusPill status={pool ? (pool.graduated ? 'finalized' : 'live') : s.status} />
       </div>
       <div className="flex items-center gap-2 text-sm text-teal">
         <ShieldCheck className="h-4 w-4" /> Trustless curve · no operator can stop, censor or reprice a trade
@@ -218,13 +221,23 @@ export function MerkleTradeCard({ s }: { s: SaleCardVM }) {
             <div className="rounded-md border border-line bg-elevated/40 px-2 py-2"><div className="text-faint">sold</div><div className="text-fg">{pool.sold}/{pool.supply}</div></div>
             <div className="rounded-md border border-line bg-elevated/40 px-2 py-2"><div className="text-faint">reserve</div><div className="text-fg">{pool.reserveSats.toLocaleString()}</div></div>
             <div className="rounded-md border border-line bg-elevated/40 px-2 py-2"><div className="text-faint">holders</div><div className="text-fg">{pool.holderCount}</div></div>
-            <div className="rounded-md border border-line bg-elevated/40 px-2 py-2"><div className="text-faint">you hold</div><div className="text-fg">{held}</div></div>
+            <div className="rounded-md border border-line bg-elevated/40 px-2 py-2"><div className="text-faint">you hold</div><div className="text-fg">{myPkh ? held : '—'}</div></div>
           </div>
 
           {pool.graduated ? (
-            <div className="rounded-md border border-line bg-elevated/40 px-3 py-2.5 text-xs text-muted">
-              <span className="font-semibold text-fg">Graduated</span> — the curve sold out and the reserve was released to
-              the payout address fixed at deploy. The final ledger stays readable on-chain.
+            <div className="flex flex-col gap-2 rounded-md border border-line bg-elevated/40 px-3 py-2.5 text-xs text-muted">
+              <p>
+                <span className="font-semibold text-fg">Graduated</span> — the curve sold out and the reserve went to the
+                payout address fixed at deploy. The final ledger stays readable on-chain forever, so who is owed what can
+                always be recomputed from the genesis transaction.
+              </p>
+              {held > 0 && (
+                <p className="text-warning">
+                  You still hold {held} in the final ledger. Converting graduated ledger balances into wallet-held STAS is
+                  <span className="font-semibold"> not built yet</span> — your entitlement is recorded on-chain, but nothing
+                  mints it automatically. Selling back before graduation is currently the only way to realise value.
+                </p>
+              )}
             </div>
           ) : (
             <>
@@ -251,7 +264,12 @@ export function MerkleTradeCard({ s }: { s: SaleCardVM }) {
                     <NumberField value={amount} min={1} max={remaining} onValueChange={setAmount} />
                   </label>
                   <p className="font-mono text-xs text-faint">
-                    costs {cost.toLocaleString()} sats · the covenant enforces this price, not us
+                    {cost.toLocaleString()} sats to the curve + ~{BUY_FEE_SATS} network fee ={' '}
+                    <span className="text-fg">~{(cost + BUY_FEE_SATS).toLocaleString()} sats</span>
+                  </p>
+                  <p className="text-[11px] text-faint">
+                    Your wallet will ask for about that much — the curve price is what the covenant
+                    enforces; the rest is the miner fee for a ~25 KB transaction.
                   </p>
                   <Button onClick={doBuy} disabled={busy || amount < 1 || amount > remaining} block>
                     {busy ? 'Working…' : `Buy ${amount} ${s.ticker}`}
@@ -268,7 +286,7 @@ export function MerkleTradeCard({ s }: { s: SaleCardVM }) {
                       <NumberField value={Math.min(amount, held)} min={1} max={held} onValueChange={setAmount} />
                     </label>
                     <p className="font-mono text-xs text-faint">
-                      returns {refund.toLocaleString()} sats
+                      returns <span className="text-fg">{refund.toLocaleString()} sats</span> to you · plus a separate ~250 sat network fee
                       {refund < DUST && <span className="text-warning"> · below the {DUST}-sat dust floor, sell more at once</span>}
                     </p>
                     <Button onClick={doSell} disabled={busy || held === 0 || refund < DUST} block>

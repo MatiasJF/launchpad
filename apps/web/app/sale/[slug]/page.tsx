@@ -175,7 +175,10 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           </div>
 
           <aside>
-            <ClaimTokens slug={s.slug} />
+            {/* A trustless-curve holding is a ledger entry inside the covenant, not wallet STAS, so
+                there is nothing to "register". Showing this card told a holder of 60 tokens that
+                they had none — actively misleading, so it is hidden for that variant. */}
+            {s.curve?.variant !== 'merkle' && <ClaimTokens slug={s.slug} />}
             <Link
               href={`/project/${s.slug}/manage`}
               className="mt-4 block text-center font-mono text-xs text-faint underline underline-offset-2 hover:text-muted"
