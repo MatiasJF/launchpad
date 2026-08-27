@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { SaleCardVM } from '../lib/types';
 import { Button, NumberField } from './ui';
 import { reserveOrder, confirmOrderPayment } from '../lib/order-actions';
@@ -28,6 +29,13 @@ export function BuyModal({ s, isOpen, onClose }: BuyModalProps) {
 
   const tokens = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
   const cost = tokens * s.priceSats;
+
+  // Auto-advance to amount step when wallet connects
+  useEffect(() => {
+    if (status === 'connected' && step === 'connect') {
+      setStep('amount');
+    }
+  }, [status, step]);
 
   // Reset modal state when closed
   function handleClose() {
@@ -134,7 +142,7 @@ export function BuyModal({ s, isOpen, onClose }: BuyModalProps) {
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
       <div className="relative w-full max-w-md rounded-xl border border-line bg-surface shadow-[var(--shadow-3)]">
         {/* Close button */}
@@ -375,6 +383,7 @@ export function BuyModal({ s, isOpen, onClose }: BuyModalProps) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -15,6 +15,14 @@ present, not implemented.
 - Data model → `docs/SCHEMA.md`
 - Phases & status → `docs/ROADMAP.md`
 - Visual planning docs → `docs/artifacts/`
+- Curve serialization analysis (single-UTXO throughput, mitigation options) → `docs/CURVE-SERIALIZATION-ANALYSIS.md`
+- Launch guide (all sale types, procedures, troubleshooting) → `docs/LAUNCH-GUIDE.md`
+- Decentralized funding strategy (on-chain enforcement map, trustless crowdfunding + curve, phased roadmap) → `docs/research/decentralized-funding-strategy.md`
+- Research: UTXO concurrency / serialization patterns → `docs/research/UTXO-CONCURRENCY-PATTERNS.md`
+- Research: comparable decentralized crowdfunding protocols (Eth/Cosmos/Cardano) → `docs/research/task-6-decentralized-crowdfunding-protocols.md`
+- Operator key custody (HSM/KMS signer for production; contract + provider recipes) → `docs/OPERATOR-KEY-CUSTODY.md`
+- Covenant audit prep (audit surface, invariants, drain vectors for an external auditor) → `docs/COVENANT-AUDIT-PREP.md`
+- Trustless bonding-curve protocol roadmap (ledger track; scaling limits, SMT mandate, open client) → `docs/TRUSTLESS-LEDGER-ROADMAP.md`
 
 ## Domain & data
 
@@ -99,3 +107,7 @@ present, not implemented.
 - Page components → `apps/web/components` (SiteHeader, SiteFooter, ProjectCard, ExploreSection, BuyCard, WalletButton)
 - Seed card data → `apps/web/lib/seed.ts` (getSaleBySlug)
 - UI pattern reference → Mobbin · `api.mobbin.com/mcp` _(MCP connected)_
+
+| **What has gone wrong before (read before building)** | `docs/LESSONS.md` |
+| **Cross-project BSV chain/SDK/toolchain facts** | `~/.claude/bsv-field-notes.md` |
+| **Capturing a new lesson** | `.claude/skills/lesson/SKILL.md` (`/lesson`) |

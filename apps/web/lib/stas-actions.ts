@@ -9,7 +9,7 @@ import { buildStasSellRefundTx } from '@launchpad/curve';
 import { isProjectOwner } from './account-actions';
 import { getOperator, operatorSignDigest } from './operator-wallet';
 import { stasGenesisScript } from './stas-service';
-import { resolveCurrentPool, getOutputInfo, getSourceBeefDeep, broadcastRawTx, broadcastBeefChain, getOperatorBaseUtxos, verifyStasBackToGenesis, findStasOutputToPkh, isOutputUnspent } from './settle-actions';
+import { resolveCurrentPool, getOutputInfo, getSourceBeefDeep, broadcastRawTx, broadcastBeefChain, getOperatorBaseUtxos, verifyStasBackToGenesis, findStasOutputToPkh, isOutputUnspent, unconfirmedAncestorCount } from './settle-actions';
 
 /** Sats the operator earmarks to cover one trade tx's miner fee (change returns to base). */
 const OPERATOR_FEE_BUDGET = 1000;
@@ -323,7 +323,10 @@ export async function recordStasBuy(input: {
           scriptHex: input.newPool.scriptHex,
           reserveSats: BigInt(Math.floor(input.newPool.reserveSats)),
           sold: BigInt(Math.floor(input.newPool.sold)),
-          status: input.newPool.sold >= Number(pool.supply) ? 'graduated' : 'live',
+          // STAS pools DON'T graduate — buyers already hold real wallet STAS, so "sold out"
+          // just means further BUYS are capped by supply (buildStasBuyTx rejects delta over
+          // remaining); SELLING back must stay open, so the pool remains 'live'.
+          status: 'live',
         },
       });
       const order = await tx.order.create({
@@ -411,6 +414,14 @@ export async function deliverStasToBuyer(input: { orderId: string }): Promise<{ 
         needSats: OPERATOR_FEE_BUDGET,
         fetchUtxos: () => getOperatorBaseUtxos(operatorAddress),
         fetchBeef: getSourceBeefDeep,
+        fetchIsUnspent: async (txid, vout) => {
+          const result = await isOutputUnspent(txid, vout);
+          return result.unspent; // true | false | null
+        },
+        fetchUnconfirmedDepth: async (txid) => {
+          const depth = await unconfirmedAncestorCount(txid, 12);
+          return depth; // number (confirmed = 0)
+        },
       });
       if (!feeSel.ok) throw new Error(`operator fee funding: ${feeSel.reason}`);
 
@@ -509,6 +520,85 @@ export async function completePendingStasDelivery(input: { orderId: string; buye
     return await deliverStasToBuyer({ orderId: order.id });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * OPERATOR / SYSTEM sweep: complete EVERY stuck STAS delivery (all buyers), so a
+ * paid-but-undelivered buy SELF-HEALS without the buyer manually clicking "Complete
+ * delivery" — shrinking the paid-but-undelivered window from "until the buyer notices"
+ * to "next sweep". Finds `curve_buy` orders in `pending`/`settling` whose reserve buy
+ * landed (`paymentTxid` set) but with NO delivery yet (`txid` null), OLDEST-FIRST, and
+ * delegates each to the idempotent `deliverStasToBuyer` (which atomically claims
+ * pending→settling and short-circuits on `order.txid`, so overlapping sweeps — or a sweep
+ * racing a buyer's manual retry — never double-deliver).
+ *
+ * SEQUENTIAL by necessity: each delivery spends the SINGLE operator vault UTXO and advances
+ * it (the next delivery resolves the new tip via resolveCurrentPool), so deliveries cannot
+ * run in parallel — a sweep processes one order at a time. BOUNDED by `limit` (default 25),
+ * so a large backlog drains across several sweeps rather than one unbounded run; a failing
+ * delivery is recorded and the sweep continues (it does not abort the whole batch).
+ *
+ * NOT buyer-scoped — this completes deliveries for anyone, so the CALLER MUST gate it behind
+ * the operator/admin (ADR-020) or a trusted cron; never expose it unauthenticated. It only
+ * ever completes legitimate already-paid deliveries (it cannot create or misdirect tokens —
+ * deliverStasToBuyer delivers to each order's own recorded `receiveAddress`).
+ */
+export async function sweepPendingStasDeliveries(input?: { saleId?: string; limit?: number }): Promise<{
+  ok: boolean;
+  swept: number;
+  delivered: { orderId: string; txid: string }[];
+  failed: { orderId: string; error: string }[];
+  deadLettered: string[];
+  error?: string;
+}> {
+  const MAX_DELIVERY_ATTEMPTS = 3; // after this many sweep failures, stop retrying a doomed order
+  const delivered: { orderId: string; txid: string }[] = [];
+  const failed: { orderId: string; error: string }[] = [];
+  const deadLettered: string[] = [];
+  try {
+    const limit = Math.max(1, Math.min(100, input?.limit ?? 25));
+    const rows = await prisma.order.findMany({
+      where: {
+        ...(input?.saleId ? { saleId: input.saleId } : {}),
+        kind: 'curve_buy',
+        state: { in: ['pending', 'settling'] },
+        txid: null, // no delivery yet
+        paymentTxid: { not: null }, // the reserve buy (TX-A) actually landed — only sweep PAID buys
+      },
+      orderBy: { createdAt: 'asc' }, // FIFO — oldest stuck deliveries first
+      take: limit,
+    });
+    // SEQUENTIAL: each delivery spends + advances the single operator vault UTXO.
+    for (const o of rows) {
+      // DEAD-LETTER: after MAX_DELIVERY_ATTEMPTS sweep failures, stop retrying a doomed
+      // delivery (e.g. an old order whose vault/STAS state is gone → the built tx fails
+      // mandatory-script-verify). Mark it 'failed' (a valid terminal Order.state) so it
+      // leaves the pending set and surfaces for MANUAL operator resolution (investigate /
+      // refund the buyer). Attempts are counted from the monitoring Events (no schema change).
+      const priorFailures = await prisma.event.count({ where: { entity: 'Order', entityId: o.id, type: 'stas_delivery_sweep_failed' } });
+      if (priorFailures >= MAX_DELIVERY_ATTEMPTS) {
+        await prisma.order.update({ where: { id: o.id }, data: { state: 'failed' } });
+        await prisma.event.create({ data: { entity: 'Order', entityId: o.id, type: 'stas_delivery_deadlettered', payloadHash: `${priorFailures} failed sweep attempts` } }).catch(() => {});
+        deadLettered.push(o.id);
+        continue;
+      }
+      const res = await deliverStasToBuyer({ orderId: o.id });
+      if (res.ok && res.txid) {
+        delivered.push({ orderId: o.id, txid: res.txid });
+      } else {
+        const error = res.error ?? 'unknown delivery error';
+        failed.push({ orderId: o.id, error });
+        // Monitoring: persist a failure Event so a delivery the sweep couldn't complete is
+        // visible/queryable (not just returned in this response), for an operator to inspect.
+        try {
+          await prisma.event.create({ data: { entity: 'Order', entityId: o.id, type: 'stas_delivery_sweep_failed', payloadHash: error.slice(0, 120) } });
+        } catch { /* best-effort monitoring — never fail the sweep on an event write */ }
+      }
+    }
+    return { ok: true, swept: rows.length, delivered, failed, deadLettered };
+  } catch (e) {
+    return { ok: false, swept: delivered.length + failed.length, delivered, failed, deadLettered, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -712,6 +802,14 @@ export async function finalizeStasSell(input: { orderId: string }): Promise<{ ok
         signFeeDigest: operatorSignDigest,
         fetchUtxos: () => getOperatorBaseUtxos(operatorAddress),
         fetchBeef: getSourceBeefDeep,
+        fetchIsUnspent: async (txid, vout) => {
+          const result = await isOutputUnspent(txid, vout);
+          return result.unspent; // true | false | null
+        },
+        fetchUnconfirmedDepth: async (txid) => {
+          const depth = await unconfirmedAncestorCount(txid, 12);
+          return depth; // number (confirmed = 0)
+        },
       });
       if (!res.ok) throw new Error(res.reason);
 

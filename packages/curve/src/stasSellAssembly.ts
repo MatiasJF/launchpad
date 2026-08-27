@@ -71,6 +71,10 @@ export interface StasSellArgs {
   fetchUtxos: () => Promise<OperatorBaseUtxo[]>;
   /** Fetch a tx's unconfirmed-safe ancestry BEEF (getSourceBeefDeep, app-injected). */
   fetchBeef: (txid: string) => Promise<number[] | null>;
+  /** Check if a UTXO is unspent (WoC /tx/{txid}/{vout}/spent — money-critical, see field notes). */
+  fetchIsUnspent: (txid: string, vout: number) => Promise<boolean | null>;
+  /** Check a tx's unconfirmed ancestor depth (optional — for mempool chain depth guard). */
+  fetchUnconfirmedDepth?: (txid: string) => Promise<number | null>;
   /**
    * Optional miner-fee FLOOR (sats). The TX1 funding output (consumed WHOLE as TX2's
    * fee — the covenant pins exactly two outputs, so TX2 carries no change) is sized to
@@ -105,7 +109,7 @@ export type StasSellResult =
  * covenant input via @bsv/sdk BEFORE returning. Broadcasts nothing.
  */
 export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSellResult> {
-  const { chain, pool, delta, sellerRefundScriptHex, operatorPubHex, basePkh, signCovenant, signFeeDigest, fetchUtxos, fetchBeef, feeSats, originator = ORIGINATOR } = args;
+  const { chain, pool, delta, sellerRefundScriptHex, operatorPubHex, basePkh, signCovenant, signFeeDigest, fetchUtxos, fetchBeef, fetchIsUnspent, fetchUnconfirmedDepth, feeSats, originator = ORIGINATOR } = args;
   void chain;
   void originator;
 
@@ -157,7 +161,7 @@ export async function buildStasSellRefundTx(args: StasSellArgs): Promise<StasSel
     // TX1 — a flat-key P2PKH split tx funded from the operator BASE address that mints
     // an EXACT-fee output (`fee`) at base + BSV change back to base. TX2 consumes that
     // output WHOLE as its miner fee. (Drops @bsv/wallet-toolbox off the refund path — ADR-028 revised.)
-    const fundingRes = await buildOperatorFundingTx({ basePkh, operatorPubHex, outputSats: fee, fetchUtxos, fetchBeef, signFeeDigest });
+    const fundingRes = await buildOperatorFundingTx({ basePkh, operatorPubHex, outputSats: fee, fetchUtxos, fetchBeef, fetchIsUnspent, fetchUnconfirmedDepth, signFeeDigest });
     if (!fundingRes.ok) return { ok: false, reason: `sell fee funding (TX1): ${fundingRes.reason}` };
     const funding = fundingRes.funding;
 

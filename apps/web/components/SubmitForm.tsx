@@ -104,7 +104,7 @@ export function SubmitForm() {
         owner {identityKey.slice(0, 20)}…
       </div>
 
-      <div className="flex gap-1 overflow-x-auto border-b border-line">
+      <div className="flex flex-wrap gap-1 border-b border-line">
         {(
           [
             ['basics', 'Basics'],

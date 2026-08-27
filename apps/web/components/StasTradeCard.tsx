@@ -267,6 +267,13 @@ export function StasTradeCard({ s }: { s: SaleCardVM }) {
         ))}
       </div>
 
+      {tab === 'buy' && pool && remaining === 0 && (
+        <div className="rounded-md border border-line bg-elevated/40 px-3 py-2.5 text-xs text-muted">
+          <span className="font-semibold text-fg">Sold out</span> — all {pool.supply} {s.ticker} have been bought. Buying is closed; you can{' '}
+          <button type="button" onClick={() => setTab('sell')} className="text-teal underline underline-offset-2">sell your tokens back →</button>
+        </div>
+      )}
+
       {tab === 'buy' && pendingBuys.map((o) => (
         <div key={o.orderId} className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-3 text-xs">
           <p className="text-fg">

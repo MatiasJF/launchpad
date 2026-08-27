@@ -1,6 +1,171 @@
 # Project State
 
-_Last updated: 2026-08-24 — by: UX-first 4-week sprint COMPLETE — all core user flows polished, responsive, and SPV-integrated_
+_Last updated: 2026-08-26 — by: product decision — ship Option B hybrid as the launch curve, atomic operator-cosigned buy (ADR-029)_
+
+## Decision (2026-08-26) — Option B is the launch curve · atomic buy (ADR-029)
+
+After the strategy synthesis (`docs/research/decentralized-funding-strategy.md`), the go-forward
+shape is set: **ship the hybrid Option B (ADR-028) as THE bonding curve**, with real wallet STAS,
+and **defer** the trustless in-covenant ledger (ADR-027 B-ledger), batching, and Dutch/batch auctions.
+
+- **BUY → SPLIT (TX-A + TX-B), already built.** _Atomic buy was evaluated and found **INFEASIBLE**
+  with classic STAS (2026-08-26): the covenant tolerates it (0xc3 SINGLE only pins output-at-its-index;
+  proven `packages/curve/service/verify-atomic-buy.ts` 4/4), but the STAS token input's **single-change
+  rule** rejects the extra reserve-covenant successor output — the same wall that made the sell two-tx.
+  See ADR-029 correction._ So keep TX-A (buyer-signed reserve buy) + TX-B (operator STAS delivery);
+  buyer's 0x41 binds TX-A's single output (anti-shortchange). Mitigate the paid-but-undelivered window
+  operationally: robust + monitored delivery + the idempotent "Complete delivery" recovery.
+- **SELL → unchanged (ADR-028):** holder signs return, fail-closed provenance/back-to-genesis, operator
+  co-signs; covenant caps payout + pins successor.
+- **Honest trust model (label in-product):** trustless *pricing* both ways; *operator-assisted* token
+  movement both ways (operator can stall, never mis-price/divert). **Compromised operator key = full
+  reserve drain** → HSM-grade custody is mandatory, or don't ship Option B.
+- **Fee-fuel hardening — ✅ tool built (2026-08-26):** `apps/web/scripts/operator-fuel.mjs`
+  (`pnpm --filter @launchpad/web operator:fuel`). `status` = health report of the flat-key base
+  address (confirmed vs unconfirmed, verified-unspent via the 404=unspent spent-check, warns if all
+  fuel sits in one UTXO); `split [K] [dry]` = split the largest confirmed UTXO into K shallow fuel
+  outputs (base→base, flat-key/@bsv/sdk P2PKH, 0.1 sat/byte, WoC broadcast) so a burst fans across
+  parallel UTXOs instead of chaining one 25-deep. Verified: status reads 1D86 live; split dry-run
+  builds+signs correctly (14307→7×1788+change). `drain <address> [dry]` = sweep ALL confirmed base
+  sats to an address (recover test funds; dry-verified 3 UTXOs→1 output). CPFP-a-stuck-chain deferred
+  (the fee-fix already prevents new stuck txs; the old jam self-cleared). NOT auto-run (money decision).
+
+## Verification discipline (2026-08-26) — REAL mainnet round-trips, not mocks
+
+Money-critical on-chain code is verified on mainnet, not just offline. The self-driving harness
+`apps/web/scripts/e2e-stas.mjs` + `scripts/lib/flat-key-wallet.mjs` (`FlatKeyWallet`) reads the server
+flat key (`OPERATOR_KEY`, gitignored `.env`) and plays EVERY wallet role from the base address over
+WhatsOnChain — no BRC-100/BSV Desktop — running the full `deploy→mint→buy→deliver→sell→refund` on
+mainnet with real sats, logging each `▶ STEP` + txids + balances. Offline suites (`verify-stas` 33/33,
+`verify-atomic-buy` 4/4) are the fast pre-check; the harness is the truth (every deep bug — fee eviction,
+toolbox corruption, BEEF fragility, sold=0 brick — was caught by real txs). Loop: fund base → `operator:fuel
+split` → run harness (background) → read log → fix → re-run → `operator:fuel drain` to recover. Honest
+limit: the harness plays buyer AND operator with one key (proves on-chain mechanics, not the real
+two-party BRC-100 boundary — occasional real-wallet UI tests still matter). Key safety: it is a hot,
+burnable SERVER flat key (never the user's seed), fund small, never handled in chat.
+
+**TWO-WALLET (real two-party) harness (2026-08-26):** the harness now drives TWO separate flat keys so a
+run is a genuine client↔operator test (not one key playing every role). `TEST_CLIENT_KEY` (gitignored
+`.env`, generate/show via `pnpm --filter @launchpad/web test:client`, address printed only) plays the
+CLIENT roles — admin deploy+mint, buyer payment, seller STAS return — funded from the CLIENT base
+address; `OPERATOR_KEY` (`1D86…`) stays the operator (delivery+refund co-sign, reserve+vault, operator
+fees). STAS flows client→operator vault→client; the sell refund pays the CLIENT address; both balances
+are gated at start (`MIN_CLIENT_SATS` / `MIN_OPERATOR_SATS`). This keeps the operator reserve separate
+from client test spend AND exercises the real two-party boundary. Client test address (2026-08-26):
+`12emJJaphDvZXH5krKuyiaC1ELecH1G3xT` — fund it to run. Operator top-up FROM the client:
+`pnpm --filter @launchpad/web client:topup [-- <sats>]` (`scripts/client-topup-operator.mjs`) moves a
+fee reserve client→operator so no separate operator send is needed.
+
+**✅✅ TWO-PARTY ROUND-TRIP PROVEN ON MAINNET (2026-08-26)** — separate client + operator wallets,
+clean per-wallet accounting: mint contract `0544c94c` (issuance `c1f2f380`) → buy TX-A `c7d11775`
+(client/buyer) → deliver TX-B `c9ec6a1e` (operator) → sell TX1 `026a95f8` → back-to-genesis
+`authentic:true` → refund TX2 `6f974890` (→ CLIENT, seller=client). **Client Δ −3,095 sats**
+(seed 546 + mint/buy fees), **operator Δ −1,141 sats** (delivery+refund fees only — never the client's
+funds). ~4.2k/round-trip (546 seed recoverable from the throwaway pool). Client funded 200k → ~40+ runs.
+Robust under back-to-back runs (2 consecutive passed; spendable balance dips as change goes deep-unconfirmed
+then self-heals on confirmation — `operator:fuel split` gives parallel shallow roots for sustained bursts).
+
+## ✅✅✅ FULL-STACK REAL-PRODUCT LIFECYCLE PROVEN ON MAINNET (2026-08-26)
+
+`apps/web/scripts/e2e-app.mjs` (`pnpm --filter @launchpad/web e2e:app`) drives the **REAL Next.js
+server actions + REAL Prisma DB + mainnet** — the actual code the app's buttons call — NOT the
+covenant-only `e2e-stas` harness. It stubs ONLY Next's cache/routing/cookies (`scripts/lib/stub-next.mjs`,
+an ESM loader that intercepts `server-only`/`next/cache`/`next/navigation`/`next/headers` with no-ops) so
+the `'use server'` actions import into a plain tsx script; everything else is real. Two-party: CLIENT
+flat key = owner/admin/buyer/seller (via `FlatKeyWallet`), OPERATOR key co-signs delivery+refund INSIDE
+the real `deliverStasToBuyer`/`finalizeStasSell`. **Passed FIRST run (2026-08-26):** create project
+(`createProject`) → approve (`setProjectStatus`) + `updateSaleEscrow`→bonding_curve → deploy
+(`createStasPool`+`markStasPoolDeployed`) → mint (`prepareStasMint`+`issueStasGenesis`+`recordStasMint`,
+issuance `5877a5ba`) → buy (`prepareStasBuy`/`recordStasBuy`→Order→`deliverStasToBuyer`, delivery
+`55dba34c`) → sell (`prepareStasSell`/`recordStasSell`/`finalizeStasSell`, return `ed5d5144`, refund
+`be580900`). Writes the real DB, so the project shows in the app: **`/sale/e2e-app-1787740581904`**.
+Client Δ −3,094 · operator Δ −2,282. This validates the real server-action + DB orchestration, not just
+the covenant. Remaining human step: the on-screen UI pass (browser + BSV Desktop) — the one layer that
+can't be automated (UI hard-wires the BRC-100 `WalletClient`).
+
+**✅ MANUAL UI PASS COMPLETE (2026-08-26)** — the maintainer ran the full flow in the running app with a
+real BRC-100 wallet (BSV Desktop): create project (`testa`) → admin approve → deploy STAS pool → mint →
+buy 5 (delivered) → sell 5 (return `78824279` + operator refund `9a1bf00c`), pool back to sold 0 / reserve
+546. Both the automated (`e2e:app`) and manual (UI) passes now confirm the product end-to-end on mainnet.
+Three real UI issues surfaced + fixed during the pass: (1) **STAS pools were graduating** on sold-out and
+the sale page showed "sale isn't open yet", blocking sells — fixed: a sold-out STAS pool stays `live`
+(buying capped by supply, selling open), since buyers already hold real wallet STAS (nothing to graduate
+to). (2) The manage page offered TWO deploy cards (trustless ledger/linear + wallet-STAS) and the wrong one
+is easy to click — removed the ledger/linear card; the wallet-STAS card is the only deploy option (ADR-029).
+(3) Default demo supply 5 → 25 so one buy doesn't instantly sell out. Also set `ADMIN_SECRET` in `.env`
+(needed for /admin). UX follow-ups noted: sold-out state could show "sold out — selling open" explicitly;
+the "register settled purchases" panel display when already delivered.
+
+## ✅ Open items worked through (2026-08-26)
+
+Post-PR (#1) close-out of the ADR-029 launch open items:
+- **Operator key → HSM/KMS**: signer made pluggable (see below). ✅ code; human provisions the HSM.
+- **UX polish**: sold-out trade-card state ("buying closed, sell open" + shortcut); live pill fixed
+  (was two dots — static `.pill::before` + pulsing — now only the pulsing one). ✅
+- **Automated sweep trigger**: `CRON_SECRET` set + `apps/web/vercel.json` schedules
+  `/api/cron/sweep-deliveries` every 2 min (Vercel sends the bearer the route checks). ✅
+- **External audit**: prep doc `docs/COVENANT-AUDIT-PREP.md` (audit surface, invariants 1–8, drain
+  vectors, evidence, out-of-scope). ✅ prep; the audit itself is external and gates any real reserve.
+Remaining human/infra: run the audit; provision the HSM + signer; deploy + set the production envs.
+
+## 🔐 Operator key → HSM/KMS ready (2026-08-26)
+
+The operator co-sign key (the reserve-security boundary, ADR-029) signing is now PLUGGABLE
+(`apps/web/lib/operator-wallet.ts`), selected by `OPERATOR_SIGNER`: `local` (default —
+`OPERATOR_KEY` in `.env`, dev/testing) or `remote`/`kms`/`hsm` (production — POST the 32-byte
+digest to an HSM/KMS-backed endpoint `OPERATOR_SIGNER_URL`; the private key never enters the
+app; `getOperator()` reads the public `OPERATOR_PUBKEY`). Low-S canonicalization applied to BOTH
+backends. No call sites changed. Verified: local mode still yields valid low-S sigs with the SAME
+pkh `84f96c45…` (all existing pools + the harness keep working). Provider recipes (AWS KMS
+ECC_SECG_P256K1, GCP, YubiHSM), the HTTP contract, the **pubkey-must-match-deployed-pools** migration
+note, and the honest caveat (HSM protects key material, not signing authorization → give the signer
+its own policy) → `docs/OPERATOR-KEY-CUSTODY.md`. Remaining (human/infra): provision the HSM/KMS +
+signer service, set the envs, verify `getOperator().pkh` matches the pools' `operatorPkh`.
+
+## 🏗️ Delivery robustness (in progress, 2026-08-26)
+
+Shrinking/auto-recovering the split-buy paid-but-undelivered window. **Piece 1 — auto-sweep ✅ built +
+PROVEN ON MAINNET (via `e2e:app`, 2026-08-26):** a real stuck paid-but-undelivered order (buy recorded,
+delivery skipped) was detected by `getPendingStasDeliveries` and self-healed by `sweepPendingStasDeliveries`
+(swept 1, delivered 1, DB order → `settled` with delivery txid `b76c8553`). Also hardened the broadcast
+path: `broadcastRawTx` now backoff-retries transient WoC 429/5xx/network (definitive rejects still return
+immediately) — a production robustness win. **Piece 2 — monitoring ✅:** the sweep now writes a
+`stas_delivery_sweep_failed` Event (entity `Order`) for any delivery it couldn't complete, so persistent
+stuck deliveries are queryable, not just returned in the response. **Piece 3 — automated trigger ✅ built:**
+`apps/web/app/api/cron/sweep-deliveries/route.ts` — a `CRON_SECRET`-gated (or admin-session) GET/POST that
+calls `sweepPendingStasDeliveries` with a small per-call limit (default 5, cap 25) so each tick finishes
+fast; schedule it (Vercel cron / any external cron hitting `?secret=$CRON_SECRET`) to self-heal stuck
+deliveries with no human. Set `CRON_SECRET` in `apps/web/.env` before scheduling. Web typecheck green.
+The route wraps the mainnet-proven sweep; the full cron→route→sweep chain is verifiable by running the app.
+Delivery robustness is functionally complete (auto-sweep + monitoring + automated trigger); optional
+follow-up: a dedicated admin "Sweep deliveries" button (the route already accepts an admin session).
+Earlier build note below.
+`sweepPendingStasDeliveries({ saleId?, limit? })` (`apps/web/lib/stas-actions.ts`) completes EVERY stuck
+`curve_buy` (pending/settling, `paymentTxid` set, `txid` null), oldest-first, delegating each to the
+idempotent `deliverStasToBuyer` — so a stuck buy self-heals without the buyer clicking "Complete delivery".
+SEQUENTIAL (each delivery spends+advances the single vault UTXO), BOUNDED (`limit` default 25), continues
+past a failing delivery, idempotent (never double-delivers). NOT buyer-scoped → the caller MUST gate it
+(operator/admin ADR-020, or a trusted cron). Web typecheck green. The on-chain delivery mechanic is already
+mainnet-proven (harness); the sweep adds DB orchestration over it — app-level test (seed a stuck order →
+sweep → deliver) is next. **Remaining:** (2) broadcast-retry hardening in deliverStasToBuyer, (3) delivery
+attempt/failure monitoring events, (4) wire a trigger (admin control or cron).
+
+**✅ FRESH FULL ROUND-TRIP RE-PROVEN ON MAINNET (2026-08-26):** deploy `ffbda423` → mint (issuance
+`ded13344`) → buy TX-A `92ec2bec` → deliver TX-B `21478e23` → sell return TX1 `6b0f4f03` (back-to-genesis
+`authentic:true` [2 nodes]) → refund TX2 `f5455d48`. Found + fixed via the loop (run→fail→fix→re-run, 4
+runs): THREE stale spots where the pre-mortem's mandatory `fetchIsUnspent` (FIX-1) had not been
+propagated into TEST code — (1) `flat-key-wallet.mjs` `createAction`, (2) e2e-stas DELIVER
+`selectOperatorFeeInputs`, (3) e2e-stas REFUND `buildStasSellRefundTx`; plus a real robustness fix in the
+shim: it now tracks its own just-created base CHANGE (`_created`) and feeds it into selection (guarded by
+a WoC spent-check for operator-path contention) so a step can spend the prior step's change BEFORE WoC
+indexes it (the 2s inter-step sleep was not enough). **PRODUCTION path was already pre-mortem-consistent**
+(`deliverStasToBuyer`/`finalizeStasSell` were updated); only the harness/shim had drifted — and the run
+exercises the REAL production packages (covenant, `buildStasBuyTx`, `operatorDeliverStas`,
+`buildStasSellRefundTx`, `selectOperatorFeeInputs`), so this validates production, not just the harness.
+- **Remaining to ship (not new covenant R&D):** delivery robustness +
+  monitoring so the paid-but-undelivered window is tiny and always recoverable, operator key hardening
+  (HSM-grade), STAS-in-BSV-Desktop registration, external covenant audit before any real reserve.
+  (Atomic-buy assembly is OFF the list — infeasible with STAS, see ADR-029 correction.)
 
 ## Latest (2026-08-24) — UX-First 4-Week Sprint: COMPLETE ✅
 

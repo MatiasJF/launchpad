@@ -112,9 +112,15 @@ export class FlatKeyWallet extends ProtoWallet {
     //                 own just-broadcast change (WoC may not serve its /hex yet).
     this._spent = new Set(); // "txid:vout"
     this._createdBeef = new Map(); // txid -> non-atomic BEEF bytes (number[])
+    // `_created` — our own just-made base CHANGE outputs, so the NEXT selection can spend
+    // them BEFORE WoC indexes them into /address/unspent (indexing lags broadcast by more
+    // than the inter-step gap). Guarded by `_spent` + a real WoC spent-check in
+    // `fetchIsUnspent`, so a change the OPERATOR fee path later consumes is dropped, not
+    // double-spent (the contention the old "no additive optimistic UTXO" note warned of).
+    this._created = new Map(); // "txid:vout" -> {txid,vout,satoshis,scriptHex}
   }
 
-  // ── WoC selection wrapper (WoC authoritative; only SUBTRACT locally-spent) ──────
+  // ── WoC selection wrapper: WoC-authoritative UNION our own unindexed change ──────
   async _fetchUtxos() {
     let woc = [];
     try {
@@ -122,7 +128,21 @@ export class FlatKeyWallet extends ProtoWallet {
     } catch {
       woc = [];
     }
-    return woc.filter((u) => !this._spent.has(`${u.txid}:${u.vout}`));
+    const merged = new Map();
+    for (const u of woc) merged.set(`${u.txid}:${u.vout}`, u);
+    for (const [k, u] of this._created) if (!merged.has(k)) merged.set(k, u); // add our unindexed change
+    return [...merged.values()].filter((u) => !this._spent.has(`${u.txid}:${u.vout}`));
+  }
+
+  // WoC spent-check (404 = unspent, 200 = spent). Mirrors isOutputUnspent. true|false|null.
+  async _isUnspentWoC(txid, vout) {
+    for (let i = 0; i < 3; i++) {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/${this.chain}/tx/${txid}/${vout}/spent`, { cache: 'no-store' }).catch(() => null);
+      if (res && res.status === 404) return true;
+      if (res && res.ok) return false;
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    return null; // unverifiable
   }
 
   async _fetchBeef(txid) {
@@ -161,6 +181,18 @@ export class FlatKeyWallet extends ProtoWallet {
       needSats: need,
       fetchUtxos: () => this._fetchUtxos(),
       fetchBeef: (txid) => this._fetchBeef(txid),
+      // FIX-1 (pre-mortem) made this a MANDATORY spent-check. Drop what WE spent, drop
+      // what WoC says is spent (the operator fee path may have consumed a base UTXO or
+      // our own change — contention-safe), and for a UTXO WoC can't yet verify (our fresh
+      // unindexed change), trust it ONLY if it is one we created — never a stray optimistic input.
+      fetchIsUnspent: async (txid, vout) => {
+        const key = `${txid}:${vout}`;
+        if (this._spent.has(key)) return false;
+        const woc = await this._isUnspentWoC(txid, vout);
+        if (woc === false) return false; // definitively spent (e.g. by the operator fee path)
+        if (woc === true) return true; // WoC confirms unspent
+        return this._created.has(key); // WoC unverifiable → trust only our own created change
+      },
     });
     if (!sel.ok) throw new Error(`flat-key createAction funding failed: ${sel.reason}`);
 
@@ -220,6 +252,12 @@ export class FlatKeyWallet extends ProtoWallet {
     // (served locally for our own change until WoC indexes it).
     for (const fi of sel.feeInputs) this._spent.add(`${fi.txid}:${fi.vout}`);
     this._createdBeef.set(txid.toLowerCase(), beef.toBinary());
+    // Track our own change output so the next selection can spend it before WoC indexes it.
+    // Requested outputs come first (in order), change is appended → its vout = outputs.length.
+    if (hasChange) {
+      const changeVout = outputs.length;
+      this._created.set(`${txid}:${changeVout}`, { txid, vout: changeVout, satoshis: change, scriptHex: this.baseScriptHex });
+    }
 
     // Let WoC index this tx (its outputs become the next call's spendable base UTXOs,
     // and the consumed input becomes mempool-spent) before the next selection.

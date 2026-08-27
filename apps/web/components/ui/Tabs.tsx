@@ -7,7 +7,7 @@ export function Tabs({ tabs }: { tabs: { id: string; label: string; content: Rea
   const [active, setActive] = useState(tabs[0]?.id);
   return (
     <div>
-      <div className="flex gap-1 overflow-x-auto border-b border-line">
+      <div className="flex flex-wrap gap-1 border-b border-line">
         {tabs.map((t) => (
           <button
             key={t.id}

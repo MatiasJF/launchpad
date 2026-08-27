@@ -26,8 +26,14 @@ export function PortfolioHistory({ identityKey }: { identityKey: string }) {
   useEffect(() => {
     async function fetchHistory() {
       setLoading(true);
+      const startTime = Date.now();
       try {
         const data = await getPortfolioHistory(identityKey);
+        // Minimum 500ms loading time for smooth skeleton transition
+        const elapsed = Date.now() - startTime;
+        if (elapsed < 500) {
+          await new Promise((resolve) => setTimeout(resolve, 500 - elapsed));
+        }
         setHistory(data);
       } catch (e) {
         console.error('Failed to fetch history:', e);

@@ -38,7 +38,7 @@ export function StasPoolManage({
   const [phase, setPhase] = useState<Phase>('loading');
   const [seed, setSeed] = useState(546);
   const [k, setK] = useState(1);
-  const [supply, setSupply] = useState(5);
+  const [supply, setSupply] = useState(25); // enough to buy a few + sell without selling out
   const [busy, setBusy] = useState(false);
   const [poolTxid, setPoolTxid] = useState<string | null>(null);
   const [mintTxid, setMintTxid] = useState<string | null>(null);

@@ -324,3 +324,19 @@ export async function setProjectStatus(form: FormData): Promise<void> {
   revalidatePath('/admin');
   revalidatePath('/');
 }
+
+/**
+ * Admin: on-demand trigger for the stuck-delivery self-heal — the same
+ * `sweepPendingStasDeliveries` the /api/cron/sweep-deliveries schedule runs, but from the
+ * dashboard. Completes any paid-but-undelivered STAS buys; the result is surfaced back on
+ * /admin via query params. Admin-gated (the sweep spends operator fees). The stas-actions
+ * import is dynamic so the operator/wallet module graph loads only when this is invoked.
+ */
+export async function adminSweepDeliveries(form: FormData): Promise<void> {
+  if (!(await isAdmin())) redirect('/admin?error=auth');
+  const saleId = field(form, 'saleId') || undefined;
+  const { sweepPendingStasDeliveries } = await import('./stas-actions');
+  const res = await sweepPendingStasDeliveries({ saleId, limit: 25 });
+  revalidatePath('/admin');
+  redirect(`/admin?swept=${res.swept ?? 0}&delivered=${res.delivered?.length ?? 0}&failed=${res.failed?.length ?? 0}&deadlettered=${res.deadLettered?.length ?? 0}`);
+}

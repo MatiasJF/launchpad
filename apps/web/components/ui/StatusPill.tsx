@@ -19,9 +19,10 @@ export function StatusPill({ status }: { status: SaleStatus | OrderState }) {
   const isLive = status === 'live';
 
   return (
-    <span className="pill" style={{ '--tone': tone } as CSSProperties}>
+    // `pill-live` suppresses the static `.pill::before` dot so only the pulsing dot below shows.
+    <span className={`pill${isLive ? ' pill-live' : ''}`} style={{ '--tone': tone } as CSSProperties}>
       {isLive && (
-        <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--status-live)]" />
+        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--status-live)]" />
       )}
       {status === 'finalized' ? 'Completed' : status}
     </span>

@@ -3,6 +3,16 @@
 **Read this first.** With no context, read in order:
 this file → `docs/STATE.md` → `docs/INDEX.md`. Three files and you are productive.
 
+**Before BSV work, also read `~/.claude/bsv-field-notes.md`** — verified chain, SDK and toolchain behaviour
+learned by hitting it on mainnet in a sibling project: WhatsOnChain reporting spent outputs as unspent,
+BRC-29 derivation direction, the `@bsv/wallet-toolbox` `dotenv` override, BEEF ancestry depth, and the
+Node/pnpm/tsx traps that each cost an hour. It is kept outside any repository so every BSV project shares it.
+
+**And `docs/LESSONS.md`** for what has gone wrong *here*. When something surprises you — a symptom that
+pointed at the wrong cause, a tool behaving differently than documented, a test that passed while wrong,
+money moving unexpectedly — add it, via the `/lesson` skill. Chain- or toolchain-level findings that would
+help any BSV project go in the field notes instead, so they outlive this repo.
+
 ## What this is
 
 A token launchpad native to the BSV Blockchain. Projects issue STAS tokens and

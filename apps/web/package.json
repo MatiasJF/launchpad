@@ -13,8 +13,12 @@
     "operator:setup": "node scripts/operator-setup.mjs",
     "operator:balance": "node scripts/operator-balance.mjs",
     "operator:fund": "node scripts/operator-fund.mjs",
+    "operator:fuel": "node scripts/operator-fuel.mjs",
     "wallet:clean": "node scripts/wallet-clean.mjs",
-    "e2e:stas": "node --import tsx scripts/e2e-stas.mjs"
+    "e2e:stas": "node --import tsx scripts/e2e-stas.mjs",
+    "test:client": "node scripts/gen-test-client.mjs",
+    "client:topup": "node scripts/client-topup-operator.mjs",
+    "e2e:app": "node --import tsx scripts/e2e-app.mjs"
   },
   "dependencies": {
     "@bsv/sdk": "^2.2.15",
