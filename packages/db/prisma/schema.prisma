@@ -119,6 +119,13 @@ model CurvePool {
   operatorPkh     String?
   poolTxid        String? // current pool outpoint (moves after each buy)
   poolVout        Int?
+  // merkle variant (ADR-030): the pool's GENESIS outpoint, which never moves. State is resolved
+  // from the chain by walking from here, so unlike the other variants the DB holds no
+  // authoritative ledger — only this pointer plus the immutable terms (k, supply, payoutPkh).
+  // Kept separate from poolTxid on purpose: that field TRACKS THE TIP for the other variants, and
+  // overloading it would make a merkle pool unverifiable the moment the tip advanced.
+  genesisTxid     String?
+  genesisVout     Int?     @default(0)
   scriptHex       String? // current pool locking script
   status          String   @default("draft") // draft | live | graduated
   createdAt       DateTime @default(now())

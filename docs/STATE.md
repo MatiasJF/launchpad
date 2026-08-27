@@ -1,6 +1,40 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: ADR-031 no spread; calibrating the fee FLOOR, which is the real constraint_
+_Last updated: 2026-08-27 — by: ADR-030 wired into the app — the DB is no longer the ledger (33/33 on mainnet)_
+
+## ADR-030 app wiring (2026-08-27) — the database is no longer the ledger ✅ 33/33 ON MAINNET
+
+The app can now run a trustless pool, and the difference from ADR-027 is the whole point of the
+track: **pool state is read from the BLOCKCHAIN, not from our database.**
+
+- **`packages/curve/service/cli.ts`** gains `merkle-genesis` / `merkle-resolve` / `merkle-buy` /
+  `merkle-sell-digest` / `merkle-sell-unlock` / `merkle-graduate`. `merkle-resolve` is the important
+  one — one call returns the live outpoint, reserve, `sold`, every balance, the root and the full
+  history, straight from chain.
+- **`apps/web/lib/merkle-ledger-service.ts`** — the child-process bridge (scrypt-ts never enters the
+  Next bundle), mirroring `ledger-service.ts`.
+- **`apps/web/lib/merkle-ledger-actions.ts`** — deliberately much thinner than `ledger-actions.ts`.
+  ADR-027 rebuilt state from recorded Orders, so the operator's DB was authoritative and a reset
+  genuinely lost a live pool once. Here the DB stores only the genesis outpoint and the immutable
+  terms; Orders are receipts. `markMerklePoolDeployed` re-resolves the outpoint against the chain
+  before trusting it, and graduation is deliberately NOT owner-gated because the covenant lets
+  anyone trigger it.
+- **DB migration `curve_pool_genesis_outpoint`** adds `genesisTxid` / `genesisVout`, kept SEPARATE
+  from `poolTxid` on purpose — that field tracks the moving tip for the other variants, and
+  overloading it would make a merkle pool unverifiable the moment the tip advanced (exactly how the
+  July pool's parameters were lost).
+- **Proven on mainnet through the real actions + real Prisma** (`pnpm --filter @launchpad/web
+  e2e:merkle`, 33/33): create → deploy → mark → read → buy → **re-read from chain** → holder-signed
+  sell → final read → guards. Asserts the DB holds no ledger mirror, and that every balance comes
+  back from the chain after each trade.
+
+**New standing practice, now in the harnesses:** download every broadcast transaction back from WoC
+and assert on the REAL size/fee/outputs (`service/wocInspect.ts` — `verifiedUnspent`, `inspectTx`,
+`reportTx`), and never trust `/unspent` without a `/spent` check. That immediately earned its keep:
+the downloaded sell tx showed **3,000 sats at 0.12 sat/B, 12x overpaid**, revealing that
+`prepareMerkleSell` never told callers how big the fee input must be — the sell's input is consumed
+WHOLE because the covenant pins exactly two outputs. The action now returns **`feeInputSats`**, and
+the same sell costs **247 sats at 0.0099 sat/B**. A computed-value-only test would never have shown it.
 
 ## ADR-031 (2026-08-27) — no spread on the trustless curve; the fee FLOOR is the real problem
 
