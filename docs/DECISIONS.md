@@ -342,3 +342,73 @@ Append-only; newest at the bottom. Template per entry:
      amortises the floor across N buyers, at the cost of a semi-trusted sequencer.
 - **Reversibility.** Low cost now, high cost later: adding a spread after the audit means a new
   contract, a re-audit, and pools deployed under the old terms staying on the old script.
+
+## ADR-032 · Enforced graduation delivery via a DELIVERY BOND, not a token-releasing covenant · Proposed · 2026-08-27
+
+- **Context.** ADR-030's curve enforces everything except the last step. Price, custody, refunds and
+  the reserve's destination are covenant-enforced; converting final-ledger balances into wallet-held
+  STAS after graduation is not. The project ends holding the sats while holders hold ledger entries,
+  and nothing on-chain compels delivery. ADR-031's settlement record made that debt public
+  (`getProjectSettlementRecord`), which is disclosure, not enforcement. This ADR is about closing it.
+
+- **The constraint that rules out the obvious design.** The natural answer — pre-mint the supply and
+  lock it in a covenant that releases `amount` to whoever proves `(pkh, balance)` against the final
+  root — is **impossible**. A STAS locking script is
+  `76a914 <pkh:20> 88ac 69 …` — literally `OP_DUP OP_HASH160 <pkh> OP_EQUALVERIFY OP_CHECKSIG`
+  followed by the token envelope (`src/provenance.ts`, `isStasScript`/`stasOwnerPkh`, and confirmed
+  against every delivery this project has made on mainnet). **STAS ownership is P2PKH: spending
+  requires an ECDSA signature from a specific key.** A covenant spends by pushing a sighash preimage,
+  not by holding a private key, so **a covenant can never custody STAS.** This belongs beside the
+  single-change rule of ADR-029 as a hard property of classic STAS, not a limitation of our design.
+
+- **Decision (proposed): a DELIVERY BOND.** Graduation stops paying the whole reserve to the project.
+  It splits:
+  - `reserve − bond` → the payout address fixed at deploy (as today)
+  - `bond` → a new **DeliveryBond covenant**, parameterised with the final ledger `root`, the
+    `totalOwed`, the project's `payoutPkh`, and two block heights.
+
+  Two spend paths, and neither needs to verify a mint:
+  1. **Holder claim, after `claimHeight`.** Any holder proves `(pkh, balance)` against `root` — the
+     same inclusion-proof machinery ADR-030 already has — and takes `bond × balance / totalOwed`.
+     Claims are tracked in the bond's own Merkle ledger so a slot cannot be claimed twice.
+  2. **Project reclaim, after `reclaimHeight` (> `claimHeight`).** The project takes whatever is
+     left.
+
+  So: deliver on time and holders have no reason to claim, and the project recovers the bond.
+  Fail to deliver and the holders drain it. **The holder's decision to claim IS the signal**, which
+  is exactly why no proof-of-mint is needed.
+
+- **This is ECONOMIC enforcement, not cryptographic delivery.** A project can still choose to forfeit
+  the bond and never mint. What changes is that non-delivery now costs it, and the compensation flows
+  to precisely the holders who were stiffed. That is strictly stronger than ADR-031's disclosure and
+  strictly weaker than the covenant guarantees preceding it, and the UI must say so in those terms.
+
+- **Known weakness — double-dipping.** A holder who *was* delivered tokens can still claim the bond
+  after `claimHeight`. Preventing it would require the covenant to verify a STAS mint, which the
+  constraint above forbids. Mitigations, in order of preference:
+  1. Size the bond as partial compensation (10–25% of reserve), so double-dipping is bounded and the
+     tokens are worth more than the claim to anyone who believes in the project.
+  2. Set `claimHeight` far enough out that an honest project has delivered first; claims are public,
+     so a double-dipper is visible.
+  3. Publish claims alongside the settlement record, so the project mints only to non-claimers.
+  None of these is airtight. **This is the main open question and should be settled before building.**
+
+- **Alternatives rejected.**
+  - *Covenant holds pre-minted STAS.* Impossible — see the constraint.
+  - *Escrow released on proof-of-mint.* Requires verifying a STAS output's shape AND ownership AND
+    that it corresponds to a specific ledger entry, per holder, in Script. Enormous audit surface for
+    a check the single-change rule may make unconstructible anyway.
+  - *Burn the bond on non-delivery.* Punishes the project without compensating holders; strictly
+    worse than paying them.
+  - *Abandon graduation; the ledger IS the token.* Coherent, and worth revisiting — holders can
+    already sell back at the curve. It gives up portability, which was graduation's entire purpose.
+
+- **Consequences.** A second covenant to design, compile, test and AUDIT — comparable in size to
+  ADR-030 itself, and it changes the graduation path, so it must land BEFORE an external audit rather
+  than after. Graduation becomes a 2-output spend (payout + bond), which the covenant must pin.
+  Existing graduated pools are unaffected and keep the ADR-031 disclosure only.
+
+- **Status: PROPOSED, not accepted.** The double-dip question above is unresolved, and the honest
+  alternative — accept disclosure-only and put the effort into the external audit instead — has not
+  been ruled out. Recorded now so the design is not re-derived, and so a decision is made before the
+  audit rather than after it.

@@ -1,6 +1,35 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: pool terms published on-chain; a genesis txid is now sufficient to read a pool_
+_Last updated: 2026-08-27 — by: settlement record shipped (ADR-031); enforced delivery specced as ADR-032 (proposed)_
+
+## The unenforced step — disclosure done, enforcement specced (2026-08-27)
+
+The graduation mint is the one thing the covenant cannot enforce. Two responses:
+
+**ADR-031 — settlement record. DONE.** Per project, how many tokens are still owed to holders from
+graduated pools and for how long, shown BEFORE the buy control because it is useless to someone who
+has already committed. The debt is snapshotted at graduation (the covenant is spent by then, so
+`sold` is immutable), which means it reads from the DB with no chain walk while the chain stays the
+authority. Verified against both live graduated pools: each reports "settled", and hiding their
+deliveries correctly flips the record to "OWES $trust: 0/60". This is disclosure, not enforcement,
+and says so.
+
+**ADR-032 — delivery bond. PROPOSED, NOT ACCEPTED.** Graduation would split the reserve, locking a
+bond that holders can claim pro-rata (proving `(pkh, balance)` against the final root — machinery
+ADR-030 already has) if the project has not delivered by a deadline; the project reclaims whatever
+is left after a later one. Deliver and nobody claims; fail and holders drain it — so **the holder's
+decision to claim IS the signal**, and no proof-of-mint is needed.
+
+**The constraint that forced this shape, now recorded as a hard STAS property:** a STAS locking
+script is `76a914 <pkh> 88ac 69 …` — a literal P2PKH `OP_CHECKSIG`. Spending needs an ECDSA
+signature from a specific key, and a covenant spends by preimage inspection, not by holding keys, so
+**a covenant can never custody STAS.** That rules out the obvious "covenant releases pre-minted
+tokens against a Merkle proof" design outright. It belongs beside ADR-029's single-change rule.
+
+**Blocked on one honest question:** a holder who WAS delivered could still claim the bond
+(double-dipping), and preventing it would require verifying a STAS mint in Script — which the above
+forbids. Mitigations are bounded, not airtight. The alternative — accept disclosure-only and spend
+the effort on the external audit instead — has deliberately NOT been ruled out.
 
 ## Discovery (2026-08-27) — the terms are on-chain, so the database is no longer needed at all
 
