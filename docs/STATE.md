@@ -1,6 +1,30 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: ADR-030 UI shipped — the trustless curve is now deployable and tradable from the app_
+_Last updated: 2026-08-27 — by: graduation mint built; the one unenforced step is now visible, not hidden_
+
+## Graduation mint (2026-08-27) — closing the dead end the manual pass found
+
+The manual UI pass ended with a holder owning 60 tokens and **nothing to collect** — ADR-027/030
+always specified minting real STAS to holders from the final ledger after graduation, but that step
+had never been built. It is now.
+
+- **`getMerkleFinalLedger(saleId)`** recomputes the mint list from the **genesis transaction alone**
+  — who is owed what, plus what has already been delivered. Callable by ANYONE, so a holder can
+  verify their own claim without asking the project. Verified against the live graduated pool
+  `4cdd07f3…`: `5cf5d8a5… = 60`, from chain, with no database ledger.
+- **`prepareMerkleMint` / `recordMerkleMint` / `recordMerkleDelivery`** — owner-gated, and delivery
+  is idempotent per holder (a `curve_graduation_mint` Order is the guard), so re-running the
+  distribution loop cannot double-mint to someone already paid.
+- **`MerkleGraduationMint.tsx`** — owner mints the STAS genesis to their OWN key (no operator vault
+  on this track) and then delivers to each holder's P2PKH address, which is the same pkh their
+  ledger balance was keyed to.
+
+**The honest part.** This is the ONE step the covenant cannot enforce, and the UI says so in a
+warning panel rather than implying the chain has it covered. Atomic mint-at-graduation is
+impossible for the same reason the atomic buy was — a STAS token input may carry only token outputs
+plus one change output (ADR-029). What survives is **accountability, not enforcement**: the debt is
+permanent, public, and recomputable from chain forever, so a project that takes the reserve and
+never mints cannot hide it. That is weaker than everything preceding it and is documented as such.
 
 ## ADR-030 UI (2026-08-27) — the trustless curve is visible and usable
 

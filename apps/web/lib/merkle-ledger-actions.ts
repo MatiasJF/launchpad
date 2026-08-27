@@ -291,3 +291,120 @@ export async function recordMerkleGraduate(input: { saleId: string; graduateTxid
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GRADUATION MINT — turning final ledger balances into wallet-held STAS
+//
+// THE HONEST TRUST BOUNDARY. Everything before this point is enforced by the covenant: the price,
+// the custody, the refund, and the fact that the reserve can only ever reach the payout address
+// fixed at deploy. This step is NOT. Once the pool graduates the project holds the sats and the
+// holders hold ledger entries, and nothing on-chain compels the project to mint. An atomic
+// mint-at-graduation is infeasible for the same reason the atomic buy was — a STAS token input may
+// carry only token outputs plus exactly one change output, so real tokens cannot ride the covenant
+// spend (ADR-029).
+//
+// What DOES survive: the mint list is permanent and public. `getMerkleFinalLedger` recomputes who
+// is owed what from the genesis transaction alone, forever, with no database and no cooperation
+// from us or the project. A project that takes the reserve and never mints cannot hide it, and
+// anyone can prove the debt. That is weaker than covenant enforcement and it is stated plainly in
+// the UI rather than glossed over.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface FinalLedgerEntry { ownerPkh: string; amount: number; deliveredTxid: string | null }
+
+/**
+ * The mint list for a GRADUATED pool, recomputed from chain: who is owed how much, and what has
+ * already been delivered. Callable by anyone — a holder should be able to verify their own claim
+ * without asking the project.
+ */
+export async function getMerkleFinalLedger(saleId: string): Promise<
+  | { ok: true; graduated: boolean; total: number; entries: FinalLedgerEntry[]; issuanceTxid: string | null; tokenId: string | null; genesisTxid: string }
+  | { ok: false; error: string }
+> {
+  try {
+    const p = await prisma.curvePool.findUnique({ where: { saleId }, include: { sale: { include: { token: true } } } });
+    if (!p || p.variant !== 'merkle') return { ok: false, error: 'no merkle pool for this sale' };
+    if (!p.genesisTxid || !p.payoutPkh) return { ok: false, error: 'pool is not deployed yet' };
+
+    const state = await resolveMerklePool({
+      genesisTxid: p.genesisTxid, genesisVout: p.genesisVout ?? 0,
+      k: p.k.toString(), supply: p.supply.toString(), payoutPkh: p.payoutPkh,
+    });
+    if ('error' in state) return { ok: false, error: state.error };
+
+    // deliveries are recorded as Orders so a mint is never repeated for the same holder
+    const delivered = await prisma.order.findMany({ where: { saleId, kind: 'curve_graduation_mint' } });
+    const byPkh = new Map(delivered.map((o) => [(o.receiveAddress ?? '').toLowerCase(), o.txid]));
+
+    const entries: FinalLedgerEntry[] = Object.entries(state.balances).map(([ownerPkh, amount]) => ({
+      ownerPkh, amount: Number(amount), deliveredTxid: byPkh.get(ownerPkh.toLowerCase()) ?? null,
+    }));
+    return {
+      ok: true, graduated: state.graduated, total: Number(state.sold), entries,
+      issuanceTxid: p.sale.token.issuanceTxid ?? null, tokenId: p.sale.token.stasTokenId ?? null,
+      genesisTxid: p.genesisTxid,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Owner-gated: confirm the pool really graduated and report how much must be minted. */
+export async function prepareMerkleMint(input: { saleId: string; identityPubkey: string }): Promise<
+  { ok: true; total: number; entries: FinalLedgerEntry[] } | { ok: false; error: string }
+> {
+  try {
+    const p = await prisma.curvePool.findUnique({ where: { saleId: input.saleId }, include: { sale: { include: { token: { include: { project: true } } } } } });
+    if (!p || p.variant !== 'merkle') return { ok: false, error: 'no merkle pool for this sale' };
+    if (!(await isProjectOwner(p.sale.token.project.id, input.identityPubkey))) return { ok: false, error: 'not the project owner' };
+    if (p.sale.token.issuanceTxid) return { ok: false, error: 'already minted' };
+
+    const led = await getMerkleFinalLedger(input.saleId);
+    if (!led.ok) return { ok: false, error: led.error };
+    if (!led.graduated) return { ok: false, error: 'pool has not graduated — mint only after the reserve is released' };
+    if (led.total <= 0) return { ok: false, error: 'nothing to mint' };
+    return { ok: true, total: led.total, entries: led.entries };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Record the STAS issuance the owner's wallet just made for the graduated supply. */
+export async function recordMerkleMint(input: { saleId: string; identityPubkey: string; issuanceTxid: string; tokenId: string }): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const p = await prisma.curvePool.findUnique({ where: { saleId: input.saleId }, include: { sale: { include: { token: { include: { project: true } } } } } });
+    if (!p || p.variant !== 'merkle') return { ok: false, error: 'no merkle pool' };
+    if (!(await isProjectOwner(p.sale.token.project.id, input.identityPubkey))) return { ok: false, error: 'not the project owner' };
+    await prisma.token.update({ where: { id: p.sale.token.id }, data: { issuanceTxid: input.issuanceTxid, stasTokenId: input.tokenId } });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Record one holder's delivery. Idempotent per holder: the unique-ish guard is the existing
+ * `curve_graduation_mint` Order, so a re-run of the distribution loop cannot double-mint to
+ * someone who was already paid.
+ */
+export async function recordMerkleDelivery(input: {
+  saleId: string; identityPubkey: string; ownerPkh: string; amount: number; txid: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const p = await prisma.curvePool.findUnique({ where: { saleId: input.saleId }, include: { sale: { include: { token: { include: { project: true } } } } } });
+    if (!p || p.variant !== 'merkle') return { ok: false, error: 'no merkle pool' };
+    if (!(await isProjectOwner(p.sale.token.project.id, input.identityPubkey))) return { ok: false, error: 'not the project owner' };
+    const already = await prisma.order.findFirst({ where: { saleId: input.saleId, kind: 'curve_graduation_mint', receiveAddress: input.ownerPkh } });
+    if (already) return { ok: false, error: 'this holder has already been delivered' };
+    await prisma.order.create({
+      data: {
+        saleId: input.saleId, buyerIdentity: input.identityPubkey, receiveAddress: input.ownerPkh,
+        kind: 'curve_graduation_mint', tokens: BigInt(Math.floor(input.amount)), satsPaid: BigInt(0),
+        state: 'settled', paymentTxid: input.txid, txid: input.txid,
+      },
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}

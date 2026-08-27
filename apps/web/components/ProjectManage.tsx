@@ -8,6 +8,7 @@ import { useWallet } from './WalletProvider';
 import { updateProjectMeta, updateSaleSchedule, deleteProject, updateSaleEscrow } from '../lib/actions';
 import { StasPoolManage } from './StasPoolManage';
 import { MerklePoolManage } from './MerklePoolManage';
+import { MerkleGraduationMint } from './MerkleGraduationMint';
 import { getPledgesForAssembly, markAssemblyBroadcast } from '../lib/escrow-actions';
 import { getBatchForSale, markOrdersSettled } from '../lib/order-actions';
 import { broadcastRawTx, resolveCurrentPool, getOutputInfo, getSourceBeef } from '../lib/settle-actions';
@@ -578,8 +579,21 @@ export function ProjectManage({ p }: { p: ManageVM }) {
             {p.sale?.type === 'bonding_curve' && p.sale.id && (
               <div className="mt-6 flex flex-col gap-4">
                 {p.sale.curvePool?.variant === 'merkle' ? (
-                  // Trustless variant (ADR-030): deploy once, then nothing is required of the owner.
-                  <MerklePoolManage saleId={p.sale.id} ticker={p.token?.ticker ?? ''} />
+                  // Trustless variant (ADR-030): deploy once, then nothing is required of the owner
+                  // UNTIL graduation — at which point holders must be minted their tokens, which is
+                  // the one step the covenant cannot enforce.
+                  <>
+                    <MerklePoolManage saleId={p.sale.id} ticker={p.token?.ticker ?? ''} />
+                    <MerkleGraduationMint
+                      saleId={p.sale.id}
+                      slug={p.slug}
+                      ticker={p.token?.ticker ?? ''}
+                      name={p.name}
+                      description={p.description}
+                      logoUrl={p.logoUrl}
+                      website={p.website}
+                    />
+                  </>
                 ) : p.sale.curvePool?.variant === 'stas' ? (
                   // Wallet-STAS variant (ADR-028): deploy + mint + live state in one control.
                   <StasPoolManage
