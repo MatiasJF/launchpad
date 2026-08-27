@@ -136,3 +136,40 @@ grounds that a pre-graduation holding is a ledger entry and not wallet STAS. Tru
 graduation, wrong after it — a binary hide where the answer was conditional. There is now a
 dedicated card that looks up by pkh and, before the project mints, says so plainly instead of
 reporting "no settled orders" to someone owed 60 tokens.
+
+
+## Two identities for one user is a bug generator (2026-08-27, ADR-030)
+
+Graduated tokens were delivered correctly on chain (`19b51082`, a 1,439-byte STAS output at the
+holder's pkh) and never appeared in the wallet's assets. The user asked the right question: *"might
+it be that it was sent to my wallet address but not to my wallet's STAS address?"* — and that was
+exactly it.
+
+The trustless curve had given every user **two** derived keys per sale:
+
+| purpose | derivation |
+|---|---|
+| ledger holder identity (signs sells) | `counterparty: 'anyone', forSelf: true` |
+| STAS token address (everywhere else in the app) | `counterparty: 'self'` |
+
+Different derivations, different pubkeys, different addresses. The graduation mint delivered to the
+LEDGER key, because that is who the ledger says is owed — which conflated **who is owed** with
+**where their tokens should land**. The tokens sat in an address the wallet controlled but did not
+surface.
+
+The `'anyone' + forSelf` choice was inherited from `LedgerTradeCard`, where it was picked only to
+make `getPublicKey` and `createSignature` agree for the covenant's `checkSig`. It was never a
+deliberate decision to give holders a second identity; it just propagated.
+
+**Fixed by unifying on `'self'`** — the derivation the rest of the app already uses — so a ledger
+balance and a token balance live under one key. `MerkleClaimTokens` still derives the legacy key so
+tokens already delivered there can be swept to the right address, and says so in the UI rather than
+silently doing an extra transaction.
+
+> When a key is chosen to satisfy a *signing* constraint, check what else that key becomes the
+> identity for. Here it silently became the delivery address, and the failure surfaced three phases
+> later as "my tokens aren't showing".
+
+**Still to verify:** the covenant sell signature under `'self'`. The Option B STAS transfer already
+pairs `getPublicKey`/`createSignature` this way, so it should hold — but it is a money-critical path
+and has not yet been driven on mainnet with the new derivation.

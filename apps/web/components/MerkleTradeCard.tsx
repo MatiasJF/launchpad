@@ -63,8 +63,15 @@ export function MerkleTradeCard({ s }: { s: SaleCardVM }) {
   /**
    * The holder's ledger identity for THIS pool: a per-sale derived key, not the wallet's identity
    * key. `getPublicKey` and `createSignature` must use the SAME derivation or the covenant's
-   * checkSig fails — counterparty 'anyone' + forSelf is the combination proven on mainnet
-   * (packages/bsv settle/twoTx/p2pkhInput.ts), and it is what LedgerTradeCard uses too.
+   * checkSig fails.
+   *
+   * `counterparty: 'self'` ON PURPOSE, and it is the SAME derivation the rest of the app uses to
+   * hold STAS. An earlier version used `'anyone' + forSelf` (copied from LedgerTradeCard, where it
+   * was chosen only to make signing agree), which gave every user TWO identities per sale: one the
+   * covenant ledger was keyed to, and a different one their wallet treats as their token address.
+   * Graduated tokens were then delivered to the ledger key and never appeared in the wallet's
+   * assets — they were in an address the wallet controlled but did not surface. One key removes
+   * that whole class of bug.
    */
   async function holder() {
     await connect();
@@ -72,7 +79,7 @@ export function MerkleTradeCard({ s }: { s: SaleCardVM }) {
     const { PublicKey } = await import('@bsv/sdk');
     const wallet = await getWalletClient();
     const { publicKey: identity } = await wallet.getPublicKey({ identityKey: true });
-    const derivation = { protocolID: STAS_PROTOCOL, keyID: s.slug, counterparty: 'anyone' as const, forSelf: true };
+    const derivation = { protocolID: STAS_PROTOCOL, keyID: s.slug, counterparty: 'self' as const };
     const { publicKey: ownerPubHex } = await wallet.getPublicKey(derivation as never);
     const pkh = Buffer.from(PublicKey.fromString(ownerPubHex).toHash() as number[]).toString('hex');
     setMyPkh(pkh);
