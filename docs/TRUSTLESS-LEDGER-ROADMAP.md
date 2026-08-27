@@ -158,8 +158,23 @@ burst are in tension for a curve — pick per launch (§7).**
    `resolveLedgerPool` no longer calls *any* unparseable spend a graduation: it confirms the spend
    actually pays the committed payout the full reserve, so a parser gap can't masquerade as "the
    sale completed".
-   **5b. Decentralised discovery — STILL OPEN.** A client must still be told a genesis txid from
-   somewhere; that is the last place an operator is load-bearing.
+   **5b. Decentralised discovery — ✅ THE TERMS ARE NOW ON-CHAIN.** Reading a pool needs its genesis
+   outpoint AND its immutable terms (k, supply, payoutPkh). The outpoint was on-chain; the terms
+   lived only in our database, so a client holding the txid still had to ask US — a real dependency
+   that quietly undercut "anyone can build a UI over it". The deploy transaction now carries a
+   **44-byte OP_RETURN** announcing the terms (`src/poolAnnounce.ts`,
+   `OP_FALSE OP_RETURN 'BSVLP' 'mlp1' <k> <supply> <payoutPkh> [<ticker>]`), and
+   `resolveMerklePoolFromGenesis(genesisTxid)` reads a pool from the txid ALONE.
+   **The announcement is unsigned and therefore untrusted** — anyone can write one claiming any
+   terms. It is safe because the terms are CHECKABLE: they are used to rebuild the genesis locking
+   script, which must byte-match the covenant output at that outpoint. The script commits to k,
+   supply and payoutPkh, so a lie cannot survive. Verified against the live mainnet pool
+   `38d331f7…`: true terms byte-match, while a swapped payout, an understated supply and an inflated
+   k are each rejected. 9 parser tests (54/54 total).
+   **Still open:** ENUMERATION — finding pools you were never told about needs an indexer or overlay,
+   because nothing lets you scan the chain for a prefix unaided. The format is public and
+   self-contained so anyone can run that index, which is the difference between a convenience and a
+   dependency, but we have not built one.
 6. **Prove it** — a mainnet round-trip **buy → sell → graduate**, driven by the open client,
    **chain-only (no operator, no DB)**, reconstructing the ledger from chain each step. This is
    the demo that settles the trustless claim.

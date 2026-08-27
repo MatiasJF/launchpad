@@ -53,9 +53,18 @@ export function MerklePoolManage({ saleId, ticker }: { saleId: string; ticker: s
       const created = await createMerklePool({ saleId, identityPubkey: identity, k: String(k), supply: String(supply), seedReserveSats: seed });
       if (!created.ok || !created.scriptHex) throw new Error(created.error ?? 'create failed');
 
+      // Output 0 is the covenant. Output 1 announces the pool's terms in an OP_RETURN so the
+      // genesis transaction is self-describing — a reader needs the txid and nothing else, not our
+      // database. randomizeOutputs stays false because the covenant MUST be output 0.
+      const outputs: Record<string, unknown>[] = [
+        { lockingScript: created.scriptHex, satoshis: seed, outputDescription: 'merkle ledger covenant' },
+      ];
+      if (created.announceScriptHex) {
+        outputs.push({ lockingScript: created.announceScriptHex, satoshis: 0, outputDescription: 'pool terms (discovery)' });
+      }
       const res = (await wallet.createAction({
         description: 'deploy trustless curve pool',
-        outputs: [{ lockingScript: created.scriptHex, satoshis: seed, outputDescription: 'merkle ledger covenant' }],
+        outputs,
         options: { randomizeOutputs: false, acceptDelayedBroadcast: false },
       } as never)) as { txid: string };
 

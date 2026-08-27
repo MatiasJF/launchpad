@@ -17,6 +17,7 @@
 import { poolScriptForHistory, poolScriptForSlotOps, PoolTerms } from './merkleLedgerState';
 import { parseMerkleOp, MerkleOp } from '../src/merkleLedgerReconstruct';
 import { replayMerkleSlots, MerkleLedger } from '../src/merkleLedger';
+import { findAnnouncement } from '../src/poolAnnounce';
 
 const WOC = 'https://api.whatsonchain.com/v1/bsv/main';
 
@@ -170,4 +171,52 @@ export async function resolveMerkleLedgerPool(
     reserveSats = satsOf(successor.value);
   }
   return { error: `pool chain exceeded ${maxHops} hops` };
+}
+
+/**
+ * Resolve a pool from its GENESIS TXID ALONE — no terms supplied, no database.
+ *
+ * The deploy transaction carries an OP_RETURN announcing (k, supply, payoutPkh). That announcement
+ * is unsigned and anyone could write one, so it is treated as a HINT and then CHECKED: the terms
+ * are used to rebuild the genesis locking script, and that script must byte-match the covenant
+ * output actually sitting at the outpoint. The script commits to every one of those values, so a
+ * false announcement cannot survive the comparison — which is what lets an untrusted hint stand in
+ * for our database without weakening anything.
+ *
+ * Pools deployed before announcements existed simply have none; callers should fall back to
+ * `resolveMerkleLedgerPool` with terms from wherever they know them.
+ */
+export async function resolveMerklePoolFromGenesis(
+  genesisTxid: string,
+  opts: { genesisVout?: number } = {},
+): Promise<(ResolvedMerklePool & { terms: PoolTerms; ticker?: string }) | { error: string }> {
+  const genesisVout = opts.genesisVout ?? 0;
+  if (!/^[0-9a-fA-F]{64}$/.test(genesisTxid)) return { error: 'invalid genesis txid' };
+
+  const tx = await fetchTx(genesisTxid);
+  if (!tx) return { error: `could not fetch genesis tx ${genesisTxid.slice(0, 10)}…` };
+
+  const announcement = findAnnouncement(
+    (tx.vout ?? []).map((o) => ({ scriptHex: (o.scriptPubKey?.hex ?? '').toLowerCase() })),
+  );
+  if (!announcement) {
+    return { error: 'this transaction carries no pool announcement — supply the terms explicitly (pools deployed before announcements have none)' };
+  }
+
+  const terms: PoolTerms = {
+    k: BigInt(announcement.k),
+    supply: BigInt(announcement.supply),
+    payoutPkh: announcement.payoutPkh,
+  };
+
+  // The announcement is a claim. This is the check: the covenant script commits to k, supply and
+  // payoutPkh, so if the announced terms are a lie the rebuilt script will not match the chain.
+  const onChain = (tx.vout ?? []).find((o) => o.n === genesisVout)?.scriptPubKey?.hex?.toLowerCase() ?? '';
+  if (!onChain || onChain !== poolScriptForHistory([], terms).toLowerCase()) {
+    return { error: 'the announced terms do not rebuild the genesis script — the announcement is false or the outpoint is wrong' };
+  }
+
+  const resolved = await resolveMerkleLedgerPool(genesisTxid, terms, { genesisVout });
+  if ('error' in resolved) return resolved;
+  return { ...resolved, terms, ticker: announcement.ticker };
 }

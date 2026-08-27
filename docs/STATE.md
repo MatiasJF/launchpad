@@ -1,6 +1,30 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: full trustless lifecycle proven on mainnet through the UI, twice; one key per holder_
+_Last updated: 2026-08-27 — by: pool terms published on-chain; a genesis txid is now sufficient to read a pool_
+
+## Discovery (2026-08-27) — the terms are on-chain, so the database is no longer needed at all
+
+The last place we were load-bearing. Reading a pool needs its genesis outpoint AND its immutable
+terms; the outpoint was on-chain but the terms lived only in our database, so a client with the
+txid still had to ask us, and a holder whose project vanished could not reconstruct what they were
+owed.
+
+- **`packages/curve/src/poolAnnounce.ts`** — a **44-byte** OP_RETURN carrying the terms:
+  `OP_FALSE OP_RETURN 'BSVLP' 'mlp1' <k> <supply> <payoutPkh> [<ticker>]`. Provably unspendable, so
+  it costs only its bytes. Emitted as output 1 of the deploy (the covenant MUST stay output 0).
+- **`resolveMerklePoolFromGenesis(genesisTxid)`** reads a pool from the txid ALONE — no terms, no DB.
+- **It is unsigned, and that is fine.** Anyone can write an announcement claiming any terms. It is
+  safe because the terms are CHECKABLE: they rebuild the genesis locking script, which must
+  byte-match the covenant output at that outpoint. The script commits to k, supply and payoutPkh,
+  so a lie cannot survive. **Verified against the live mainnet pool `38d331f7…`** — true terms
+  byte-match; a payout swapped to an attacker, an understated supply and an inflated k are each
+  rejected. A hint the chain itself refuses to let you lie about.
+- Pools deployed before this carry no announcement and get a clear error telling the caller to
+  supply terms, rather than a crash.
+- **Still open: ENUMERATION.** Finding pools you were never told about needs an indexer or overlay —
+  nothing lets you scan the chain for a prefix unaided. The format is public and self-contained so
+  anyone can run one, which is the difference between a convenience and a dependency, but we have
+  not built it.
 
 ## Trustless curve — COMPLETE END-TO-END ON MAINNET (2026-08-27)
 

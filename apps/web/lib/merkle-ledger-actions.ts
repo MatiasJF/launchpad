@@ -48,7 +48,7 @@ const sellRefund = (k: bigint, sold: bigint, amount: bigint) => {
 /** Owner-gated: register the pool and hand back the genesis script for the owner's wallet to deploy. */
 export async function createMerklePool(input: {
   saleId: string; identityPubkey: string; k: string; supply: string; seedReserveSats: number;
-}): Promise<{ ok: boolean; scriptHex?: string; error?: string }> {
+}): Promise<{ ok: boolean; scriptHex?: string; announceScriptHex?: string; error?: string }> {
   try {
     const sale = await prisma.sale.findUnique({ where: { id: input.saleId }, include: { token: { include: { project: true } } } });
     if (!sale) return { ok: false, error: 'sale not found' };
@@ -63,12 +63,20 @@ export async function createMerklePool(input: {
 
     const payoutPkh = addrToPkh(sale.token.project.payoutAddress);
     const { scriptHex } = await merkleGenesisScript({ k: input.k, supply: input.supply, payoutPkh });
+    // Publish the terms on-chain so the genesis transaction alone is enough to read this pool —
+    // without it, a client with the txid still has to ask US for k/supply/payoutPkh, which is a
+    // dependency the whole track exists to remove. Unsigned and therefore untrusted: a reader
+    // rebuilds the genesis script from these terms and requires a byte-match before believing them.
+    const { encodePoolAnnouncement } = await import('@launchpad/curve/announce');
+    const announceScriptHex = encodePoolAnnouncement({
+      k: input.k, supply: input.supply, payoutPkh, ticker: sale.token.ticker,
+    });
     await prisma.curvePool.upsert({
       where: { saleId: input.saleId },
       create: { saleId: input.saleId, variant: 'merkle', k, supply, seedReserveSats: BigInt(Math.floor(input.seedReserveSats)), payoutPkh, status: 'draft' },
       update: { variant: 'merkle', k, supply, seedReserveSats: BigInt(Math.floor(input.seedReserveSats)), payoutPkh },
     });
-    return { ok: true, scriptHex };
+    return { ok: true, scriptHex, announceScriptHex };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
