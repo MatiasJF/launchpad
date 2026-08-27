@@ -12,6 +12,7 @@ import { MerkleTradeCard } from '../../../components/MerkleTradeCard';
 import { StasTradeCard } from '../../../components/StasTradeCard';
 import { ClaimTokens } from '../../../components/ClaimTokens';
 import { MerkleClaimTokens } from '../../../components/MerkleClaimTokens';
+import { SettlementRecord } from '../../../components/SettlementRecord';
 import { Markdown } from '../../../components/Markdown';
 import { SpvExplainer } from '../../../components/SpvExplainer';
 import { StatusPill, Tabs } from '../../../components/ui';
@@ -118,7 +119,11 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         </div>
 
                         {/* Buy card (moved from sidebar) */}
-                        <div>
+                        <div className="flex flex-col gap-3">
+                          {/* Shown BEFORE the buy control on purpose: the graduation mint is the one
+                              step the covenant cannot enforce, so a project's history of honouring it
+                              is what a buyer should weigh, and it is useless after they have bought. */}
+                          {s.type === 'bonding_curve' && s.curve?.variant === 'merkle' && <SettlementRecord slug={s.slug} />}
                           {s.type === 'bonding_curve' ? (
                             s.curve && s.curve.status === 'live' ? (
                               s.curve.variant === 'stas' ? <StasTradeCard s={s} /> : s.curve.variant === 'merkle' ? <MerkleTradeCard s={s} /> : s.curve.variant === 'ledger' ? <LedgerTradeCard s={s} /> : <CurveBuyCard s={s} />

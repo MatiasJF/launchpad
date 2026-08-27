@@ -173,3 +173,25 @@ silently doing an extra transaction.
 **Still to verify:** the covenant sell signature under `'self'`. The Option B STAS transfer already
 pairs `getPublicKey`/`createSignature` this way, so it should hold — but it is a money-critical path
 and has not yet been driven on mainnet with the new derivation.
+
+
+## A stale working tree can silently revert merged work (2026-08-27)
+
+Right after merging two PRs and pulling `main`, the working tree was **older than both branches** —
+`stas-actions.ts` was 847 lines against main's 929, missing `sweepPendingStasDeliveries` entirely
+and re-introducing a graduated-status bug that had already been fixed. Twenty-plus files I had not
+touched showed as modified, all of them reversions.
+
+It surfaced only because a build failed on a *different* feature branch with
+`has no exported member named 'sweepPendingStasDeliveries'` — an error about code that was
+demonstrably committed on `main`. Had that branch not touched the web app, the next commit would
+have quietly reverted a week of merged work.
+
+> **When `git status` shows files you did not touch, stop and diff them against the branch before
+> committing anything.** `git diff main -- <file>` and a line count told the whole story in seconds.
+> The tell was the direction: the tree was *removing* code rather than adding it.
+
+Recovery was: copy the genuinely-new untracked files aside, `git reset --hard main` (untracked files
+survive it), then re-apply the intended edits onto the correct versions. Re-applying by hand rather
+than resolving a diff mattered — the earlier edits had been made against stale files, so "keeping"
+them would have preserved the reversion.
