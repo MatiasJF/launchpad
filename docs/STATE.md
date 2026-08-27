@@ -1,6 +1,31 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: ADR-030 wired into the app — the DB is no longer the ledger (33/33 on mainnet)_
+_Last updated: 2026-08-27 — by: ADR-030 UI shipped — the trustless curve is now deployable and tradable from the app_
+
+## ADR-030 UI (2026-08-27) — the trustless curve is visible and usable
+
+- **`MerklePoolManage.tsx`** (owner) — ONE signed step, and then the owner is done forever: no
+  inventory to mint, no operator key to keep online. States plainly that the payout address is fixed
+  at deploy and cannot be changed afterwards, including by the owner.
+- **`MerkleTradeCard.tsx`** (buyer/holder) — buy (keyless), sell (holder-signed), and a graduate
+  action that is offered to ANYONE once the curve sells out, because the covenant permits it.
+  Quotes are computed exactly as the covenant computes them, so the price shown is the price paid.
+  Warns below the 546-sat dust floor before the action can fail, and translates a lost sequencing
+  race into "someone else traded first, so the price moved" rather than a raw node error.
+- **Reused `buildLedgerBuyTx`/`SellTx`/`GraduateTx`** — those builders turned out to be
+  covenant-agnostic (they take a server-built unlock and assemble), so ADR-030 needed no new
+  transaction builder at all.
+- **Signing follows the PROVEN pattern**, not a new one: a per-sale derived holder key
+  (`protocolID` STAS, `keyID` slug, counterparty `'anyone'`, `forSelf: true`) used for BOTH
+  `getPublicKey` and `createSignature` — the combination already proven on mainnet in
+  `settle/twoTx/p2pkhInput.ts`. Using the identity key instead would fail the covenant's checkSig.
+- **The manage page now offers an EXPLICIT, labelled choice** between the two curves, showing one
+  card at a time and naming the real trade-off (wallet-portable but operator-settled, versus
+  unstoppable but ledger-entries-until-graduation). An earlier version offered two look-alike cards
+  side by side and a deploy landed on the wrong one; a permanent choice deserves a deliberate UI.
+- Sale page renders `variant === 'merkle'` → `MerkleTradeCard`.
+
+Verified: web build clean, 45/45 unit, and the mainnet app e2e still 33/33 through the real actions.
 
 ## ADR-030 app wiring (2026-08-27) — the database is no longer the ledger ✅ 33/33 ON MAINNET
 

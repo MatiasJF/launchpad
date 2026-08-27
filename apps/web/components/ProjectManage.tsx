@@ -7,6 +7,7 @@ import { SettleOrderButton } from './SettleOrderButton';
 import { useWallet } from './WalletProvider';
 import { updateProjectMeta, updateSaleSchedule, deleteProject, updateSaleEscrow } from '../lib/actions';
 import { StasPoolManage } from './StasPoolManage';
+import { MerklePoolManage } from './MerklePoolManage';
 import { getPledgesForAssembly, markAssemblyBroadcast } from '../lib/escrow-actions';
 import { getBatchForSale, markOrdersSettled } from '../lib/order-actions';
 import { broadcastRawTx, resolveCurrentPool, getOutputInfo, getSourceBeef } from '../lib/settle-actions';
@@ -141,6 +142,10 @@ export function ProjectManage({ p }: { p: ManageVM }) {
     pledgeUnitSats: p.sale?.pledgeUnitSats ?? 0,
   });
   const [escState, setEscState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // Which curve to deploy. An owner picks ONCE and it is permanent, so the choice is explicit and
+  // labelled rather than two look-alike cards — an earlier version offered both side by side and a
+  // deploy landed on the wrong one.
+  const [curveKind, setCurveKind] = useState<'stas' | 'merkle'>('stas');
   const [escErr, setEscErr] = useState<string | null>(null);
   async function saveEscrow() {
     if (!identity) return;
@@ -572,8 +577,11 @@ export function ProjectManage({ p }: { p: ManageVM }) {
 
             {p.sale?.type === 'bonding_curve' && p.sale.id && (
               <div className="mt-6 flex flex-col gap-4">
-                {p.sale.curvePool?.variant === 'stas' ? (
-                  // Wallet-STAS variant (ADR-028): deploy + mint + live state all in one control.
+                {p.sale.curvePool?.variant === 'merkle' ? (
+                  // Trustless variant (ADR-030): deploy once, then nothing is required of the owner.
+                  <MerklePoolManage saleId={p.sale.id} ticker={p.token?.ticker ?? ''} />
+                ) : p.sale.curvePool?.variant === 'stas' ? (
+                  // Wallet-STAS variant (ADR-028): deploy + mint + live state in one control.
                   <StasPoolManage
                     saleId={p.sale.id}
                     slug={p.slug}
@@ -602,18 +610,50 @@ export function ProjectManage({ p }: { p: ManageVM }) {
                     )}
                   </div>
                 ) : (
-                  // No pool yet — the wallet-STAS curve (ADR-028) is THE launch variant, so it's
-                  // the only deploy option here. (The trustless ledger/linear deploy is deferred
-                  // per ADR-029 and no longer offered in the UI to avoid the wrong-card mistake.)
-                  <StasPoolManage
-                    saleId={p.sale.id}
-                    slug={p.slug}
-                    ticker={p.token?.ticker ?? ''}
-                    name={p.name}
-                    description={p.description}
-                    logoUrl={p.logoUrl}
-                    website={p.website}
-                  />
+                  <>
+                    {/* No pool yet. The two curves differ in WHO can stop a trade, which is a
+                        permanent choice, so state the trade-off plainly and show one card at a time. */}
+                    <div className="flex flex-col gap-3 rounded-md border border-line bg-elevated/40 p-4">
+                      <p className="text-sm font-semibold text-fg">Choose the curve — this is permanent</p>
+                      <div className="flex flex-col gap-2">
+                        <label className="flex cursor-pointer items-start gap-2 text-xs">
+                          <input type="radio" name="curveKind" className="mt-0.5" checked={curveKind === 'stas'} onChange={() => setCurveKind('stas')} />
+                          <span>
+                            <span className="font-semibold text-fg">Wallet-held STAS (operator-settled)</span>
+                            <span className="block text-muted">
+                              Buyers hold real STAS tokens in their own wallet from the first buy, and can move them anywhere.
+                              We settle each trade, so we can stall or censor one — we can never mis-price or divert it.
+                            </span>
+                          </span>
+                        </label>
+                        <label className="flex cursor-pointer items-start gap-2 text-xs">
+                          <input type="radio" name="curveKind" className="mt-0.5" checked={curveKind === 'merkle'} onChange={() => setCurveKind('merkle')} />
+                          <span>
+                            <span className="font-semibold text-fg">Trustless curve (no operator)</span>
+                            <span className="block text-muted">
+                              Balances live inside the covenant, so nobody — including us — can stop, censor or reprice a
+                              trade, and anyone can release the reserve once it sells out. The cost: holdings are ledger
+                              entries until the curve graduates, so they are not wallet-portable before then.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {curveKind === 'merkle' ? (
+                      <MerklePoolManage saleId={p.sale.id} ticker={p.token?.ticker ?? ''} />
+                    ) : (
+                      <StasPoolManage
+                        saleId={p.sale.id}
+                        slug={p.slug}
+                        ticker={p.token?.ticker ?? ''}
+                        name={p.name}
+                        description={p.description}
+                        logoUrl={p.logoUrl}
+                        website={p.website}
+                      />
+                    )}
+                  </>
                 )}
               </div>
             )}
