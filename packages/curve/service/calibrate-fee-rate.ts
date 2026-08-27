@@ -26,10 +26,20 @@ import { Transaction, P2PKH, PrivateKey, Script } from '@bsv/sdk';
 
 const WOC = 'https://api.whatsonchain.com/v1/bsv/main';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const STATE_FILE = path.resolve(__dirname, '../../../.fee-calibration.json');
 
-/** The size a real ADR-030 pool spend actually is, measured on mainnet. */
-const POOL_TX_BYTES = 24_700;
+
+/**
+ * Transaction size to probe at, in bytes. Defaults to an ADR-030 pool spend (~24.7KB, measured),
+ * but is overridable with `--size N` because **the answer depends on it**: a node's absolute
+ * minimum fee bites harder on a small transaction than a large one, so a rate proven mineable at
+ * 24.7KB is NOT automatically mineable at Option B's ~7.4KB. Probe at the size you will actually
+ * broadcast.
+ */
+const sizeArg = process.argv.indexOf('--size');
+const POOL_TX_BYTES = sizeArg >= 0 ? Math.max(500, Number(process.argv[sizeArg + 1]) || 24_700) : 24_700;
+
+/** Probe state is per-size, so an Option B probe cannot clobber the ADR-030 one. */
+const STATE_FILE = path.resolve(__dirname, `../../../.fee-calibration-${POOL_TX_BYTES}.json`);
 /** Descending: the first that is both accepted AND mined is the answer. */
 const RATES = [0.15, 0.10, 0.05, 0.025, 0.01, 0.005, 0.001];
 

@@ -23,3 +23,6 @@ out/
 *.sqlite
 *.sqlite-journal
 server-wallet.sqlite*
+
+# fee-calibration probe state (per transaction size)
+.fee-calibration*.json
