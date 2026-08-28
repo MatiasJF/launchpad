@@ -219,3 +219,28 @@ actually decided it was six REAL covenant spends from earlier mainnet runs — a
 at 0.0122, graduations at 0.0163 — all sitting on 51-64 confirmations. Purpose-built probes tell you
 what the network accepts; your own transaction history tells you what it does with the shape you
 actually broadcast.
+
+## A mainnet verification run that only printed its txids (2026-08-28)
+
+Three Option B transactions were still unconfirmed hours after a round-trip, so I flagged them for
+follow-up. Coming back to check them the next day, **I could not find the txids anywhere.** Not in
+`prisma/dev.db` (the run was a `packages/curve/service` script, not the app, so no `Order` row was
+written), not in a log, not in any file the run touched. They existed only as stdout, and stdout only
+survived because the session transcript happened to still be on disk. I recovered them by grepping
+`~/.claude/projects/.../<session>.jsonl`.
+
+The follow-up was worth doing — all three had confirmed in block 964189, which upgraded the fee claim
+from "the mempool accepted it" to "a miner mined it at 0.0101 sat/B". That is the difference between a
+plausible rate and a proven one, and it nearly went unverified because the evidence was ephemeral.
+
+> A mainnet run spends real money and produces the only proof that it worked. If the txid lives only in
+> stdout, the proof expires with the scrollback.
+
+Two things follow:
+
+- **Verification scripts should append their txids to a file**, not just print them. A one-line JSONL
+  record per broadcast (`{txid, purpose, size, feeSats, broadcastAt}`) is enough, and it costs nothing.
+- **Recovering them exposed two WhatsOnChain traps**, both now in `~/.claude/bsv-field-notes.md`
+  because they are not ours: `/tx/hash/{txid}` returns `vin[].value` as `0`, so a fee computed from the
+  summary comes out negative; and `/address/{addr}/history` silently caps at 100 entries, so a
+  transaction that is genuinely there reads as absent.
