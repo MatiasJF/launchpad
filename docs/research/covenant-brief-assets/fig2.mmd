@@ -1,0 +1,15 @@
+graph TD
+    A["BUY<br/>keyless"] --> A1["0xc3 ANYONECANPAY SINGLE<br/>pins output 0 only"]
+    B["SELL<br/>holder signature"] --> B1["0xc1 ANYONECANPAY ALL<br/>pins exactly 2 outputs"]
+    C["GRADUATE<br/>no signature"] --> C1["0xc3 ANYONECANPAY SINGLE<br/>pins output 0 only"]
+
+    A1 --> A2["successor pool<br/>+ optional change"]
+    B1 --> B2["successor pool<br/>+ payout to seller"]
+    C1 --> C2["whole reserve<br/>to fixed payout"]
+
+    style A fill:#EFF0F7,stroke:#4A4A68
+    style B fill:#EFF0F7,stroke:#4A4A68
+    style C fill:#EFF0F7,stroke:#4A4A68
+    style A2 fill:#D6F5EE,stroke:#0FA37F
+    style B2 fill:#D6F5EE,stroke:#0FA37F
+    style C2 fill:#D6F5EE,stroke:#0FA37F

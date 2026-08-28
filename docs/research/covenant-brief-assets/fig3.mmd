@@ -1,0 +1,9 @@
+graph TD
+    A["Spender supplies:<br/>owner, balance, slot index, proof"] --> B["Covenant rebuilds the leaf<br/>and folds 16 siblings to a root"]
+    B --> C{"Matches the root<br/>stored in the pool?"}
+    C -->|"no"| D["REJECT<br/>a forged balance cannot survive"]
+    C -->|"yes"| E["Rewrite that leaf, recompute root,<br/>re-lock successor (hashOutputs pinned)"]
+
+    style C fill:#FFF4D6,stroke:#C99A00,stroke-width:2px
+    style D fill:#FFE0E0,stroke:#C0392B,stroke-width:2px
+    style E fill:#D6F5EE,stroke:#0FA37F,stroke-width:2px
