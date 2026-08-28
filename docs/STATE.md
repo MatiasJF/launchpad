@@ -1,6 +1,26 @@
 # Project State
 
-_Last updated: 2026-08-27 — by: settlement record shipped (ADR-031); enforced delivery specced as ADR-032 (proposed)_
+_Last updated: 2026-08-28 — by: external review brief delivered; ADR-032 waits on the reviewer_
+
+## Next: the external audit is OUT, and ADR-032 waits on it (2026-08-28)
+
+**`docs/research/BSVA-Covenant-Review-Brief.docx`** — 8 pages, BSVA-branded, three diagrams. It asks
+one question (can anyone take satoshis they are not owed, or lock satoshis so nobody can), scopes out
+the app / code style / database so no reviewer hours go where nothing can move money, and hands over
+8 invariants and 7 ranked drain vectors with mainnet txids to check the bytes against. It states our
+untested gaps plainly (no fuzzing, no formal argument for the fold equivalence, depth boundary and
+8-byte balance ceiling unexercised) and the one accepted weakness. Regenerates in two commands from
+`docs/research/covenant-brief-assets/`.
+
+**ADR-032 does NOT block it.** The ADR claimed the bond "must land BEFORE an external audit"; that was
+wrong and is corrected in place. `graduate()` is 4 lines of 209, and every drain vector lives in the
+buy/sell/Merkle machinery the bond does not touch. So the audit runs against the covenant as it stands,
+and the reviewer's view on whether the bond is worth building becomes an input to ADR-032 — the right
+question to spend an outside expert on, since the double-dip problem has no airtight fix of ours.
+
+**Fee calibration confirmed on chain.** The Option B round-trip transactions that were pending are now
+at 105 confirmations, all in block 964189 — the covenant refund at **76 sats / 0.0101 sat/B**. The new
+rate is proven by a miner, not merely accepted by a mempool. PR #4.
 
 ## The unenforced step — disclosure done, enforcement specced (2026-08-27)
 
