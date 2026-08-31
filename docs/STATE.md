@@ -1,8 +1,126 @@
 # Project State
 
-_Last updated: 2026-08-28 — by: external review brief delivered; ADR-032 waits on the reviewer_
+_Last updated: 2026-08-31 — by: the escrow presale is proven on mainnet; ADR-033/034/035 fixed what the runs exposed_
 
-## Next: the external audit is OUT, and ADR-032 waits on it (2026-08-28)
+## Next: the crowdfunding path is PROVEN on mainnet (2026-08-31)
+
+**The escrow presale (ADR-025) ran end to end on mainnet for the first time** — a month after it was
+written. `pnpm --filter @launchpad/web e2e:presale` drives the real server actions, the real DB and the
+real chain: configure → mint → two pledges → **a contributor withdraws** → a replacement pledge takes
+the freed slot → assemble → verify the bytes a miner saw → deliver STAS. Ten steps, all green.
+
+**Measured, not computed** (`docs/mainnet-runs/presale-2026-08-31T09-59-00-987Z.jsonl`):
+
+| tx | size | result |
+|---|---|---|
+| assurance `83689bdd…` | 486 B | 3 inputs → **one** output of 2,000 sats to the payout address · 40 sats · **0.0823 sat/B** |
+| withdraw `12f26446…` | 191 B | **970 sats reclaimed** by the contributor, no operator involvement |
+| delivery `170cc017…` | 6,426 B | two STAS outputs of **10 tokens each** |
+
+The spent-checks are the proof that matters: pledges A and C were consumed by the assurance tx
+(`vin 0`, `vin 1`), while the withdrawn pledge B was consumed by **its own withdrawal** — correctly
+excluded from assembly.
+
+**What the run was worth: it exposed two false claims before a real contributor ever hit them.**
+
+1. **A pledge signature is a STANDING authorisation.** `ANYONECANPAY|ALL` binds the contributor's input
+   and the fixed output — not the other contributors, and not a deadline. One 1,000-sat pledge plus an
+   unrelated 2,100-sat input paying 3,000 to the project *verifies*. "Your sats cannot move unless the
+   soft cap is met" was wrong; the real guarantee is that they can only ever go to **the project's
+   payout address**. Destination, not threshold.
+2. **The withdrawal we instructed contributors to perform was impossible.** The pledge UTXO was created
+   with no basket → `basketId: undefined, change: false` → not enumerable by `listOutputs`, never
+   selected, and unsignable as a caller-supplied input. `ContributeCard` said *"To withdraw, just spend
+   that coin"*, which no contributor could do.
+
+Since spending the coin is the **only** way to revoke a standing authorisation, the one control that
+made the design safe was the one that did not work. **ADR-033** fixes it: a dedicated
+`launchpad-pledge` basket (never `default`, which the wallet spends as change), a real `withdrawPledge`
++ Withdraw button, and `reconcileWithdrawnPledges` so a reclaimed pledge frees its slot instead of
+deadlocking the presale.
+
+**Five more defects closed in the same pass**, each found by adversarial review and each verified:
+`recordPledge` was unauthenticated and could not tell a *nonexistent* outpoint from an unspent one (WoC
+404s for both), so phantom pledges could brick a presale for the cost of HTTP requests — it now
+validates on-chain and **verifies the 0xC1 signature**; `Pledge` gains `@@unique([txid, vout])`;
+`markAssemblyBroadcast` is idempotent (a replay made 4 orders for 2 pledges); `updateSaleEscrow` freezes
+terms once anyone has pledged and rejects a pledge unit that is not a multiple of the price; the fee
+overhead constant goes 40 → 44 B.
+
+**The deadline is now a server rule (ADR-034).** It had been enforced only in `saleState` (the UI) and on
+instant buys — `recordPledge` checked `status === 'live'` and nothing more, and assembly had no timing gate
+at all, so a raise that closed months ago was still assemblable by anyone holding the rows. Pledges are now
+accepted only within `[startsAt, endsAt)`; assembly stays open for a 24h settlement grace (filling to the
+last moment then settling is the *normal* shape of an assurance contract); past that, pledges `expire` —
+and expired pledges stay **withdrawable**, since a failed raise is when the reclaim matters most.
+
+The card no longer claims what ADR-033 disproved. It reads "non-custodial — your sats stay in your own
+wallet", then the real distinction: a pledge fixes **where** the sats can go, not **when** — the signature
+stands until you withdraw, and the deadline is enforced by this app, **not by the blockchain**. Chain-enforced
+expiry needs `nLockTime` from the pushed preimage, which is the A2 accumulator's job (Phase 2).
+
+**Confirmed by miners, not just mempools.** The first run's transactions are in blocks: withdrawal `12f26446…`
+in **964689**, assurance `83689bdd…` and delivery `170cc017…` in **964690**.
+
+**Multi-party aggregation is proven (2026-08-31).** Earlier runs pledged twice from one wallet, which
+never tests the thing an assurance contract exists to do. The harness now runs the operator key as a
+genuinely separate second contributor: two pledges signed by **two distinct pubkeys** composed into one
+assurance tx (`1c95e51d…`, 488 B, 3 inputs → one 2,000-sat output), and delivery `da8b0d47…` paid
+**10 tokens to each of the two different contributor addresses** (`121c7ea8…`, `84f96c45…`) with 20 as
+change. The harness now fails if the assembled set spans fewer than two keys.
+
+That run also caught a fail-closed bug in a shared helper: `getOutputInfo` retried its script lookup but
+not its value lookup, so one rate-limited WoC reply returned `null` — which every caller reads as "that
+output does not exist" — and delivery refused to build against a healthy vault. Fixed; see LESSONS.md.
+
+**The wallet test came back, and it failed in the more interesting direction (ADR-035).** Tested against
+real BSV Desktop: **no `launchpad-pledge` basket is shown** (the funding tx appears in history under its
+description, but custom baskets are not surfaced), and the withdrawal — which the app reported as done —
+paid its 970 sats to a **STAS-protocol key used as a payment address**, where they sit unspent and
+invisible. The owner's diagnosis was exactly right: *"wallet dont do magic … it needs to internalise it,
+if not it is to my wallets name but i dont know about it."*
+
+This was the same defect ADR-033 fixed on the way IN, left unfixed on the way OUT. `withdrawPledge` now
+derives its own BRC-29 self-payment destination (no caller-supplied address — that was the footgun),
+returns an atomic BEEF, and `internalizePledgeRefund` calls `internalizeAction` so the wallet actually
+adopts the coin. The card reports "in your balance" and "on-chain but not adopted" as different outcomes.
+
+**The basket is inert, and ADR-033's pledge-visibility fix did nothing** (corrected in ADR-035 after the
+owner reported a second time that no such basket exists). `createAction` does honour the tag
+(`createAction.js:327`), but the two benefits claimed for it are not real: change is only ever drawn from
+the `default` basket (`:53`, `:661`) and explicit outputs are `change: false` regardless (`:135`), so it
+protects nothing that was at risk; and nothing in the codebase reads `PLEDGE_BASKET` back — the only
+reference was a harness diagnostic against a shim whose `listOutputs` ignores its arguments, so it printed
+a meaningless count that read as a pass. The pledge appears in the wallet because the wallet **built that
+transaction**. The tag is kept as a free, correct label, but no claim rests on it. **The app, not the
+wallet, is where a contributor sees their pledges.**
+
+**Retested in BSV Desktop and it holds.** Pledge `47bd0a33…` reclaimed by `20b11ff8…`, 970 sats to
+`14xJ3cUu…` (a fresh BRC-29 payment key, not the STAS key that stranded the first attempt), and the owner
+sees **both the pledge and the withdrawal** in the wallet. The withdrawal is the one that counts: the
+wallet never built it, so its presence is `internalizeAction` adopting the coin — the pre-fix attempt left
+no wallet record at all.
+
+**Both phases of ADR-025 are now proven (2026-08-31).** The presale's second phase — instant buy above
+the soft cap — was built in July and never exercised. The harness now covers it from both sides: an
+instant buy during the pledge phase is **refused** by `reserveOrder` (not merely hidden by the UI), and
+once pledges are assembled the sale switches over and a real buy goes through — 5 tokens for 500 sats
+paid on-chain, verified server-side by `verifyPaymentToAddress` against a cost the client never supplies.
+A buy beyond the allocation is still refused (*"only 5 tokens left in this sale"*).
+
+The two order kinds settle **together**: delivery `bc05f10b…` paid 10 tokens (pledge A → client), 10
+(pledge C → operator) and 5 (top-up → operator) in one transaction, with 15 of the 40 minted as change.
+Twelve steps green.
+
+**Stranded-output recovery shipped.** `@launchpad/bsv/recover` (`recoverDerivedOutput` +
+`internalizeRecovered`) sweeps a coin the wallet can derive but never adopted — the pre-ADR-035 refunds.
+Driven from `/admin/recover`, since only the owner's wallet can sign. `signP2pkhInput` gained an optional
+`derivationOverride` so an output locked to a non-BRC-29 derivation can be spent at all.
+
+**Open:** the harness **cannot** verify internalisation (`FlatKeyWallet.internalizeAction` is a no-op
+stub), so that step needs a real wallet each time — it prints that limit rather than implying a pass.
+
+## The external audit is OUT, and ADR-032 waits on it (2026-08-28)
 
 **`docs/research/BSVA-Covenant-Review-Brief.docx`** — 8 pages, BSVA-branded, three diagrams. It asks
 one question (can anyone take satoshis they are not owed, or lock satoshis so nobody can), scopes out
@@ -1522,7 +1640,7 @@ injection), links restricted to http(s), images to https — headings, lists, li
 tables and inline images with zero XSS surface. `components/Markdown.tsx`, `.md`
 styles in globals.css. Sale-page About renders it; dashboard has a live preview.
 
-**🏗️ L2 ESCROW PRESALE — built (2026-07-29, ADR-025), live-test pending.** Trustless
+**✅ L2 ESCROW PRESALE — built 2026-07-29 (ADR-025), PROVEN ON MAINNET 2026-08-31 (see ADR-033 for what the run exposed and fixed).** Trustless
 soft-cap presale via SIGHASH_ANYONECANPAY dominant-assurance contract, non-custodial.
 Verified offline: an `0xC1` pledge signed alone still verifies after other inputs join.
 · **Engine (packages/bsv):** `createPledge` (mint exact-value UTXO + 0xC1 sign, no

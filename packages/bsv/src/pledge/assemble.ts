@@ -65,7 +65,12 @@ export async function assembleAssuranceTx(
   }
 
   // Fee: (N pledges + 1 fee input) P2PKH ins + 1 output. 0.05 sat/byte, floored.
-  const estSize = (args.pledges.length + 1) * 148 + 40;
+  // Overhead is 44 B, not 40: 4 version + 1 inCount varint + 1 outCount varint +
+  // 34 output + 4 nLockTime (measured). 148 B/input is the true worst case — real
+  // inputs run 146-148 because ECDSA sigs are 71 or 72 bytes. There is NO change
+  // output to absorb an error (every pledge signed SIGHASH_ALL over the output set),
+  // so the estimate must never come in under the truth.
+  const estSize = (args.pledges.length + 1) * 148 + 44;
   const feeSats = Math.max(40, Math.ceil(estSize * 0.05));
 
   // Project mints a fee-sized UTXO it owns (fully consumed as the tx fee — no

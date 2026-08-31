@@ -14,15 +14,29 @@
  * the contributor spending their own UTXO. NO broadcast happens here.
  */
 import type { WalletInterface } from '@bsv/sdk';
-import { Beef } from '@bsv/sdk';
+import { Transaction, Beef, PublicKey, P2PKH, PrivateKey, createNonce } from '@bsv/sdk';
 import { createTokenFundingOutput } from '../settle/twoTx/fundingOutput';
-import { BRC29_PROTOCOL_ID } from '../settle/twoTx/p2pkhInput';
+import { BRC29_PROTOCOL_ID, signP2pkhInput } from '../settle/twoTx/p2pkhInput';
 
 export * from './assemble';
 
 const ORIGINATOR = 'launchpad.pledge';
+
+/**
+ * A DEDICATED basket for pledge UTXOs — deliberately not `default`.
+ *
+ * A basketless output is stored `basketId: undefined, change: false`: `listOutputs`
+ * cannot enumerate it (it requires a basket and filters on basketId) and the wallet
+ * never selects it, so the contributor's own wallet can neither see nor spend the
+ * coin — which would make ADR-025's self-service refund untrue. `default` is equally
+ * wrong in the other direction: the wallet draws change from it, so it could spend a
+ * pledge out from under a live signature. Its own basket is the only correct answer.
+ */
+export const PLEDGE_BASKET = 'launchpad-pledge';
 /** ANYONECANPAY (0x80) | ALL (0x01) | FORKID (0x40). Never 0x81 (no-FORKID) on BSV. */
 const SIGHASH_ASSURANCE = 0xc1;
+/** ALL | FORKID — an ordinary spend of the contributor's own coin. */
+const SIGHASH_WITHDRAW = 0x41;
 
 export interface PledgeArgs {
   /** The contributor's pledge UTXO value in sats (one fixed denomination unit). */
@@ -72,6 +86,8 @@ export async function createPledge(
       satoshis: args.pledgeUnitSats,
       originator: ORIGINATOR,
       description: 'presale pledge',
+      basket: PLEDGE_BASKET,
+      labels: ['launchpad', 'presale-pledge'],
     });
   } catch (e) {
     return { ok: false, reason: `mint pledge UTXO: ${msg(e)}` };
@@ -131,6 +147,177 @@ export async function createPledge(
     };
   } catch (e) {
     return { ok: false, reason: `pledge sign: ${msg(e)}` };
+  }
+}
+
+
+export interface WithdrawArgs {
+  /** The pledge UTXO to reclaim (as returned by `createPledge`). */
+  utxo: PledgeUtxo;
+  /** Fee to burn on the reclaim. */
+  feeSats: number;
+  /**
+   * BEEF ancestry of the pledge's funding tx. Needed to hand the wallet an atomic
+   * BEEF at internalisation — without it the wallet cannot validate the output it is
+   * being asked to take custody of.
+   */
+  sourceBeef: number[];
+}
+
+export type WithdrawOutcome =
+  | {
+      ok: true;
+      rawTx: string;
+      txid: string;
+      reclaimedSats: number;
+      /** Everything `internalizePledgeRefund` needs once this tx is broadcast. */
+      refund: { atomicBeef: number[]; outputIndex: number; derivationPrefix: string; derivationSuffix: string };
+    }
+  | { ok: false; reason: string };
+
+/**
+ * Reclaim a pledge — the contributor spending their own coin, which double-spends the
+ * 0xC1 pledge and revokes it (ADR-025's refund).
+ *
+ * This exists because a pledge signature is a STANDING authorisation: ANYONECANPAY
+ * binds only this input and the fixed output, so it never expires and nothing ties it
+ * to the soft cap actually being met — anyone holding the signature can fund the
+ * difference and push the sats to the project at any time. Spending the coin is the
+ * contributor's ONLY revocation, so it has to be a real, reachable operation.
+ *
+ * The destination is derived HERE rather than supplied by the caller, and it is a
+ * BRC-29 self-payment the wallet can take custody of. Paying to any other address the
+ * contributor merely *owns* is not a refund in any sense they can use: the sats land
+ * at a key their wallet never derives, so the balance does not move and the coin is
+ * invisible until someone writes a bespoke script to find it. Reclaiming is only
+ * finished once `internalizePledgeRefund` has run.
+ *
+ * Non-custodial throughout: the contributor's wallet derives the key and signs, no
+ * operator key is involved, and the funds can go nowhere but back to that same wallet.
+ */
+export async function withdrawPledge(
+  wallet: WalletInterface,
+  chain: 'main' | 'test',
+  args: WithdrawArgs,
+): Promise<WithdrawOutcome> {
+  let bsv: any;
+  try {
+    bsv = await loadBsv();
+  } catch (e) {
+    return { ok: false, reason: `load bsv: ${msg(e)}` };
+  }
+
+  const reclaimed = args.utxo.satoshis - args.feeSats;
+  if (reclaimed <= 0) {
+    return { ok: false, reason: `fee ${args.feeSats} leaves nothing of a ${args.utxo.satoshis}-sat pledge` };
+  }
+
+  try {
+    // A fresh BRC-29 destination the wallet can internalise as an ordinary payment.
+    const derivationPrefix = await createNonce(wallet, 'self', ORIGINATOR);
+    const derivationSuffix = await createNonce(wallet, 'self', ORIGINATOR);
+    const { publicKey: refundPub } = await wallet.getPublicKey(
+      {
+        protocolID: BRC29_PROTOCOL_ID,
+        keyID: `${derivationPrefix} ${derivationSuffix}`,
+        counterparty: 'anyone',
+        forSelf: true,
+      } as any,
+      ORIGINATOR,
+    );
+    const refundAddress = PublicKey.fromString(refundPub).toAddress(chain === 'main' ? 'mainnet' : 'testnet');
+    const refundScriptHex = new P2PKH().lock(refundAddress).toHex();
+
+    const tx = new bsv.Transaction();
+    tx.from({
+      txId: args.utxo.txid,
+      outputIndex: args.utxo.vout,
+      script: args.utxo.scriptHex,
+      satoshis: args.utxo.satoshis,
+    });
+    tx.addOutput(new bsv.Transaction.Output({ script: bsv.Script.fromHex(refundScriptHex), satoshis: reclaimed }));
+    tx.inputs[0].output = new bsv.Transaction.Output({
+      script: bsv.Script.fromHex(args.utxo.scriptHex),
+      satoshis: args.utxo.satoshis,
+    });
+
+    const unlock = await signP2pkhInput({
+      wallet,
+      bsv,
+      tx,
+      inputIndex: 0,
+      derivationPrefix: args.utxo.derivationPrefix,
+      derivationSuffix: args.utxo.derivationSuffix,
+      sourceScriptHex: args.utxo.scriptHex,
+      sourceSatoshis: args.utxo.satoshis,
+      sighashType: SIGHASH_WITHDRAW,
+      originator: ORIGINATOR,
+    });
+    tx.inputs[0].setScript(bsv.Script.fromHex(unlock));
+
+    const rawTx = tx.toString();
+    const sdkTx = Transaction.fromHex(rawTx);
+    const txid = sdkTx.id('hex') as string;
+
+    let atomicBeef: number[];
+    try {
+      const beef = Beef.fromBinary(args.sourceBeef);
+      beef.mergeTransaction(sdkTx);
+      atomicBeef = beef.toBinaryAtomic(txid);
+    } catch (e) {
+      return { ok: false, reason: `refund BEEF assembly: ${msg(e)}` };
+    }
+
+    return {
+      ok: true,
+      rawTx,
+      txid,
+      reclaimedSats: reclaimed,
+      refund: { atomicBeef, outputIndex: 0, derivationPrefix, derivationSuffix },
+    };
+  } catch (e) {
+    return { ok: false, reason: `withdraw build: ${msg(e)}` };
+  }
+}
+
+/**
+ * Take custody of a broadcast refund so it becomes ordinary spendable balance.
+ *
+ * A wallet does not adopt an output just because it can derive the key: until it is
+ * internalised it is not in any basket, not in the balance, and not selectable — money
+ * at the owner's name that the owner has no way to see. Call this after broadcasting
+ * `withdrawPledge`'s tx, or the reclaim only looks finished.
+ */
+export async function internalizePledgeRefund(
+  wallet: WalletInterface,
+  refund: { atomicBeef: number[]; outputIndex: number; derivationPrefix: string; derivationSuffix: string },
+): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    const res: any = await wallet.internalizeAction(
+      {
+        tx: refund.atomicBeef,
+        description: 'presale pledge refund',
+        labels: ['launchpad', 'presale-refund'],
+        outputs: [
+          {
+            outputIndex: refund.outputIndex,
+            protocol: 'wallet payment',
+            paymentRemittance: {
+              // BRC-29 with counterparty 'anyone' — the well-known key, matching
+              // how the destination above was derived.
+              senderIdentityKey: new PrivateKey(1).toPublicKey().toString(),
+              derivationPrefix: refund.derivationPrefix,
+              derivationSuffix: refund.derivationSuffix,
+            },
+          },
+        ],
+      } as any,
+      ORIGINATOR,
+    );
+    if (res?.accepted === false) return { ok: false, reason: 'the wallet declined the refund' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: `internalize refund: ${msg(e)}` };
   }
 }
 
