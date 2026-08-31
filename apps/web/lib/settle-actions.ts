@@ -45,16 +45,28 @@ export async function getOutputInfo(
 ): Promise<{ scriptHex: string; satoshis: number } | null> {
   const scriptHex = await getOutputScriptHex(txid, vout);
   if (!scriptHex) return null;
-  try {
-    const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const tx = (await res.json()) as { vout?: { value?: number }[] };
-    const value = tx.vout?.[vout]?.value;
-    if (typeof value !== 'number') return null;
-    return { scriptHex, satoshis: Math.round(value * 1e8) };
-  } catch {
-    return null;
+  // Retry the value lookup the way the script lookup already does. This used to be a
+  // single unguarded fetch, so one rate-limited or 5xx response returned null — and
+  // every caller reads null as "that output does not exist". Observed on mainnet:
+  // delivery aborted with "could not fetch the token vault UTXO" against a vault that
+  // was present and correct, twice, then resolved on the next call.
+  for (let i = 0; i < 4; i++) {
+    try {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`, { cache: 'no-store' });
+      if (res.ok) {
+        const tx = (await res.json()) as { vout?: { value?: number }[] };
+        const value = tx.vout?.[vout]?.value;
+        // A missing entry means the vout genuinely is not there — do not retry that.
+        if (typeof value !== 'number') return null;
+        return { scriptHex, satoshis: Math.round(value * 1e8) };
+      }
+      // non-ok → transient; retry
+    } catch {
+      /* network error → retry */
+    }
+    if (i < 3) await new Promise((r) => setTimeout(r, 1500));
   }
+  return null;
 }
 
 /**

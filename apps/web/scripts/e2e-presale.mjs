@@ -38,7 +38,7 @@ const HARD_CAP = 3000;
 const PRICE = 100;             // sats per token -> 10 tokens per pledge
 const STAS_SUPPLY = 40;        // minted supply, must cover SOFT_CAP/PRICE = 20
 const WITHDRAW_FEE = 30;       // sats burned reclaiming a pledge UTXO
-const MIN_CLIENT_SATS = 12000, MIN_OPERATOR_SATS = 2000;
+const MIN_CLIENT_SATS = 12000, MIN_OPERATOR_SATS = 5000; // the operator pledges too now
 
 // ── env + Next-stub loader (must be before any server-action import) ──────────────
 const loadEnv = (p) => { try { for (const line of fs.readFileSync(p, 'utf8').split('\n')) { const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)=(.*)$/); if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, ''); } } catch { /* ignore */ } };
@@ -183,13 +183,28 @@ async function main() {
   const clientIdentityKey = new KeyDeriver(clientPriv).identityKey;
   const { publicKey: identity } = await clientWallet.getPublicKey({ identityKey: true }, ORIGINATOR);
 
+  // A second contributor on a DIFFERENT key. Aggregating several people's pledges into
+  // one transaction is the whole point of an assurance contract, and pledging twice from
+  // one wallet never tests it: the signatures would share a key, so a bug that only bites
+  // across distinct pubkeys (script/pubkey mismatch, per-input preimage leakage, ordering)
+  // would pass. The operator key plays the second contributor here.
+  const opWallet = new FlatKeyWallet(opHex, {
+    chain: CHAIN, basePkh: pkhOf(op.pubHex),
+    baseAddress: op.address, operatorPubHex: op.pubHex,
+    fetchUtxos: () => getOperatorBaseUtxos(op.address), fetchBeef: getSourceBeefDeep,
+    broadcastChain: broadcastBeefChain,
+  });
+  const { publicKey: opIdentity } = await opWallet.getPublicKey({ identityKey: true }, ORIGINATOR);
+  if (opIdentity === identity) throw new Error('the two contributors resolved to one identity');
+
   const bal = async (a) => { try { const u = await getOperatorBaseUtxos(a); return u.reduce((s, x) => s + Number(x.satoshis ?? 0), 0); } catch { return 0; } };
   const clientBal = await bal(client.address), opBal = await bal(op.address);
   kv('client addr', `${client.address}  (owner / contributor)`);
   kv('client sats', clientBal);
-  kv('operator addr', `${op.address}`);
+  kv('operator addr', `${op.address}`  + '  (second contributor)');
   kv('operator sats', opBal);
   if (clientBal < MIN_CLIENT_SATS) throw new Error(`client base ${clientBal} < ${MIN_CLIENT_SATS} — fund ${client.address}`);
+  if (opBal < MIN_OPERATOR_SATS) throw new Error(`operator base ${opBal} < ${MIN_OPERATOR_SATS} — it pledges as the second contributor; fund ${op.address}`);
 
   DELIVER_WALLET = clientWallet;
 
@@ -257,26 +272,33 @@ async function main() {
   });
 
   // ── helper: one contributor pledge (mint own UTXO, sign 0xC1, register) ─────────
-  async function makePledge(label) {
-    const p = await createPledge(clientWallet, CHAIN, { pledgeUnitSats: PLEDGE_UNIT, softCapSats: SOFT_CAP, projectAddress: client.address });
+  const CONTRIBUTORS = {
+    one: { wallet: clientWallet, identity, receive: client.address, label: 'client' },
+    two: { wallet: opWallet, identity: opIdentity, receive: op.address, label: 'operator-as-contributor' },
+  };
+
+  async function makePledge(label, who = CONTRIBUTORS.one) {
+    const p = await createPledge(who.wallet, CHAIN, { pledgeUnitSats: PLEDGE_UNIT, softCapSats: SOFT_CAP, projectAddress: client.address });
     if (!p.ok) throw fail(`createPledge(${label}) failed: ${p.reason}`, {});
     const bc = await broadcastRawTx(p.fundingRawTx, p.utxo.txid);
     if (!bc.ok && !/already|known/i.test(bc.error ?? '')) throw fail(`pledge ${label} funding broadcast rejected: ${bc.error}`, {});
-    record({ txid: p.utxo.txid, purpose: `pledge-funding-${label}`, satoshis: p.utxo.satoshis });
+    record({ txid: p.utxo.txid, purpose: `pledge-funding-${label}`, satoshis: p.utxo.satoshis, contributor: who.label });
     const rp = await E.recordPledge({
-      saleId: state.sale.id, contributor: identity, receiveAddress: client.address,
+      saleId: state.sale.id, contributor: who.identity, receiveAddress: who.receive,
       txid: p.utxo.txid, vout: p.utxo.vout, satoshis: p.utxo.satoshis, scriptHex: p.utxo.scriptHex,
       sigHex: p.sigHex, pubkeyHex: p.pubkeyHex,
       derivationPrefix: p.utxo.derivationPrefix, derivationSuffix: p.utxo.derivationSuffix,
     });
-    kv(`pledge ${label}`, `${p.utxo.txid}:${p.utxo.vout}  ${p.utxo.satoshis} sats  record=${rp.ok ? 'ok' : rp.error}`);
-    return { ...p, recorded: rp };
+    kv(`pledge ${label}`, `${p.utxo.txid}:${p.utxo.vout}  ${p.utxo.satoshis} sats  by ${who.label}  record=${rp.ok ? 'ok' : rp.error}`);
+    return { ...p, recorded: rp, who };
   }
 
   // 4 ── TWO PLEDGES fill the soft cap ─────────────────────────────────────────────
-  await step('PLEDGE x2 — contributor keeps custody, nothing broadcasts to the project', async () => {
-    const a = await makePledge('A'); if (!a.recorded.ok) throw fail(`recordPledge A: ${a.recorded.error}`, {});
-    const b = await makePledge('B'); if (!b.recorded.ok) throw fail(`recordPledge B: ${b.recorded.error}`, {});
+  await step('PLEDGE x2 from TWO DIFFERENT contributors — each keeps custody', async () => {
+    const a = await makePledge('A', CONTRIBUTORS.one); if (!a.recorded.ok) throw fail(`recordPledge A: ${a.recorded.error}`, {});
+    const b = await makePledge('B', CONTRIBUTORS.two); if (!b.recorded.ok) throw fail(`recordPledge B: ${b.recorded.error}`, {});
+    if (a.pubkeyHex === b.pubkeyHex) throw fail('both pledges signed with the same key — multi-party aggregation is untested', {});
+    kv('distinct keys', `${a.pubkeyHex.slice(0, 16)}… vs ${b.pubkeyHex.slice(0, 16)}…`);
     state.pledges.push(a, b); state.pledgeB = b;
     const bRow = await prisma.pledge.findFirst({ where: { saleId: state.sale.id, txid: b.utxo.txid, vout: b.utxo.vout } });
     if (!bRow) throw fail('pledge B row not found after recordPledge', {});
@@ -295,8 +317,8 @@ async function main() {
     kv('pledge basket', `${PLEDGE_BASKET} → ${listed ? `${(listed.outputs ?? []).length} output(s) visible` : 'listOutputs unsupported by this shim'}`);
 
     const b = state.pledgeB;
-    const w = await withdrawPledge(clientWallet, CHAIN, {
-      utxo: b.utxo, toAddress: client.address, feeSats: WITHDRAW_FEE,
+    const w = await withdrawPledge(b.who.wallet, CHAIN, {
+      utxo: b.utxo, toAddress: b.who.receive, feeSats: WITHDRAW_FEE,
     });
     if (!w.ok) throw fail(`withdrawPledge failed: ${w.reason} — the contributor CANNOT reclaim their pledge, which breaks ADR-025's core trustless claim`, {});
     const bc = await broadcastRawTx(w.rawTx, w.txid);
@@ -308,7 +330,7 @@ async function main() {
     kv('pledge B unspent?', String(spent.unspent));
     if (spent.unspent !== false) throw fail('pledge B still reads unspent after the withdrawal broadcast', spent);
 
-    const mk = await E.markPledgeWithdrawn(state.pledgeBId, identity, w.txid);
+    const mk = await E.markPledgeWithdrawn(state.pledgeBId, b.who.identity, w.txid);
     if (!mk.ok) throw fail(`markPledgeWithdrawn failed: ${mk.error}`, {});
     state.withdrawTxid = w.txid;
   });
@@ -320,7 +342,7 @@ async function main() {
     if (Number(st.raisedSats) !== PLEDGE_UNIT) {
       throw fail(`raised reads ${st.raisedSats} but only ${PLEDGE_UNIT} sats are actually pledged — the withdrawn pledge is still counted, overstating the raise to contributors`, {});
     }
-    const c = await makePledge('C');
+    const c = await makePledge('C', CONTRIBUTORS.two);
     if (!c.recorded.ok) throw fail(`replacement pledge REJECTED: ${c.recorded.error} — a withdrawal permanently bricks the presale`, {});
     state.pledges.push(c);
   });
@@ -338,7 +360,7 @@ async function main() {
     await prisma.sale.update({ where: { id: saleId }, data: { endsAt: new Date(Date.now() - 60_000) } });
     const a = state.pledges[0];
     const late = await E.recordPledge({
-      saleId, contributor: identity, receiveAddress: client.address,
+      saleId, contributor: a.who.identity, receiveAddress: a.who.receive,
       txid: a.utxo.txid, vout: a.utxo.vout, satoshis: a.utxo.satoshis, scriptHex: a.utxo.scriptHex,
       sigHex: a.sigHex, pubkeyHex: a.pubkeyHex,
       derivationPrefix: a.utxo.derivationPrefix, derivationSuffix: a.utxo.derivationSuffix,
@@ -364,9 +386,12 @@ async function main() {
     if (expired === 0) throw fail('a dead raise did not expire its pledges', {});
 
     // (d) an expired pledge must STILL be withdrawable — that is when it matters most.
-    const mine = await E.getMyPledges(saleId, identity);
-    kv('withdrawable', `${mine.length} (expired pledges must stay reclaimable)`);
-    if (mine.length !== expired) throw fail(`only ${mine.length} of ${expired} expired pledges are withdrawable`, {});
+    const lists = await Promise.all(
+      [CONTRIBUTORS.one, CONTRIBUTORS.two].map((w) => E.getMyPledges(saleId, w.identity)),
+    );
+    const reclaimable = lists.reduce((n, l) => n + l.length, 0);
+    kv('withdrawable', `${reclaimable} across ${lists.filter((l) => l.length).length} contributor(s) — expired must stay reclaimable`);
+    if (reclaimable !== expired) throw fail(`only ${reclaimable} of ${expired} expired pledges are withdrawable`, {});
 
     // (e) a dead raise must not advertise a total it will never collect.
     const st = await E.getPresaleState(saleId);
@@ -382,7 +407,9 @@ async function main() {
   await step('ASSEMBLE + BROADCAST the assurance transaction', async () => {
     const sel = await E.getPledgesForAssembly(state.sale.id, identity);
     if (!sel.ok) throw fail(`getPledgesForAssembly failed: ${sel.error}`, {});
-    kv('selected pledges', `${sel.pledges.length} summing to ${sel.pledges.reduce((s, p) => s + p.satoshis, 0)}`);
+    const keys = new Set(sel.pledges.map((p) => p.pubkeyHex));
+    kv('selected pledges', `${sel.pledges.length} summing to ${sel.pledges.reduce((s, p) => s + p.satoshis, 0)} across ${keys.size} key(s)`);
+    if (keys.size < 2) throw fail(`assembling ${keys.size} distinct key(s) — the multi-party case is what an assurance contract is FOR`, {});
     if (sel.pledges.some((p) => p.txid === state.pledgeB.utxo.txid)) throw fail('assembly selected the WITHDRAWN pledge — the assurance tx would be invalid', {});
 
     const asm = await assembleAssuranceTx(clientWallet, CHAIN, { pledges: sel.pledges, softCapSats: sel.softCapSats, projectAddress: sel.projectAddress });

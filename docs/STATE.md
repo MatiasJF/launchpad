@@ -62,10 +62,21 @@ expiry needs `nLockTime` from the pushed preimage, which is the A2 accumulator's
 **Confirmed by miners, not just mempools.** The first run's transactions are in blocks: withdrawal `12f26446…`
 in **964689**, assurance `83689bdd…` and delivery `170cc017…` in **964690**.
 
+**Multi-party aggregation is proven (2026-08-31).** Earlier runs pledged twice from one wallet, which
+never tests the thing an assurance contract exists to do. The harness now runs the operator key as a
+genuinely separate second contributor: two pledges signed by **two distinct pubkeys** composed into one
+assurance tx (`1c95e51d…`, 488 B, 3 inputs → one 2,000-sat output), and delivery `da8b0d47…` paid
+**10 tokens to each of the two different contributor addresses** (`121c7ea8…`, `84f96c45…`) with 20 as
+change. The harness now fails if the assembled set spans fewer than two keys.
+
+That run also caught a fail-closed bug in a shared helper: `getOutputInfo` retried its script lookup but
+not its value lookup, so one rate-limited WoC reply returned `null` — which every caller reads as "that
+output does not exist" — and delivery refused to build against a healthy vault. Fixed; see LESSONS.md.
+
 **Open:** the basket is correct by construction but **unverified in BSV Desktop** — the harness's
-`listOutputs` is a shim that ignores the basket argument, so the run proved the coin is *spendable*, not
-that a wallet *displays* it. Needs a device test. Also untested: a presale with genuinely *distinct*
-contributors (both runs pledged from one wallet), and the instant-buy top-up above the soft cap.
+`listOutputs` is a shim that ignores the basket argument, so the runs proved the coin is *spendable*, not
+that a wallet *displays* it. Needs a device test. Also still untested: the instant-buy top-up above the
+soft cap (built per ADR-025, never exercised).
 
 ## The external audit is OUT, and ADR-032 waits on it (2026-08-28)
 

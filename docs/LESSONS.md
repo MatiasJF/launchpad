@@ -289,3 +289,28 @@ basketless `createAction` output is invisible to its own owner's wallet, and
 returns the same 404 as a genuinely unspent `vout 0` (and `vout 99` returns 500). `recordPledge` had
 relied on exactly that, so a real txid with a fabricated vout was accepted, occupied soft-cap space, and
 would have killed assembly with no way to invalidate the row.
+
+---
+
+## A lookup with no retry returns `null`, and `null` means "does not exist" (2026-08-31)
+
+Delivery aborted twice on **`could not fetch the token vault UTXO`** against a vault that was present,
+correct, and returned perfectly by the same call moments later from a one-off script.
+
+`getOutputInfo` is two lookups. The script half (`getOutputScriptHex`) retries three times and falls
+back to a second endpoint. The **value** half was a single unguarded `fetch` that returned `null` on any
+non-`ok` response — and every caller reads `null` as *"that output is not there"*. So one rate-limited
+reply from WhatsOnChain turned a healthy vault into a missing one, and the delivery refused to build.
+
+The shape is what makes it dangerous, not the network. A transient failure and a definitive negative
+came back as the same value, so the caller could not tell them apart and picked the wrong one
+confidently. It fails closed, which is the right direction — but it fails closed on a *false* premise,
+and the error text sends you to look for a missing UTXO that was never missing.
+
+> When a helper returns `T | null` and `null` is load-bearing, transient failure must not be able to
+> produce it. Retry, or return a third state. Distinguishing "no" from "don't know" is the whole job.
+
+Fixed by giving the value lookup the same retry loop the script lookup already had, while still
+returning `null` immediately when the `vout` is genuinely absent from the response — that case is a real
+negative and must not be retried. Found by a mainnet run, not by a test: the failure only appears under
+real rate limiting.
