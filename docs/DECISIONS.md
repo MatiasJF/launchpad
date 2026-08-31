@@ -701,3 +701,19 @@ Append-only; newest at the bottom. Template per entry:
   first being the 2-block `--check`. Both times the data was real and the window was the flaw. The
   standing rule from ADR-031 needs a third clause: a mineable rate is proven for the size probed, the
   moment probed, **and only after the backlog behind it has cleared**.
+
+- **The open item above is now closed.** `reconcileSettlements(saleId?)` un-settles orders whose delivery
+  transaction has vanished: one lookup per distinct txid (a batch settles many orders at once), reverting
+  to `pending` and clearing the dead `txid` so the batch settle picks them up again. It is wired into
+  `getProjectSettlementRecord` — the public claim that a project has paid its holders — which now also
+  counts only `state: 'settled'` mints rather than every `curve_graduation_mint` row.
+
+  **Reverting is deliberately hard to trigger: only a definitive 404 counts.** `getTxStatus` returns
+  `known: null` on any network trouble and nothing is touched, because un-settling a real delivery is far
+  worse than briefly over-claiming one. That distinction between *"no"* and *"don't know"* is the third
+  time it has mattered today — after `getOutputInfo` returning `null` for two different reasons, and
+  `/spent` answering 404 for both an unspent and a nonexistent output.
+
+  Verified against the live database: 38 settled orders across 27 distinct transactions, **0 reverted**,
+  with `known=true` for a mined delivery, `known=false` for a fabricated txid and `known=null` for a
+  malformed one.

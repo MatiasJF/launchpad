@@ -1,6 +1,7 @@
 'use server';
 
 import { prisma } from '@launchpad/db';
+import { reconcileSettlements } from './order-actions';
 import { Utils } from '@bsv/sdk';
 import { isProjectOwner } from './account-actions';
 import {
@@ -354,8 +355,12 @@ export async function getProjectSettlementRecord(projectSlug: string): Promise<S
     for (const p of pools) {
       const owed = Number(p.sold);
       if (owed <= 0) continue;
+      // This is the PUBLIC claim that a project has paid its holders, so it must not
+      // rest on a transaction that no longer exists. Drop any mint whose delivery tx
+      // has vanished back to undelivered before counting (ADR-036).
+      await reconcileSettlements(p.saleId);
       const delivered = (await prisma.order.findMany({
-        where: { saleId: p.saleId, kind: 'curve_graduation_mint' }, select: { tokens: true },
+        where: { saleId: p.saleId, kind: 'curve_graduation_mint', state: 'settled' }, select: { tokens: true },
       })).reduce((s, o) => s + Number(o.tokens), 0);
 
       const slug = p.sale.token.project.slug;

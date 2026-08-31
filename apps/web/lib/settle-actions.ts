@@ -70,6 +70,39 @@ export async function getOutputInfo(
 }
 
 /**
+ * Does this transaction still exist on chain (mempool or block), and how confirmed is it?
+ *
+ * `known: false` ONLY on a definitive 404. Any network trouble returns `known: null` —
+ * "don't know" must never be collapsed into "it's gone", because callers act on this by
+ * un-doing work. That collapse is the exact bug that made `getOutputInfo` abort a
+ * delivery against a healthy vault, and the one that let a nonexistent outpoint pass as
+ * an unspent pledge.
+ */
+export async function getTxStatus(
+  txid: string,
+): Promise<{ known: boolean | null; confirmations: number; blockHeight: number | null }> {
+  if (!/^[0-9a-fA-F]{64}$/.test(txid)) return { known: null, confirmations: 0, blockHeight: null };
+  for (let i = 0; i < 4; i++) {
+    try {
+      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/hash/${txid}`, { cache: 'no-store' });
+      if (res.status === 404) return { known: false, confirmations: 0, blockHeight: null };
+      if (res.ok) {
+        const j = (await res.json()) as { confirmations?: number; blockheight?: number };
+        return {
+          known: true,
+          confirmations: Number(j.confirmations ?? 0),
+          blockHeight: typeof j.blockheight === 'number' ? j.blockheight : null,
+        };
+      }
+    } catch {
+      /* transient — retry */
+    }
+    if (i < 3) await new Promise((r) => setTimeout(r, 1500));
+  }
+  return { known: null, confirmations: 0, blockHeight: null };
+}
+
+/**
  * Is a given output still unspent? WhatsOnChain's `/tx/{txid}/{vout}/spent`
  * returns 404 when the outpoint is unspent and a JSON body naming the spending
  * tx when it's already spent. We MUST check this before settling: the pool UTXO
