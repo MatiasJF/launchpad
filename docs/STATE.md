@@ -2,6 +2,28 @@
 
 _Last updated: 2026-08-31 — by: the escrow presale is proven on mainnet; ADR-033/034/035 fixed what the runs exposed_
 
+## The delivery fee was too LOW, not too high (2026-08-31, ADR-036)
+
+Chasing an apparent 4.7x overpayment on the shipped STAS path, the measurement inverted the premise.
+Probed at 7,000 bytes — the size a batch delivery really is — **0.15 and 0.10 were mined into the block
+they were broadcast, while 0.05, 0.025, 0.01, 0.005 and 0.001 were all still unconfirmed eight blocks
+later.** Production agreed: of three real deliveries at 0.05, only `170cc017` was mined; `da8b0d47` and
+`bc05f10b` sat in the mempool 18 blocks on.
+
+`batch.ts` goes **0.05 → 0.1**, matching `settle/index.ts`. The covenant's proven 0.0101 does not transfer:
+a curve spend chains on unconfirmed outputs, but a delivery chains on the previous delivery's token change
+and `getSourceBeef` needs a **merkle proof**, so an unmined delivery blocks every delivery behind it —
+the reason the presale harness needed a `--deliver` resume mode at all. Underpaying here buys a stalled
+settlement queue, not a saving.
+
+ADR-031 said a mineable rate is proven only for the size probed. This adds: **only for the moment probed**
+— `170cc017` got in at 0.0475 ten blocks before nothing below 0.05 could. 0.1 is the observed floor with
+no headroom; re-probe if deliveries lag rather than assuming it held.
+
+**Open, and not small:** `markOrdersSettled` marks orders settled at *broadcast*, so the two stuck
+deliveries are recorded as delivered. If a node evicts them the database asserts a delivery that never
+happened, and the ADR-031 settlement record reads from that database.
+
 ## Next: the crowdfunding path is PROVEN on mainnet (2026-08-31)
 
 **The escrow presale (ADR-025) ran end to end on mainnet for the first time** — a month after it was

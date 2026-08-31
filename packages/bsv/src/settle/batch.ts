@@ -149,7 +149,26 @@ export async function batchTransferStas(
   }
 
   // Fee scales with the number of token outputs.
-  const FEE_RATE = 0.05;
+  //
+  // RAISED 0.05 -> 0.1 on 2026-08-31, against the intuition that we were overpaying.
+  // Probed at 7,000 bytes (the size a real batch delivery actually is) with
+  // packages/curve/service/calibrate-fee-rate.ts: 0.15 and 0.10 were mined into the
+  // very block they were broadcast; 0.05, 0.025, 0.01, 0.005 and 0.001 were all still
+  // unconfirmed EIGHT blocks later. Production agreed — of three real deliveries sent
+  // at 0.05, only one was mined (170cc017, block 964690); da8b0d47 and bc05f10b were
+  // still in the mempool 18 blocks on.
+  //
+  // Underpaying here does not save money, it stalls settlement: the next delivery
+  // chains onto this transaction's token change and `getSourceBeef` needs a MERKLE
+  // PROOF, so an unmined delivery blocks every delivery behind it. That is a harder
+  // constraint than the curve's (ADR-031), where successors chain on unconfirmed
+  // outputs — which is why the covenant's proven 0.0101 sat/B does NOT transfer here.
+  //
+  // 0.1 is the LOWEST rate observed mineable at this size, so it has no headroom.
+  // If deliveries start lagging, re-probe before assuming the floor has not moved:
+  //   node service/dist/service/calibrate-fee-rate.js --probe --size 7000
+  //   node service/dist/service/calibrate-fee-rate.js --check --size 7000   (--size is REQUIRED)
+  const FEE_RATE = 0.1;
   const MIN_FEE = 40;
   const recScriptBytes = recScripts.reduce((s, x) => s + Math.ceil(x.length / 2) + 12, 0);
   const estSize = 1700 + recScriptBytes + (changeStasScriptHex ? Math.ceil(changeStasScriptHex.length / 2) : 0) + 34;

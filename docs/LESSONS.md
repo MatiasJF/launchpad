@@ -314,3 +314,43 @@ Fixed by giving the value lookup the same retry loop the script lookup already h
 returning `null` immediately when the `vout` is genuinely absent from the response — that case is a real
 negative and must not be retried. Found by a mainnet run, not by a test: the failure only appears under
 real rate limiting.
+
+---
+
+## The fee was too LOW, and I set out to lower it (2026-08-31, ADR-036)
+
+Three STAS deliveries had paid 377, 305 and 305 sats — about **0.0475 sat/B**. Against the 0.0101 sat/B
+the covenant refund proved mineable in block 964189, that read as a clean 4.7x overpayment on every
+delivery the product makes, and the task looked like arithmetic.
+
+Probing at the size a delivery actually is (7,000 bytes) said the opposite. **0.15 and 0.10 were mined
+into the block they were broadcast; 0.05 and everything below it were still unconfirmed eight blocks
+later.** Production had been telling us the same thing and nobody had looked: of three real deliveries at
+0.05, one was mined and two sat in the mempool 18 blocks on. `batch.ts` was not generous, it was
+underpaying and getting away with it.
+
+Two things made the wrong answer feel obvious. The covenant's rate was **proven at a different moment** —
+`170cc017` got in at 0.0475 only ten blocks before nothing below 0.05 could — and it was proven for a
+**different kind of transaction**: a curve spend's successors chain on unconfirmed outputs, so slowness
+is free, whereas a delivery chains on the previous delivery's token change and `getSourceBeef` needs a
+merkle proof. An unmined delivery blocks every delivery behind it. That is why the presale harness needed
+a `--deliver` resume mode, and the resume mode was the symptom nobody read as one.
+
+> A fee calibration is a **reading, not a constant** — good for the size probed and the moment probed.
+> And before optimising a cost, ask what the cost is buying. Here it was buying settlement latency, which
+> the product cannot spend.
+
+Two traps found on the way, both of which produce confident wrong answers:
+
+- **`--check` without `--size` reports "no probe state — run --probe first"** about a probe that ran
+  perfectly. The state file is keyed by size, so a mismatched `--check` silently inspects a different
+  run. It now prints which sizes exist and what to pass. A tool that says "you didn't do the thing" when
+  you did is worse than one that errors.
+- **Two blocks is not a verdict.** The first `--check` at 2 blocks reported "lowest rate actually MINED:
+  0.1000" and would have been right by luck; at that point the evidence still contradicted itself and the
+  honest answer was "not yet known". The conclusion only became safe when the same split held at 8 blocks
+  **and** production agreed.
+
+Left open: `markOrdersSettled` flips orders to `settled` at broadcast, so the two stuck deliveries are
+recorded as delivered. If a node evicts them, the database asserts a delivery that never happened — the
+same shape as ADR-035's finding that broadcasting is not finishing.

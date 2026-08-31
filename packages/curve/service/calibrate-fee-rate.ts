@@ -154,7 +154,24 @@ async function probe() {
 }
 
 async function check() {
-  if (!fs.existsSync(STATE_FILE)) { console.error('no probe state — run --probe first'); process.exit(1); }
+  if (!fs.existsSync(STATE_FILE)) {
+    // The state file is keyed by SIZE, so `--check` without the same `--size` the probe
+    // used looks for a different run and reports "run --probe first" about a probe that
+    // did run. Say which sizes actually exist instead of sending the reader in circles.
+    const dir = path.dirname(STATE_FILE);
+    const found = fs
+      .readdirSync(dir)
+      .map((f) => /^\.fee-calibration-(\d+)\.json$/.exec(f)?.[1])
+      .filter(Boolean);
+    console.error(`no probe state for ${POOL_TX_BYTES}-byte transactions.`);
+    if (found.length) {
+      console.error(`probe state DOES exist for: ${found.join(', ')} bytes.`);
+      console.error(`--size must match the probe: --check --size ${found[0]}`);
+    } else {
+      console.error('run --probe first.');
+    }
+    process.exit(1);
+  }
   const { probes } = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) as { probes: Probe[] };
   log('Checking which probes were MINED (acceptance alone proves nothing)\n');
   log('  rate (sat/B) │    fee │ status');

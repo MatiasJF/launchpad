@@ -621,3 +621,54 @@ Append-only; newest at the bottom. Template per entry:
 - **Outstanding:** the 970 sats from `572a0609…` remain stranded at `1AFSVTV87bqa5wsWeTWa7Ehx6eQNfSqCYV`,
   the STAS-derived address of the pre-fix attempt. Provably the owner's and recoverable by re-deriving
   that key; the fix prevents recurrence but does not move them retroactively.
+
+---
+
+## ADR-036 · Batch delivery fee RAISED 0.05 → 0.1: settlement latency is the constraint · Accepted · 2026-08-31
+
+- **Context.** The shipped STAS path never got the calibration ADR-031 gave the curve: `batch.ts` sat at
+  `FEE_RATE = 0.05` and `settle/index.ts` at `0.1`, both picked conservatively and untested. Measured
+  against the 0.0101 sat/B the covenant refund proved mineable (block 964189), every delivery looked like
+  a **4.7x overpayment** — 377 sats on a 7,900-byte transaction that "should" have cost 80.
+
+- **The premise was wrong, and measuring inverted it.** Probing at **7,000 bytes** — the size a real batch
+  delivery actually is, per `calibrate-fee-rate.ts`'s own warning that the answer depends on size:
+
+  | rate | fee | result after 8 blocks |
+  |---|---|---|
+  | 0.15 | 1050 | **mined into the block it was broadcast** |
+  | 0.10 | 700 | **mined into the block it was broadcast** |
+  | 0.05 | 350 | still unconfirmed |
+  | 0.025 · 0.01 · 0.005 · 0.001 | 175 · 70 · 35 · 7 | still unconfirmed |
+
+  Production agreed. Of three real deliveries sent at 0.05: `170cc017` mined in block 964690; `da8b0d47`
+  and `bc05f10b` were **still in the mempool 18 blocks later**. One in three.
+
+  So `batch.ts` was not generous, it was **underpaying**, and it had been getting away with it.
+
+- **Why the covenant's number does not transfer.** ADR-031 optimised a curve spend whose successors chain
+  on *unconfirmed* outputs, so a slow confirmation costs nothing but nerves. A STAS delivery chains onto
+  the previous delivery's token change, and `getSourceBeef` needs a **merkle proof** — so an unmined
+  delivery blocks every delivery behind it. That is exactly why the presale harness needed a `--deliver`
+  resume mode. Here, underpaying does not save money; it converts fees into a stalled settlement queue.
+
+- **Decision.** `batch.ts` goes to **0.1**, matching `settle/index.ts` — the only rate observed mineable at
+  this size today. Recorded in the code, not just here, because the next person will have the same
+  "we're overpaying" instinct.
+
+- **0.1 is the FLOOR, not a cushion.** It is the lowest rate seen mined, so it has no headroom, and the
+  tool's own advice is to sit above the floor rather than on it. Deliberately not raised further: 0.1 is
+  what `settle/index.ts` has always used in production without trouble, and inventing a higher number
+  without evidence is the mistake that produced 0.05. **If deliveries start lagging, re-probe before
+  assuming the floor held** — `--probe --size 7000` then `--check --size 7000` (`--size` is required on
+  both; the state file is keyed by it).
+
+- **The floor moves.** `170cc017` was mined at 0.0475 in block 964690; ten blocks later nothing at or
+  below 0.05 could get in. ADR-031 established that a mineable rate is only proven *for the size probed*.
+  This adds: only for **the moment probed**. A calibration is a reading, not a constant.
+
+- **Left open, and it is not small.** `markOrdersSettled` flips orders to `settled` immediately after
+  broadcast, so the two deliveries still stuck in the mempool are recorded as delivered. If a node
+  evicts them, the database asserts a delivery that never happened — and ADR-031's settlement record
+  reads from that database. Same shape as ADR-035's lesson that broadcasting is not finishing. Not fixed
+  here; raising the fee makes it far less likely, which is not the same as making it correct.
