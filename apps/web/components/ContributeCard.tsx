@@ -6,7 +6,7 @@ import { Button, StatusPill } from './ui';
 import { ShieldCheck } from './ui/icons';
 import { useWallet } from './WalletProvider';
 import { getMyPledges, markPledgeWithdrawn, recordPledge } from '../lib/escrow-actions';
-import { broadcastRawTx } from '../lib/settle-actions';
+import { broadcastRawTx, getSourceBeefDeep } from '../lib/settle-actions';
 
 const STAS_PROTOCOL: [2, string] = [2, '3241645161d8'];
 
@@ -32,7 +32,7 @@ export function ContributeCard({ s }: { s: SaleCardVM }) {
   const [error, setError] = useState<string | null>(null);
   const [mine, setMine] = useState<MyPledge[]>([]);
   const [withdrawing, setWithdrawing] = useState<string | null>(null);
-  const [withdrawn, setWithdrawn] = useState<string | null>(null);
+  const [withdrawn, setWithdrawn] = useState<{ txid: string; sats: number; adopted: boolean; why?: string } | null>(null);
 
   const refreshMine = useCallback(async () => {
     try {
@@ -55,12 +55,13 @@ export function ContributeCard({ s }: { s: SaleCardVM }) {
     try {
       await connect();
       const { getWalletClient } = await import('@launchpad/bsv/wallet');
-      const { withdrawPledge } = await import('@launchpad/bsv/pledge');
-      const { PublicKey } = await import('@bsv/sdk');
+      const { withdrawPledge, internalizePledgeRefund } = await import('@launchpad/bsv/pledge');
       const wallet = await getWalletClient();
       const { publicKey: identity } = await wallet.getPublicKey({ identityKey: true });
-      const { publicKey: pub } = await wallet.getPublicKey({ protocolID: STAS_PROTOCOL, keyID: s.slug, counterparty: 'self' });
-      const toAddress = PublicKey.fromString(pub).toAddress().toString();
+
+      // The wallet must be able to validate the output it is asked to take custody of.
+      const sourceBeef = await getSourceBeefDeep(p.txid);
+      if (!sourceBeef) throw new Error('could not load the pledge ancestry needed to reclaim it — try again shortly');
 
       const built = await withdrawPledge(wallet as never, 'main', {
         utxo: {
@@ -71,15 +72,22 @@ export function ContributeCard({ s }: { s: SaleCardVM }) {
           derivationPrefix: p.derivationPrefix,
           derivationSuffix: p.derivationSuffix,
         },
-        toAddress,
         feeSats: WITHDRAW_FEE_SATS,
+        sourceBeef,
       });
       if (!built.ok) throw new Error(built.reason);
 
       const bc = await broadcastRawTx(built.rawTx, built.txid);
       if (!bc.ok) throw new Error(`withdrawal rejected: ${bc.error}`);
-      await markPledgeWithdrawn(p.id, identity, bc.txid || built.txid);
-      setWithdrawn(bc.txid || built.txid);
+      const txid = bc.txid || built.txid;
+
+      // Broadcasting moves the coin; internalising is what puts it back in the wallet's
+      // balance. Without this the sats sit at a key the wallet can derive but has never
+      // adopted — the owner's money, invisible to the owner. Not fatal if it fails: the
+      // funds are safely on-chain, so say so plainly rather than reporting a clean win.
+      const adopted = await internalizePledgeRefund(wallet as never, built.refund);
+      await markPledgeWithdrawn(p.id, identity, txid);
+      setWithdrawn({ txid, sats: built.reclaimedSats, adopted: adopted.ok, why: adopted.reason });
       setStatus('idle');
       await refreshMine();
     } catch (e) {
@@ -228,9 +236,16 @@ export function ContributeCard({ s }: { s: SaleCardVM }) {
       )}
 
       {withdrawn && (
-        <p className="mt-3 break-words font-mono text-xs text-teal">
-          ✓ Withdrawn — {withdrawn.slice(0, 16)}… Your sats are back in your wallet.
-        </p>
+        <div className="mt-3 break-words font-mono text-xs">
+          <p className={withdrawn.adopted ? 'text-teal' : 'text-warning'}>
+            ✓ Withdrawn — {withdrawn.sats.toLocaleString('en-US')} sats · {withdrawn.txid.slice(0, 16)}…
+          </p>
+          <p className="mt-1 text-[0.65rem] leading-relaxed text-faint">
+            {withdrawn.adopted
+              ? 'Your wallet has taken the coin back into its balance.'
+              : `On-chain and yours, but your wallet has not adopted it yet${withdrawn.why ? ` (${withdrawn.why})` : ''}, so it may not show in your balance. The funds are safe — the transaction above pays a key your wallet derives.`}
+          </p>
+        </div>
       )}
 
       {error && <p className="mt-3 break-words text-xs text-danger">⚠ {error}</p>}

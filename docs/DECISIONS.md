@@ -544,3 +544,51 @@ Append-only; newest at the bottom. Template per entry:
   is allowed, assembly past it is refused, the pledges expire, the expired ones remain withdrawable, and
   the reported raise drops to 0. Verified 2026-08-31 in an 11-step run that then assembled and delivered
   normally — assurance `09f0d8cb…` 488 B / 40 sats / 0.0820 sat/B.
+
+---
+
+## ADR-035 · A refund is not finished until the wallet has internalised it · Accepted · 2026-08-31
+
+- **Context.** ADR-033 made the pledge reclaim reachable and proved it on mainnet: the coin moves, the
+  pledge is revoked, the sats land at an address the contributor owns. Tested against **BSV Desktop** by
+  the project owner, that turned out not to be a refund. Their words: *"withdraw worked but I cannot see
+  it on chain and of course wallet dont do magic, if you want that withdraw to go back to the wallet it
+  needs to internalise it, if not it is to my wallets name but i dont know about it."* Correct on every
+  point.
+
+- **What actually happened.** Pledge `2621f11e…` was reclaimed by `572a0609…`, which is on-chain and
+  valid. Its 970 sats sit **unspent at `1AFSVTV87bqa5wsWeTWa7Ehx6eQNfSqCYV`** — a third address, distinct
+  from both the pledge address and the wallet's own change address. `ContributeCard` had derived the
+  destination as `getPublicKey({ protocolID: STAS_PROTOCOL, keyID: slug, counterparty: 'self' })`: a
+  **token-ownership key**, used as a payment destination. Two errors compounded — the wrong key class,
+  and no internalisation. A wallet does not adopt an output merely because it can derive the key: until
+  `internalizeAction` runs, it is in no basket, in no balance, and selectable by nothing.
+
+  This is the **same defect ADR-033 fixed on the way in, left unfixed on the way out.** The pledge became
+  visible; the refund did not. Fixing custody in one direction and not the other is not a partial fix, it
+  is the same bug.
+
+- **Decision.** `withdrawPledge` derives the destination itself and no longer accepts a caller-supplied
+  `toAddress` — passing an address the contributor merely *owns* is precisely the footgun that caused
+  this. It now builds a **BRC-29 self-payment** (fresh `createNonce` prefix/suffix, `counterparty:
+  'anyone'`, `forSelf: true`), returns an **atomic BEEF** of the reclaim alongside the remittance, and a
+  new `internalizePledgeRefund` calls `internalizeAction` with `protocol: 'wallet payment'` so the wallet
+  takes the coin into its balance. The card reports the two outcomes **differently**: adopted into the
+  balance, or on-chain-and-yours-but-not-yet-adopted. It never again claims the sats are back when they
+  are merely payable.
+
+- **The basket question is answered, negatively.** ADR-033 left "does BSV Desktop display a
+  `launchpad-pledge` basket" open. It does not — no such basket appears, though the funding transaction
+  shows in history under its description. The basket is **kept**: it stops the wallet spending a pledge
+  as change and voids nothing, and it makes the coin findable via `listOutputs({ basket })`. But it buys
+  **programmatic** visibility only, and the claim of native user-facing visibility is withdrawn.
+
+- **Consequences.** The app — not the wallet — is the interface for seeing pledges, and that is now what
+  the docs say. One item stays open and cannot be closed from here: **the harness cannot verify
+  internalisation**, because `FlatKeyWallet.internalizeAction` is a best-effort no-op stub. The run proves
+  the coin moves and lands at a derivable key; whether a real wallet adopts it is a BSV Desktop question,
+  and the harness now prints that limit rather than implying a pass.
+
+- **Outstanding:** the 970 sats from `572a0609…` are still stranded at the STAS-derived address. They are
+  provably the owner's and recoverable with a script that re-derives that key; the fix above prevents a
+  recurrence but does not retroactively move them.

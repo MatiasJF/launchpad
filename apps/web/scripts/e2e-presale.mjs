@@ -317,8 +317,10 @@ async function main() {
     kv('pledge basket', `${PLEDGE_BASKET} → ${listed ? `${(listed.outputs ?? []).length} output(s) visible` : 'listOutputs unsupported by this shim'}`);
 
     const b = state.pledgeB;
+    const src = await getSourceBeefDeep(b.utxo.txid);
+    if (!src) throw fail('could not load the pledge ancestry needed to reclaim it', {});
     const w = await withdrawPledge(b.who.wallet, CHAIN, {
-      utxo: b.utxo, toAddress: b.who.receive, feeSats: WITHDRAW_FEE,
+      utxo: b.utxo, feeSats: WITHDRAW_FEE, sourceBeef: src,
     });
     if (!w.ok) throw fail(`withdrawPledge failed: ${w.reason} — the contributor CANNOT reclaim their pledge, which breaks ADR-025's core trustless claim`, {});
     const bc = await broadcastRawTx(w.rawTx, w.txid);
@@ -329,6 +331,12 @@ async function main() {
     const spent = await isOutputUnspent(b.utxo.txid, b.utxo.vout);
     kv('pledge B unspent?', String(spent.unspent));
     if (spent.unspent !== false) throw fail('pledge B still reads unspent after the withdrawal broadcast', spent);
+
+    // HONEST LIMIT: FlatKeyWallet.internalizeAction is a best-effort no-op stub, so this
+    // harness CANNOT prove the refund is adopted back into a wallet's spendable balance.
+    // It proves the coin moves and lands at a key the contributor derives. Whether a real
+    // wallet then shows it is a BSV Desktop question, not one this shim can answer.
+    kv('internalise', 'NOT VERIFIABLE here — FlatKeyWallet.internalizeAction is a stub');
 
     const mk = await E.markPledgeWithdrawn(state.pledgeBId, b.who.identity, w.txid);
     if (!mk.ok) throw fail(`markPledgeWithdrawn failed: ${mk.error}`, {});

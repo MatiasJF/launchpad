@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-08-31 — by: the escrow presale is proven on mainnet; ADR-033/034 fixed what the run exposed_
+_Last updated: 2026-08-31 — by: the escrow presale is proven on mainnet; ADR-033/034/035 fixed what the runs exposed_
 
 ## Next: the crowdfunding path is PROVEN on mainnet (2026-08-31)
 
@@ -73,10 +73,26 @@ That run also caught a fail-closed bug in a shared helper: `getOutputInfo` retri
 not its value lookup, so one rate-limited WoC reply returned `null` — which every caller reads as "that
 output does not exist" — and delivery refused to build against a healthy vault. Fixed; see LESSONS.md.
 
-**Open:** the basket is correct by construction but **unverified in BSV Desktop** — the harness's
-`listOutputs` is a shim that ignores the basket argument, so the runs proved the coin is *spendable*, not
-that a wallet *displays* it. Needs a device test. Also still untested: the instant-buy top-up above the
-soft cap (built per ADR-025, never exercised).
+**The wallet test came back, and it failed in the more interesting direction (ADR-035).** Tested against
+real BSV Desktop: **no `launchpad-pledge` basket is shown** (the funding tx appears in history under its
+description, but custom baskets are not surfaced), and the withdrawal — which the app reported as done —
+paid its 970 sats to a **STAS-protocol key used as a payment address**, where they sit unspent and
+invisible. The owner's diagnosis was exactly right: *"wallet dont do magic … it needs to internalise it,
+if not it is to my wallets name but i dont know about it."*
+
+This was the same defect ADR-033 fixed on the way IN, left unfixed on the way OUT. `withdrawPledge` now
+derives its own BRC-29 self-payment destination (no caller-supplied address — that was the footgun),
+returns an atomic BEEF, and `internalizePledgeRefund` calls `internalizeAction` so the wallet actually
+adopts the coin. The card reports "in your balance" and "on-chain but not adopted" as different outcomes.
+
+The basket stays — it keeps a pledge out of the change pool so the wallet cannot spend it from under a
+live signature — but the claim of native user-facing visibility is **withdrawn**. The app, not the wallet,
+is where a contributor sees their pledges.
+
+**Open:** the harness **cannot** verify internalisation (`FlatKeyWallet.internalizeAction` is a no-op
+stub), so that step needs BSV Desktop each time — it now prints that limit instead of implying a pass.
+The 970 sats from `572a0609…` remain recoverable but stranded. Still untested: the instant-buy top-up
+above the soft cap.
 
 ## The external audit is OUT, and ADR-032 waits on it (2026-08-28)
 
