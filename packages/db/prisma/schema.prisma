@@ -163,6 +163,10 @@ model Pledge {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // One pledge per outpoint. A replayed payload would otherwise occupy several
+  // soft-cap slots with one coin, and legacy `bsv` silently DROPS a duplicate input
+  // at assembly — misaligning every unlocking script after it.
+  @@unique([txid, vout])
   @@index([saleId])
   @@index([contributor])
 }

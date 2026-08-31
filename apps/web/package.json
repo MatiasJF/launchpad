@@ -19,7 +19,8 @@
     "test:client": "node scripts/gen-test-client.mjs",
     "client:topup": "node scripts/client-topup-operator.mjs",
     "e2e:app": "node --import tsx scripts/e2e-app.mjs",
-    "e2e:merkle": "node --import tsx scripts/e2e-merkle-app.mjs"
+    "e2e:merkle": "node --import tsx scripts/e2e-merkle-app.mjs",
+    "e2e:presale": "node --import tsx scripts/e2e-presale.mjs"
   },
   "dependencies": {
     "@bsv/sdk": "^2.2.15",

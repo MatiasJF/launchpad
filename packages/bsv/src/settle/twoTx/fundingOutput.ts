@@ -6,7 +6,7 @@
  * outpoint + derivation + TX1's own BEEF for chaining into TX2.
  */
 import type { WalletInterface } from '@bsv/sdk';
-import { PublicKey, P2PKH, createNonce } from '@bsv/sdk';
+import { PublicKey, P2PKH, createNonce, Transaction, Beef } from '@bsv/sdk';
 import { BRC29_PROTOCOL_ID } from './p2pkhInput';
 
 export interface TokenFundingOutput {
@@ -25,8 +25,23 @@ export async function createTokenFundingOutput(args: {
   satoshis: number;
   originator: string;
   description?: string;
+  /**
+   * Optional wallet basket for the produced output. Pass a DEDICATED name (never
+   * `default`) when the output must stay visible to — and spendable by — the owner's
+   * wallet after this call: a basketless output is recorded `basketId: undefined,
+   * change: false`, which `listOutputs` cannot enumerate (it filters on basketId and
+   * requires a basket) and the wallet will never select. That is fine for a funding
+   * output consumed moments later by TX2, and WRONG for a pledge the contributor must
+   * be able to reclaim on their own (ADR-025). `default` is refused because the wallet
+   * draws change from it, so it could silently spend a pledge and void its signature.
+   */
+  basket?: string;
+  labels?: string[];
 }): Promise<TokenFundingOutput> {
   const { wallet, chain, satoshis, originator } = args;
+  if (args.basket === 'default') {
+    throw new Error("refusing basket 'default': the wallet spends it as change and would void the pledge signature");
+  }
 
   const derivationPrefix = await createNonce(wallet, 'self', originator);
   const derivationSuffix = await createNonce(wallet, 'self', originator);
@@ -52,8 +67,10 @@ export async function createTokenFundingOutput(args: {
           satoshis,
           outputDescription: 'token tx funding',
           customInstructions: JSON.stringify({ derivationPrefix, derivationSuffix, forSelf: true }),
+          ...(args.basket ? { basket: args.basket } : {}),
         },
       ],
+      ...(args.labels ? { labels: args.labels } : {}),
       options: { randomizeOutputs: false, acceptDelayedBroadcast: false },
     } as any,
     originator,
@@ -65,5 +82,34 @@ export async function createTokenFundingOutput(args: {
   }
   const beef: number[] = Array.isArray(res.tx) ? res.tx : [];
 
-  return { txid, vout: 0, satoshis, scriptHex, derivationPrefix, derivationSuffix, beef };
+  // Locate our output in the tx the wallet actually built rather than assuming vout 0
+  // at the requested value. Callers spend this outpoint and sign a BIP-143 preimage
+  // over its amount, so a wrong index or value produces an invalid signature, not
+  // merely a wrong fee — worth one parse to turn an assumption into a check.
+  const vout = findFundingVout(res, txid, scriptHex, satoshis);
+
+  return { txid, vout, satoshis, scriptHex, derivationPrefix, derivationSuffix, beef };
+}
+
+function findFundingVout(res: any, txid: string, scriptHex: string, satoshis: number): number {
+  let tx: any = null;
+  try {
+    tx = Transaction.fromAtomicBEEF(res.tx);
+  } catch {
+    try {
+      tx = Beef.fromBinary(res.tx).findTxid(txid)?.tx ?? null;
+    } catch {
+      tx = null;
+    }
+  }
+  if (!tx?.outputs) return 0; // wallet gave us no tx to check — preserve prior behaviour
+  const want = scriptHex.toLowerCase();
+  const idx = tx.outputs.findIndex(
+    (o: any) => o.lockingScript?.toHex?.().toLowerCase() === want && Number(o.satoshis) === satoshis,
+  );
+  if (idx < 0) {
+    const got = tx.outputs.map((o: any, i: number) => `${i}:${o.satoshis}`).join(' ');
+    throw new Error(`funding output ${satoshis} sats not present in ${txid} (outputs ${got})`);
+  }
+  return idx;
 }

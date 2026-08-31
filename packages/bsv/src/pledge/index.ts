@@ -15,14 +15,29 @@
  */
 import type { WalletInterface } from '@bsv/sdk';
 import { Beef } from '@bsv/sdk';
+import { Transaction } from '@bsv/sdk';
 import { createTokenFundingOutput } from '../settle/twoTx/fundingOutput';
-import { BRC29_PROTOCOL_ID } from '../settle/twoTx/p2pkhInput';
+import { BRC29_PROTOCOL_ID, signP2pkhInput } from '../settle/twoTx/p2pkhInput';
 
 export * from './assemble';
 
 const ORIGINATOR = 'launchpad.pledge';
+
+/**
+ * A DEDICATED basket for pledge UTXOs — deliberately not `default`.
+ *
+ * A basketless output is stored `basketId: undefined, change: false`: `listOutputs`
+ * cannot enumerate it (it requires a basket and filters on basketId) and the wallet
+ * never selects it, so the contributor's own wallet can neither see nor spend the
+ * coin — which would make ADR-025's self-service refund untrue. `default` is equally
+ * wrong in the other direction: the wallet draws change from it, so it could spend a
+ * pledge out from under a live signature. Its own basket is the only correct answer.
+ */
+export const PLEDGE_BASKET = 'launchpad-pledge';
 /** ANYONECANPAY (0x80) | ALL (0x01) | FORKID (0x40). Never 0x81 (no-FORKID) on BSV. */
 const SIGHASH_ASSURANCE = 0xc1;
+/** ALL | FORKID — an ordinary spend of the contributor's own coin. */
+const SIGHASH_WITHDRAW = 0x41;
 
 export interface PledgeArgs {
   /** The contributor's pledge UTXO value in sats (one fixed denomination unit). */
@@ -72,6 +87,8 @@ export async function createPledge(
       satoshis: args.pledgeUnitSats,
       originator: ORIGINATOR,
       description: 'presale pledge',
+      basket: PLEDGE_BASKET,
+      labels: ['launchpad', 'presale-pledge'],
     });
   } catch (e) {
     return { ok: false, reason: `mint pledge UTXO: ${msg(e)}` };
@@ -136,4 +153,90 @@ export async function createPledge(
 
 function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+export interface WithdrawArgs {
+  /** The pledge UTXO to reclaim (as returned by `createPledge`). */
+  utxo: PledgeUtxo;
+  /** Where the reclaimed sats go — normally the contributor's own address. */
+  toAddress: string;
+  /** Fee to burn on the reclaim. */
+  feeSats: number;
+}
+
+export type WithdrawOutcome =
+  | { ok: true; rawTx: string; txid: string; reclaimedSats: number }
+  | { ok: false; reason: string };
+
+/**
+ * Reclaim a pledge — the contributor spending their own coin, which double-spends the
+ * 0xC1 pledge and revokes it (ADR-025's refund).
+ *
+ * This exists because a pledge signature is a STANDING authorisation: ANYONECANPAY
+ * binds only this input and the fixed output, so it never expires and nothing ties it
+ * to the soft cap actually being met — anyone holding the signature can fund the
+ * difference and push the sats to the project at any time. Spending the coin is the
+ * contributor's ONLY revocation, so it has to be a real, reachable operation rather
+ * than a documented intention.
+ *
+ * Non-custodial: the contributor's wallet derives the key and signs. No operator key
+ * is involved, and nothing here can send the funds anywhere but `toAddress`.
+ */
+export async function withdrawPledge(
+  wallet: WalletInterface,
+  _chain: 'main' | 'test',
+  args: WithdrawArgs,
+): Promise<WithdrawOutcome> {
+  let bsv: any;
+  try {
+    bsv = await loadBsv();
+  } catch (e) {
+    return { ok: false, reason: `load bsv: ${msg(e)}` };
+  }
+
+  const reclaimed = args.utxo.satoshis - args.feeSats;
+  if (reclaimed <= 0) {
+    return { ok: false, reason: `fee ${args.feeSats} leaves nothing of a ${args.utxo.satoshis}-sat pledge` };
+  }
+
+  try {
+    const pkh = bsv.Address.fromString(args.toAddress).hashBuffer.toString('hex');
+    const tx = new bsv.Transaction();
+    tx.from({
+      txId: args.utxo.txid,
+      outputIndex: args.utxo.vout,
+      script: args.utxo.scriptHex,
+      satoshis: args.utxo.satoshis,
+    });
+    tx.addOutput(
+      new bsv.Transaction.Output({
+        script: bsv.Script.fromASM(`OP_DUP OP_HASH160 ${pkh} OP_EQUALVERIFY OP_CHECKSIG`),
+        satoshis: reclaimed,
+      }),
+    );
+    tx.inputs[0].output = new bsv.Transaction.Output({
+      script: bsv.Script.fromHex(args.utxo.scriptHex),
+      satoshis: args.utxo.satoshis,
+    });
+
+    const unlock = await signP2pkhInput({
+      wallet,
+      bsv,
+      tx,
+      inputIndex: 0,
+      derivationPrefix: args.utxo.derivationPrefix,
+      derivationSuffix: args.utxo.derivationSuffix,
+      sourceScriptHex: args.utxo.scriptHex,
+      sourceSatoshis: args.utxo.satoshis,
+      sighashType: SIGHASH_WITHDRAW,
+      originator: ORIGINATOR,
+    });
+    tx.inputs[0].setScript(bsv.Script.fromHex(unlock));
+
+    const rawTx = tx.toString();
+    const txid = Transaction.fromHex(rawTx).id('hex') as string;
+    return { ok: true, rawTx, txid, reclaimedSats: reclaimed };
+  } catch (e) {
+    return { ok: false, reason: `withdraw build: ${msg(e)}` };
+  }
 }

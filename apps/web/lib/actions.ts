@@ -218,6 +218,37 @@ export async function updateSaleEscrow(input: {
           error: `hard cap sells ${tokensAtHardCap} tokens but only ${maxTokens} are available — lower the hard cap or the price, or issue more supply`,
         };
       }
+
+      // A pledge buys floor(unit / price) tokens, so any remainder is value the
+      // contributor pays and never receives — silently, and on every pledge.
+      if (input.pledgeUnitSats % price !== 0) {
+        const lost = input.pledgeUnitSats % price;
+        return {
+          ok: false,
+          error: `a ${input.pledgeUnitSats}-sat pledge buys ${Math.floor(input.pledgeUnitSats / price)} tokens at ${price} sats each, stranding ${lost} sats per contributor — make the pledge unit a multiple of the price`,
+        };
+      }
+    }
+
+    // The terms are frozen once anyone has pledged. Every pledge signature commits
+    // to `[softCap -> payoutAddress]` under SIGHASH_ALL, so lowering the soft cap
+    // afterwards yields an assurance tx that assembles cleanly, reports ok, and is
+    // then rejected by every node — after the fee UTXO has been minted and spent.
+    const pledged = await prisma.pledge.count({
+      where: { saleId: sale.id, state: { in: ['pledged', 'assembled'] } },
+    });
+    if (pledged > 0) {
+      const unchanged =
+        sale.type === input.type &&
+        Number(sale.softCap ?? 0) === Math.floor(input.softCapSats) &&
+        Number(sale.hardCap ?? 0) === Math.floor(input.hardCapSats) &&
+        Number(sale.pledgeUnitSats ?? 0) === Math.floor(input.pledgeUnitSats);
+      if (!unchanged) {
+        return {
+          ok: false,
+          error: `${pledged} pledge(s) already signed over these terms — they cannot be changed now without invalidating every signature`,
+        };
+      }
     }
 
     // Bonding curve (ADR-026): Phase 1 uses the compiled curve params. Price is
