@@ -404,9 +404,18 @@ Append-only; newest at the bottom. Template per entry:
     already sell back at the curve. It gives up portability, which was graduation's entire purpose.
 
 - **Consequences.** A second covenant to design, compile, test and AUDIT — comparable in size to
-  ADR-030 itself, and it changes the graduation path, so it must land BEFORE an external audit rather
-  than after. Graduation becomes a 2-output spend (payout + bond), which the covenant must pin.
+  ADR-030 itself. ~~It changes the graduation path, so it must land BEFORE an external audit rather
+  than after.~~ Graduation becomes a 2-output spend (payout + bond), which the covenant must pin.
   Existing graduated pools are unaffected and keep the ADR-031 disclosure only.
+
+  **Correction, 2026-08-28 — the sequencing claim above was wrong, and it was load-bearing.** It
+  would have held the external audit behind weeks of work. `graduate()` is **4 lines of 209**; ADR-032
+  rewrites those and adds a SEPARATE bond covenant. It does not touch `buy()`, `sell()` or the Merkle
+  slot machinery — and all seven drain vectors in the review brief live there. So an audit of the
+  current covenant transfers almost entirely, and the bond needs its own review regardless, being a
+  new contract. **The audit goes first.** The reviewer's opinion on whether the bond is worth building
+  at all is then an INPUT to this decision rather than something we settle alone, which is the better
+  use of an outside expert given the double-dip question below has no airtight answer.
 
 - **Status: PROPOSED, not accepted.** The double-dip question above is unresolved, and the honest
   alternative — accept disclosure-only and put the effort into the external audit instead — has not

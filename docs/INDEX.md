@@ -23,6 +23,8 @@ present, not implemented.
 - Operator key custody (HSM/KMS signer for production; contract + provider recipes) → `docs/OPERATOR-KEY-CUSTODY.md`
 - Covenant audit prep — Option B / ADR-028-029, the SHIPPED operator-gated curve (audit surface, invariants 1-8, drain vectors) → `docs/COVENANT-AUDIT-PREP.md`
 - Covenant audit prep — ADR-030 trustless Merkle-ledger curve (NO operator key; invariants 1-12, drain vectors 1-7, accepted design properties incl. zero spread + 65,536-holder ceiling, and our own testing gaps) → `docs/AUDIT-PREP-MERKLE-LEDGER.md`
+- External review brief for the ADR-030 covenant (8pp, BSVA-branded, 3 diagrams) — hand this to an outside reviewer; regenerate from `docs/research/covenant-brief-assets/` → `docs/research/BSVA-Covenant-Review-Brief.docx`
+- Covering note to send with the review brief (email body: the ask, what is out of scope, what we want back) → `docs/research/covenant-brief-assets/covering-note.md`
 - Trustless bonding-curve protocol roadmap (ledger track; scaling limits, SMT mandate, open client) → `docs/TRUSTLESS-LEDGER-ROADMAP.md`
 
 ## Domain & data

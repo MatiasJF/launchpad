@@ -32,7 +32,19 @@ export function curveCost(k: bigint, sold: bigint, delta: bigint): bigint {
 // length) at a rate that reliably confirms on BSV mainnet for covenant-heavy txs.
 
 /** sat/byte for covenant txs. 0.05 is the standard floor; 0.1 is safe vs eviction. */
-export const CURVE_FEE_RATE = 0.1;
+/**
+ * Fee rate in sat/byte for Option B covenant transactions. MEASURED, not guessed.
+ *
+ * Option B spends are ~7,400 bytes on chain (722f1309, be580900, e7ef0e35, 9a1bf00c). Probing at
+ * THAT size — not the 24.7KB of an ADR-030 pool, because a node's absolute minimum fee bites harder
+ * on a small transaction — every rate down to 0.0011 sat/B (8 sats) was mined in block 964173.
+ *
+ * We deliberately keep a 10x margin over the lowest observed mined rate rather than sitting on it:
+ * overpaying costs a few hundred satoshis, whereas a covenant spend left unconfirmed blocks every
+ * successor behind it. At 0.01 a spend costs ~74 sats instead of ~740 — a 10x cut on the SHIPPED
+ * path — and CURVE_MIN_FEE below still floors anything genuinely tiny. See ADR-031.
+ */
+export const CURVE_FEE_RATE = 0.01;
 /** Miner floor so a tiny tx still relays; must never dominate a large covenant tx. */
 export const CURVE_MIN_FEE = 40;
 /** Serialized byte length of a standard signed P2PKH input (buyer / operator fee). */

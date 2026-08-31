@@ -1,0 +1,9 @@
+graph TD
+    B["Buyer"] -->|"pays curve price"| P["POOL COVENANT<br/>holds every satoshi"]
+    P -->|"refund, holder-signed"| H["Holder"]
+    P -->|"graduation, anyone may trigger"| Y["Payout address<br/>fixed at deploy"]
+    O["Operator key"] -. "no path exists" .-> P
+
+    style P fill:#14142B,color:#ffffff,stroke:#14142B,stroke-width:2px
+    style Y fill:#D6F5EE,stroke:#0FA37F,stroke-width:2px
+    style O fill:#ffffff,stroke:#B9B9C6,stroke-dasharray:4 4,color:#8A8AA3

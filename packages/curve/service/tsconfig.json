@@ -14,5 +14,11 @@
   "include": [
     "*.ts",
     "../src/contracts/ledgerPool.ts"
+  ],
+  "exclude": [
+    "**/* 2.ts",
+    "**/* 2.tsx",
+    "**/* 2.mjs",
+    "**/* 2.json"
   ]
 }
