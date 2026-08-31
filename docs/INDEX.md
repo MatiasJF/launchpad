@@ -56,6 +56,10 @@ present, not implemented.
 - Chained-transfer BEEF (spend a prior transfer's token change) → `StasSource.beef` from-chain; basket path in `settle/beef.ts` is fallback only
 - Browser polyfills for bsv-js → `apps/web/next.config.mjs` (webpack fallbacks)
 - STAS knowledge (external) → `stas-knowledge-mcp` MCP (local) + `../stas-knowledge-mcp/knowledge`
+- Escrow-presale pledges (ADR-025) → `packages/bsv/src/pledge/` (`createPledge` 0xC1 · `assembleAssuranceTx` · `withdrawPledge` + `PLEDGE_BASKET`, ADR-033)
+- Pledge server actions → `apps/web/lib/escrow-actions.ts` (`recordPledge` with on-chain + signature validation · `reconcileWithdrawnPledges` · `getMyPledges` · `markPledgeWithdrawn` · `getPledgesForAssembly` · `markAssemblyBroadcast`)
+- Escrow presale mainnet round-trip → `apps/web/scripts/e2e-presale.mjs` (`pnpm --filter @launchpad/web e2e:presale`; `--deliver=<saleId>` resumes delivery once the vault confirms)
+- Mainnet run txid ledgers → `docs/mainnet-runs/*.jsonl` (one record per broadcast, so a run's proof outlives the scrollback)
 
 ## App
 

@@ -1,8 +1,57 @@
 # Project State
 
-_Last updated: 2026-08-28 — by: external review brief delivered; ADR-032 waits on the reviewer_
+_Last updated: 2026-08-31 — by: the escrow presale is proven on mainnet; ADR-033 fixed what the run exposed_
 
-## Next: the external audit is OUT, and ADR-032 waits on it (2026-08-28)
+## Next: the crowdfunding path is PROVEN on mainnet (2026-08-31)
+
+**The escrow presale (ADR-025) ran end to end on mainnet for the first time** — a month after it was
+written. `pnpm --filter @launchpad/web e2e:presale` drives the real server actions, the real DB and the
+real chain: configure → mint → two pledges → **a contributor withdraws** → a replacement pledge takes
+the freed slot → assemble → verify the bytes a miner saw → deliver STAS. Ten steps, all green.
+
+**Measured, not computed** (`docs/mainnet-runs/presale-2026-08-31T09-59-00-987Z.jsonl`):
+
+| tx | size | result |
+|---|---|---|
+| assurance `83689bdd…` | 486 B | 3 inputs → **one** output of 2,000 sats to the payout address · 40 sats · **0.0823 sat/B** |
+| withdraw `12f26446…` | 191 B | **970 sats reclaimed** by the contributor, no operator involvement |
+| delivery `170cc017…` | 6,426 B | two STAS outputs of **10 tokens each** |
+
+The spent-checks are the proof that matters: pledges A and C were consumed by the assurance tx
+(`vin 0`, `vin 1`), while the withdrawn pledge B was consumed by **its own withdrawal** — correctly
+excluded from assembly.
+
+**What the run was worth: it exposed two false claims before a real contributor ever hit them.**
+
+1. **A pledge signature is a STANDING authorisation.** `ANYONECANPAY|ALL` binds the contributor's input
+   and the fixed output — not the other contributors, and not a deadline. One 1,000-sat pledge plus an
+   unrelated 2,100-sat input paying 3,000 to the project *verifies*. "Your sats cannot move unless the
+   soft cap is met" was wrong; the real guarantee is that they can only ever go to **the project's
+   payout address**. Destination, not threshold.
+2. **The withdrawal we instructed contributors to perform was impossible.** The pledge UTXO was created
+   with no basket → `basketId: undefined, change: false` → not enumerable by `listOutputs`, never
+   selected, and unsignable as a caller-supplied input. `ContributeCard` said *"To withdraw, just spend
+   that coin"*, which no contributor could do.
+
+Since spending the coin is the **only** way to revoke a standing authorisation, the one control that
+made the design safe was the one that did not work. **ADR-033** fixes it: a dedicated
+`launchpad-pledge` basket (never `default`, which the wallet spends as change), a real `withdrawPledge`
++ Withdraw button, and `reconcileWithdrawnPledges` so a reclaimed pledge frees its slot instead of
+deadlocking the presale.
+
+**Five more defects closed in the same pass**, each found by adversarial review and each verified:
+`recordPledge` was unauthenticated and could not tell a *nonexistent* outpoint from an unspent one (WoC
+404s for both), so phantom pledges could brick a presale for the cost of HTTP requests — it now
+validates on-chain and **verifies the 0xC1 signature**; `Pledge` gains `@@unique([txid, vout])`;
+`markAssemblyBroadcast` is idempotent (a replay made 4 orders for 2 pledges); `updateSaleEscrow` freezes
+terms once anyone has pledged and rejects a pledge unit that is not a multiple of the price; the fee
+overhead constant goes 40 → 44 B.
+
+**Open:** the basket is correct by construction but **unverified in BSV Desktop** — the harness's
+`listOutputs` is a shim that ignores the basket argument, so the run proved the coin is *spendable*, not
+that a wallet *displays* it. Needs a device test.
+
+## The external audit is OUT, and ADR-032 waits on it (2026-08-28)
 
 **`docs/research/BSVA-Covenant-Review-Brief.docx`** — 8 pages, BSVA-branded, three diagrams. It asks
 one question (can anyone take satoshis they are not owed, or lock satoshis so nobody can), scopes out
@@ -1522,7 +1571,7 @@ injection), links restricted to http(s), images to https — headings, lists, li
 tables and inline images with zero XSS surface. `components/Markdown.tsx`, `.md`
 styles in globals.css. Sale-page About renders it; dashboard has a live preview.
 
-**🏗️ L2 ESCROW PRESALE — built (2026-07-29, ADR-025), live-test pending.** Trustless
+**✅ L2 ESCROW PRESALE — built 2026-07-29 (ADR-025), PROVEN ON MAINNET 2026-08-31 (see ADR-033 for what the run exposed and fixed).** Trustless
 soft-cap presale via SIGHASH_ANYONECANPAY dominant-assurance contract, non-custodial.
 Verified offline: an `0xC1` pledge signed alone still verifies after other inputs join.
 · **Engine (packages/bsv):** `createPledge` (mint exact-value UTXO + 0xC1 sign, no

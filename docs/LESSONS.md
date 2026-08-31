@@ -244,3 +244,48 @@ Two things follow:
   because they are not ours: `/tx/hash/{txid}` returns `vin[].value` as `0`, so a fee computed from the
   summary comes out negative; and `/address/{addr}/history` silently caps at 100 entries, so a
   transaction that is genuinely there reads as absent.
+
+---
+
+## "Built, live-test pending" hid a guarantee that could never have worked (2026-08-31, ADR-025 → ADR-033)
+
+`STATE.md` carried the line **"🏗️ L2 ESCROW PRESALE — built (2026-07-29, ADR-025), live-test pending"**
+for a month. Everything about it looked finished: the ADR was Accepted, the engine and UI existed, it
+typechecked, and the cryptography was genuinely correct — 0xC1 preimages reproduce byte-identical across
+input indices, and a pledge signed alone verifies inside the assembled multi-input transaction under
+`STRICTENC|DERSIG|LOW_S|SIGHASH_FORKID`.
+
+The card told contributors: **"To withdraw, just spend that coin."** They could not. `createPledge` built
+the pledge UTXO through `createTokenFundingOutput`, which passed no `basket`, so wallet-toolbox stored it
+`basketId: undefined, change: false` — not enumerable by `listOutputs`, never chosen by coin selection,
+and unsignable as a caller-supplied input. The instruction in our own UI described an action the software
+made impossible.
+
+That was not a small gap. Under `ANYONECANPAY|ALL` a pledge signature is a **standing authorisation**: it
+binds the contributor's input and the fixed output, but not the other contributors and not a deadline —
+verified by counterfactual, one 1,000-sat pledge plus an unrelated 2,100-sat input paying 3,000 to the
+project *verifies*. Spending the coin is therefore the contributor's **only** way to revoke. The one
+control that made the design safe was the one that did not exist.
+
+Underneath it sat a second failure that only fires on success: nothing ever wrote `Pledge.state =
+'withdrawn'`. The first real withdrawal would have deadlocked the presale — `recordPledge` kept counting
+the spent coin and rejected every replacement ("the soft cap is fully pledged"), while
+`getPledgesForAssembly` checked the chain, skipped it, and could never reach the cap again. The public
+page would have gone on advertising a raise that no longer existed.
+
+> A test that exercises the happy path proves the feature ships. Only exercising the **escape hatch**
+> proves it is safe. Ours had never been run once, and it could not have run at all.
+
+What actually surfaced it was not a code review of the sort we had already done — it was asking, per
+capability we advertise, *"can the user really do this, with the wallet they actually have?"* and then
+doing it on mainnet. The full round-trip (`pnpm --filter @launchpad/web e2e:presale`) now includes a
+deliberate withdrawal followed by a replacement pledge, so the recovery path is covered by construction:
+assurance `83689bdd…` 486 B / 40 sats / **0.0823 sat/B**, one output; withdrawal `12f26446…` returned
+**970 sats** to the contributor; the withdrawn pledge was correctly excluded from assembly.
+
+Two related notes went to `~/.claude/bsv-field-notes.md` rather than here, because neither is ours: a
+basketless `createAction` output is invisible to its own owner's wallet, and
+`/tx/{txid}/{vout}/spent` **cannot be used as an existence check** — on a one-output transaction `vout 1`
+returns the same 404 as a genuinely unspent `vout 0` (and `vout 99` returns 500). `recordPledge` had
+relied on exactly that, so a real txid with a fabricated vout was accepted, occupied soft-cap space, and
+would have killed assembly with no way to invalidate the row.
