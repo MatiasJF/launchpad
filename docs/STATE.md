@@ -2,7 +2,7 @@
 
 _Last updated: 2026-08-31 — by: the escrow presale is proven on mainnet; ADR-033/034/035 fixed what the runs exposed_
 
-## The delivery fee was too LOW, not too high (2026-08-31, ADR-036)
+## The delivery fee buys latency, not safety (2026-08-31, ADR-036)
 
 Chasing an apparent 4.7x overpayment on the shipped STAS path, the measurement inverted the premise.
 Probed at 7,000 bytes — the size a batch delivery really is — **0.15 and 0.10 were mined into the block
@@ -10,15 +10,20 @@ they were broadcast, while 0.05, 0.025, 0.01, 0.005 and 0.001 were all still unc
 later.** Production agreed: of three real deliveries at 0.05, only `170cc017` was mined; `da8b0d47` and
 `bc05f10b` sat in the mempool 18 blocks on.
 
-`batch.ts` goes **0.05 → 0.1**, matching `settle/index.ts`. The covenant's proven 0.0101 does not transfer:
-a curve spend chains on unconfirmed outputs, but a delivery chains on the previous delivery's token change
-and `getSourceBeef` needs a **merkle proof**, so an unmined delivery blocks every delivery behind it —
-the reason the presale harness needed a `--deliver` resume mode at all. Underpaying here buys a stalled
-settlement queue, not a saving.
+**Then block 964709 swept the whole low-fee backlog and mined every probe, down to 0.001 sat/B (7 sats).**
+Both "stuck" deliveries landed in it too. So there is **no observable fee floor at 7 KB** — there is a
+latency gradient: 0.15 and 0.10 were mined in ~1 block, everything at or below 0.05 in ~10 blocks
+(≈1.5–2 hours).
 
-ADR-031 said a mineable rate is proven only for the size probed. This adds: **only for the moment probed**
-— `170cc017` got in at 0.0475 ten blocks before nothing below 0.05 could. 0.1 is the observed floor with
-no headroom; re-probe if deliveries lag rather than assuming it held.
+`batch.ts` still goes **0.05 → 0.1**, but for the corrected reason: it **buys confirmation latency**. The
+next delivery chains onto this one's token change and `getSourceBeef` needs a merkle proof, so a project
+settling several batches serially would otherwise wait hours between them — the reason the presale harness
+needed a `--deliver` resume mode at all. 350 extra sats to turn ~2 hours into ~10 minutes is worth it; it
+is not a correctness fix and must not be described as one.
+
+**Twice in one task an early window gave a confident wrong answer** — a 2-block `--check`, then an 8-block
+one. ADR-031 said a mineable rate is proven only for the size probed; this adds **the moment probed, and
+only after the backlog behind it has cleared**.
 
 **Open, and not small:** `markOrdersSettled` marks orders settled at *broadcast*, so the two stuck
 deliveries are recorded as delivered. If a node evicts them the database asserts a delivery that never

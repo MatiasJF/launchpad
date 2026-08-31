@@ -624,7 +624,7 @@ Append-only; newest at the bottom. Template per entry:
 
 ---
 
-## ADR-036 · Batch delivery fee RAISED 0.05 → 0.1: settlement latency is the constraint · Accepted · 2026-08-31
+## ADR-036 · Batch delivery fee RAISED 0.05 → 0.1: buying confirmation LATENCY, not avoiding a floor · Accepted · 2026-08-31
 
 - **Context.** The shipped STAS path never got the calibration ADR-031 gave the curve: `batch.ts` sat at
   `FEE_RATE = 0.05` and `settle/index.ts` at `0.1`, both picked conservatively and untested. Measured
@@ -668,7 +668,36 @@ Append-only; newest at the bottom. Template per entry:
   This adds: only for **the moment probed**. A calibration is a reading, not a constant.
 
 - **Left open, and it is not small.** `markOrdersSettled` flips orders to `settled` immediately after
-  broadcast, so the two deliveries still stuck in the mempool are recorded as delivered. If a node
-  evicts them, the database asserts a delivery that never happened — and ADR-031's settlement record
-  reads from that database. Same shape as ADR-035's lesson that broadcasting is not finishing. Not fixed
-  here; raising the fee makes it far less likely, which is not the same as making it correct.
+  broadcast, so a delivery that is merely *broadcast* is recorded as delivered. If a node evicts one
+  before it is mined, the database asserts a delivery that never happened — and ADR-031's settlement
+  record reads from that database. Same shape as ADR-035's lesson that broadcasting is not finishing.
+  Not fixed here; raising the fee shortens the exposure window, which is not the same as closing it.
+
+- ### Correction, 2026-08-31, ~2 hours after the above was written
+
+  **Everything got mined, including 0.001 sat/B.** Block 964709 swept the entire low-fee backlog. The
+  probes were broadcast around block 964699:
+
+  | rate | fee | mined in | latency |
+  |---|---|---|---|
+  | 0.15 · 0.10 | 1050 · 700 | **964700** | ~1 block |
+  | 0.05 · 0.025 · 0.01 · 0.005 · 0.001 | 350 · 175 · 70 · 35 · **7** | **964709** | ~10 blocks |
+
+  Both "stuck" production deliveries (`da8b0d47`, `bc05f10b`) also landed in 964709, ~19 blocks after
+  broadcast. So the claim above — *"0.05 was still unconfirmed"* — was true when written and **wrong as a
+  conclusion**. It is not that low rates fail to be mined. **At 7 KB there is no observable floor at all,
+  down to 7 satoshis; there is a latency gradient.**
+
+  **The decision does not change, but its justification does.** The real trade is:
+  - **0.1** → mined in ~1 block, 700 sats per 7 KB
+  - **≤0.05** → mined in ~10 blocks (≈1.5–2 hours), 350 sats or less
+
+  For this path that latency is the cost, because the next delivery chains onto this one's token change
+  and `getSourceBeef` needs a merkle proof. A project settling several batches serially would wait hours
+  between them. Paying 350 extra satoshis to turn ~2 hours into ~10 minutes is the right trade — but it
+  is a **latency purchase**, not a correctness fix, and this ADR should never have implied otherwise.
+
+  **This is the second time in one task that an 8-block window produced a confident wrong answer**, the
+  first being the 2-block `--check`. Both times the data was real and the window was the flaw. The
+  standing rule from ADR-031 needs a third clause: a mineable rate is proven for the size probed, the
+  moment probed, **and only after the backlog behind it has cleared**.

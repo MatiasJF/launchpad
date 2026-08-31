@@ -317,7 +317,7 @@ real rate limiting.
 
 ---
 
-## The fee was too LOW, and I set out to lower it (2026-08-31, ADR-036)
+## The fee buys latency — and I got the conclusion wrong twice (2026-08-31, ADR-036)
 
 Three STAS deliveries had paid 377, 305 and 305 sats — about **0.0475 sat/B**. Against the 0.0101 sat/B
 the covenant refund proved mineable in block 964189, that read as a clean 4.7x overpayment on every
@@ -351,6 +351,23 @@ Two traps found on the way, both of which produce confident wrong answers:
   honest answer was "not yet known". The conclusion only became safe when the same split held at 8 blocks
   **and** production agreed.
 
-Left open: `markOrdersSettled` flips orders to `settled` at broadcast, so the two stuck deliveries are
-recorded as delivered. If a node evicts them, the database asserts a delivery that never happened — the
-same shape as ADR-035's finding that broadcasting is not finishing.
+Left open: `markOrdersSettled` flips orders to `settled` at broadcast, so a merely-broadcast delivery is
+recorded as delivered. If a node evicts one before it is mined, the database asserts a delivery that never
+happened — the same shape as ADR-035's finding that broadcasting is not finishing.
+
+**And then, two hours later, the conclusion above turned out to be wrong too.** Block 964709 swept the
+low-fee backlog and mined **every** probe, down to **0.001 sat/B — 7 satoshis on a 7,000-byte
+transaction** — along with both "stuck" production deliveries. There is no observable fee floor at this
+size. There is a latency gradient: ~1 block at 0.10 and above, ~10 blocks (≈1.5–2 hours) at 0.05 and
+below.
+
+The fee change stands, because for this path latency *is* the cost — the next delivery needs a merkle
+proof of this one — but it buys speed, not safety, and I had written it up as safety.
+
+> **The window is the flaw, not the data.** A 2-block check said "0.1 is the floor". An 8-block check said
+> the same and I believed it. A 10-block check said there is no floor. Each reading was accurate about the
+> chain and wrong about the world. When a conclusion depends on something *not* having happened yet, it is
+> not a conclusion — state it as "not yet observed" and give it a deadline.
+
+That is twice in one task, and the second time came immediately after I had written the warning about the
+first. Being able to name a bias is not the same as being immune to it.

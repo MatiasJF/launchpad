@@ -335,9 +335,17 @@ async function main() {
     record({ txid: w.txid, purpose: 'pledge-withdraw-B', reclaimed: w.reclaimedSats });
     kv('reclaimed', `${w.reclaimedSats} sats`); kv('withdraw tx', wocTx(w.txid));
 
-    const spent = await isOutputUnspent(b.utxo.txid, b.utxo.vout);
-    kv('pledge B unspent?', String(spent.unspent));
-    if (spent.unspent !== false) throw fail('pledge B still reads unspent after the withdrawal broadcast', spent);
+    // WoC's spent index lags a just-broadcast spend by seconds, and "unspent" and
+    // "not indexed yet" are the SAME bare 404 — so asserting immediately is a race we
+    // happened to win four runs in a row. Poll before concluding.
+    let spent = { unspent: null };
+    for (let i = 0; i < 8; i++) {
+      spent = await isOutputUnspent(b.utxo.txid, b.utxo.vout);
+      if (spent.unspent === false) break;
+      if (i < 7) await new Promise((r) => setTimeout(r, 5000));
+    }
+    kv('pledge B unspent?', `${spent.unspent}${spent.spentBy ? ` (spent by ${spent.spentBy.slice(0, 12)}…)` : ''}`);
+    if (spent.unspent !== false) throw fail('pledge B still reads unspent after the withdrawal broadcast (polled 40s)', spent);
 
     // HONEST LIMIT: FlatKeyWallet.internalizeAction is a best-effort no-op stub, so this
     // harness CANNOT prove the refund is adopted back into a wallet's spendable balance.
