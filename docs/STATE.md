@@ -89,10 +89,16 @@ The basket stays — it keeps a pledge out of the change pool so the wallet cann
 live signature — but the claim of native user-facing visibility is **withdrawn**. The app, not the wallet,
 is where a contributor sees their pledges.
 
+**Retested in BSV Desktop and it holds.** Pledge `47bd0a33…` reclaimed by `20b11ff8…`, 970 sats to
+`14xJ3cUu…` (a fresh BRC-29 payment key, not the STAS key that stranded the first attempt), and the owner
+sees **both the pledge and the withdrawal** in the wallet. The withdrawal is the one that counts: the
+wallet never built it, so its presence is `internalizeAction` adopting the coin — the pre-fix attempt left
+no wallet record at all.
+
 **Open:** the harness **cannot** verify internalisation (`FlatKeyWallet.internalizeAction` is a no-op
-stub), so that step needs BSV Desktop each time — it now prints that limit instead of implying a pass.
-The 970 sats from `572a0609…` remain recoverable but stranded. Still untested: the instant-buy top-up
-above the soft cap.
+stub), so that step needs a real wallet each time — it prints that limit rather than implying a pass. The
+970 sats from the pre-fix `572a0609…` remain recoverable but stranded. Still untested: the instant-buy
+top-up above the soft cap.
 
 ## The external audit is OUT, and ADR-032 waits on it (2026-08-28)
 

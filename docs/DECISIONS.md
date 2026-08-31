@@ -589,6 +589,13 @@ Append-only; newest at the bottom. Template per entry:
   the coin moves and lands at a derivable key; whether a real wallet adopts it is a BSV Desktop question,
   and the harness now prints that limit rather than implying a pass.
 
-- **Outstanding:** the 970 sats from `572a0609…` are still stranded at the STAS-derived address. They are
-  provably the owner's and recoverable with a script that re-derives that key; the fix above prevents a
-  recurrence but does not retroactively move them.
+- **Confirmed in BSV Desktop, 2026-08-31.** A second pledge/withdraw cycle on the same presale: pledge
+  `47bd0a33…` reclaimed by `20b11ff8…`, paying **970 sats to `14xJ3cUu5GaQJBoCBnqjYusWMtxV6hKULe`** — a
+  fresh BRC-29 payment key, not the STAS key that stranded the first attempt. The owner reports both the
+  pledge **and the withdrawal** now visible in the wallet. That is the load-bearing signal: the wallet
+  never created the withdrawal (we broadcast a raw tx), so its appearing at all is `internalizeAction`
+  adopting it. The first attempt produced no wallet record whatsoever.
+
+- **Outstanding:** the 970 sats from `572a0609…` remain stranded at `1AFSVTV87bqa5wsWeTWa7Ehx6eQNfSqCYV`,
+  the STAS-derived address of the pre-fix attempt. Provably the owner's and recoverable by re-deriving
+  that key; the fix prevents recurrence but does not move them retroactively.
