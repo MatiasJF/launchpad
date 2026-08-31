@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-08-31 — by: the escrow presale is proven on mainnet; ADR-033 fixed what the run exposed_
+_Last updated: 2026-08-31 — by: the escrow presale is proven on mainnet; ADR-033/034 fixed what the run exposed_
 
 ## Next: the crowdfunding path is PROVEN on mainnet (2026-08-31)
 
@@ -47,9 +47,25 @@ validates on-chain and **verifies the 0xC1 signature**; `Pledge` gains `@@unique
 terms once anyone has pledged and rejects a pledge unit that is not a multiple of the price; the fee
 overhead constant goes 40 → 44 B.
 
+**The deadline is now a server rule (ADR-034).** It had been enforced only in `saleState` (the UI) and on
+instant buys — `recordPledge` checked `status === 'live'` and nothing more, and assembly had no timing gate
+at all, so a raise that closed months ago was still assemblable by anyone holding the rows. Pledges are now
+accepted only within `[startsAt, endsAt)`; assembly stays open for a 24h settlement grace (filling to the
+last moment then settling is the *normal* shape of an assurance contract); past that, pledges `expire` —
+and expired pledges stay **withdrawable**, since a failed raise is when the reclaim matters most.
+
+The card no longer claims what ADR-033 disproved. It reads "non-custodial — your sats stay in your own
+wallet", then the real distinction: a pledge fixes **where** the sats can go, not **when** — the signature
+stands until you withdraw, and the deadline is enforced by this app, **not by the blockchain**. Chain-enforced
+expiry needs `nLockTime` from the pushed preimage, which is the A2 accumulator's job (Phase 2).
+
+**Confirmed by miners, not just mempools.** The first run's transactions are in blocks: withdrawal `12f26446…`
+in **964689**, assurance `83689bdd…` and delivery `170cc017…` in **964690**.
+
 **Open:** the basket is correct by construction but **unverified in BSV Desktop** — the harness's
 `listOutputs` is a shim that ignores the basket argument, so the run proved the coin is *spendable*, not
-that a wallet *displays* it. Needs a device test.
+that a wallet *displays* it. Needs a device test. Also untested: a presale with genuinely *distinct*
+contributors (both runs pledged from one wallet), and the instant-buy top-up above the soft cap.
 
 ## The external audit is OUT, and ADR-032 waits on it (2026-08-28)
 

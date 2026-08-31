@@ -497,3 +497,50 @@ Append-only; newest at the bottom. Template per entry:
   the harness's `FlatKeyWallet.listOutputs` is a shim that ignores the basket argument, so this run
   proved the coin is *spendable* (via `withdrawPledge`), not that a real wallet *displays* it. That
   needs a device test before we claim native visibility.
+
+---
+
+## ADR-034 · The presale deadline: a server rule with a bounded settlement window · Accepted · 2026-08-31
+
+- **Context.** ADR-033 established that a 0xC1 pledge is a standing authorisation with no expiry of its
+  own. That makes the deadline load-bearing, and the deadline was enforced in two places that both
+  missed the pledge path: `data.ts:74` (the `saleState` the card renders from) and `order-actions.ts:74`
+  (instant buys in the top-up phase). **`recordPledge` checked only `status === 'live'`** — so the
+  button vanished from the UI while the server action still accepted anything posted to it, and
+  `getPledgesForAssembly` / `markAssemblyBroadcast` had no timing gate at all. A raise that closed
+  months ago was still assemblable by anyone holding the rows.
+
+- **Decision.** One `presaleWindow()` derives the timing, and three rules use it:
+  1. **Pledges are accepted only within `[startsAt, endsAt)`.** Checked before the duplicate-outpoint
+     guard, so a late submission is refused on the deadline rather than on an incidental error.
+  2. **Assembly stays allowed for `ASSEMBLY_GRACE_MS` (24h) after `endsAt`.** Assembling *after* the
+     close is the normal shape of an assurance contract, not an edge case — a raise fills to the last
+     moment and is settled once the cap is proven met. The window bounds it so signatures do not stay
+     spendable indefinitely.
+  3. **Past the grace, pledges become `expired`** (a state the schema already declared and nothing ever
+     wrote). A dead raise stops advertising a total it will never collect, and a stale pledge set stops
+     being assemblable.
+
+- **Expired pledges stay withdrawable.** `getMyPledges` returns `pledged` *and* `expired`, and
+  `reconcileWithdrawnPledges` covers both. After a failed raise is precisely when a contributor most
+  needs the reclaim; expiry must not remove the control ADR-033 just built. Contributors never lost
+  custody — expiry is bookkeeping, not a state change on chain.
+
+- **Said plainly in the UI.** `ContributeCard` claimed *"trustless — funds never leave your wallet until
+  the cap is met"*, which ADR-033 disproved. It now reads **"non-custodial — your sats stay in your own
+  wallet"**, followed by the distinction that matters: a pledge fixes **where** the sats can go (only
+  this project's payout address, never anywhere else) but not **when** — the signature stands until you
+  withdraw, and **the deadline is enforced by this app, not by the blockchain.**
+
+- **Consequences.** This closes the gap between what the page claims and what the server does. It does
+  **not** make the deadline trustless, and the copy no longer implies it does. Chain-enforced expiry
+  needs `nLockTime` read from the pushed preimage with `nSequence < 0xFFFFFFFF` — the A2 accumulator's
+  job (strategy doc Phase 2), which is also the design where all four operator-disappears checks pass.
+  Until then the honest claim is: self-custodial funds, a signature-fixed destination, contributor-side
+  revocation at will, and an app-level close.
+
+- **Covered by the harness.** `e2e:presale` step 7 drives the real actions against the real database with
+  the sale window moved: a pledge after the close is refused on the deadline, assembly inside the grace
+  is allowed, assembly past it is refused, the pledges expire, the expired ones remain withdrawable, and
+  the reported raise drops to 0. Verified 2026-08-31 in an 11-step run that then assembled and delivered
+  normally — assurance `09f0d8cb…` 488 B / 40 sats / 0.0820 sat/B.

@@ -325,6 +325,59 @@ async function main() {
     state.pledges.push(c);
   });
 
+  // 6.5 ── THE DEADLINE must be the server's rule, not the UI's ───────────────────
+  // No broadcasts here: this drives the real server actions against the real DB with
+  // the sale window moved, which is exactly where the gate lives. Pledge state is
+  // restored at the end so the run continues into assembly.
+  await step('DEADLINE — the close is enforced server-side, and a dead raise expires', async () => {
+    const saleId = state.sale.id;
+    const restore = () => prisma.sale.update({ where: { id: saleId }, data: { endsAt: null } });
+
+    // (a) past the close, a new pledge is refused. The window is checked BEFORE the
+    //     duplicate-outpoint guard, so re-submitting a known outpoint reaches it.
+    await prisma.sale.update({ where: { id: saleId }, data: { endsAt: new Date(Date.now() - 60_000) } });
+    const a = state.pledges[0];
+    const late = await E.recordPledge({
+      saleId, contributor: identity, receiveAddress: client.address,
+      txid: a.utxo.txid, vout: a.utxo.vout, satoshis: a.utxo.satoshis, scriptHex: a.utxo.scriptHex,
+      sigHex: a.sigHex, pubkeyHex: a.pubkeyHex,
+      derivationPrefix: a.utxo.derivationPrefix, derivationSuffix: a.utxo.derivationSuffix,
+    });
+    kv('pledge after close', late.ok ? 'ACCEPTED' : `refused — ${late.error}`);
+    if (late.ok) throw fail('a pledge was accepted after the deadline — the close is UI-only', {});
+    if (!/deadline/i.test(late.error ?? '')) throw fail(`refused for the wrong reason: ${late.error}`, {});
+
+    // (b) inside the settlement grace, assembly is still allowed — filling to the last
+    //     moment then settling is the normal shape of an assurance contract.
+    const sel = await E.getPledgesForAssembly(saleId, identity);
+    kv('assembly in grace', sel.ok ? 'allowed' : `blocked — ${sel.error}`);
+    if (!sel.ok) throw fail(`assembly blocked inside the grace window: ${sel.error}`, {});
+
+    // (c) past the grace, assembly is refused and the pledges expire.
+    await prisma.sale.update({ where: { id: saleId }, data: { endsAt: new Date(Date.now() - 25 * 3600_000) } });
+    const stale = await E.getPledgesForAssembly(saleId, identity);
+    kv('assembly past grace', stale.ok ? 'ALLOWED' : `refused — ${stale.error}`);
+    if (stale.ok) throw fail('a stale pledge set was still assemblable — 0xC1 signatures never expire on their own', {});
+
+    const expired = await prisma.pledge.count({ where: { saleId, state: 'expired' } });
+    kv('expired pledges', expired);
+    if (expired === 0) throw fail('a dead raise did not expire its pledges', {});
+
+    // (d) an expired pledge must STILL be withdrawable — that is when it matters most.
+    const mine = await E.getMyPledges(saleId, identity);
+    kv('withdrawable', `${mine.length} (expired pledges must stay reclaimable)`);
+    if (mine.length !== expired) throw fail(`only ${mine.length} of ${expired} expired pledges are withdrawable`, {});
+
+    // (e) a dead raise must not advertise a total it will never collect.
+    const st = await E.getPresaleState(saleId);
+    kv('raised after expiry', `${st.raisedSats} (must be 0)`);
+    if (Number(st.raisedSats) !== 0) throw fail(`expired presale still reports ${st.raisedSats} raised`, {});
+
+    await restore();
+    await prisma.pledge.updateMany({ where: { saleId, state: 'expired' }, data: { state: 'pledged' } });
+    kv('restored', 'endsAt cleared, pledges back to pledged');
+  });
+
   // 7 ── ASSEMBLE the assurance tx ─────────────────────────────────────────────────
   await step('ASSEMBLE + BROADCAST the assurance transaction', async () => {
     const sel = await E.getPledgesForAssembly(state.sale.id, identity);

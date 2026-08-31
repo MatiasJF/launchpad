@@ -106,7 +106,9 @@ async function validatePledgeOnChain(input: {
  * decision that depends on how much is really pledged.
  */
 export async function reconcileWithdrawnPledges(saleId: string): Promise<{ withdrawn: number }> {
-  const open = await prisma.pledge.findMany({ where: { saleId, state: 'pledged' } });
+  // `expired` counts too — a contributor can (and after a failed raise, should) reclaim
+  // a pledge whose deadline has passed, and that reclaim must still be recorded.
+  const open = await prisma.pledge.findMany({ where: { saleId, state: { in: ['pledged', 'expired'] } } });
   const gone: string[] = [];
   for (const p of open) {
     const check = await isOutputUnspent(p.txid, p.vout);
@@ -117,6 +119,56 @@ export async function reconcileWithdrawnPledges(saleId: string): Promise<{ withd
     revalidatePath('/');
   }
   return { withdrawn: gone.length };
+}
+
+
+/**
+ * How long after `endsAt` the project may still broadcast the assurance tx.
+ *
+ * Assembly after the deadline is the NORMAL case, not an edge one: an assurance
+ * contract fills up to the last moment and is settled once the cap is proven met. But
+ * it cannot stay assemblable forever — a 0xC1 pledge signature has no expiry of its
+ * own, so without a bounded window a raise that ended months ago is still spendable by
+ * anyone holding the rows. This is the app-level bound. It is NOT chain-enforced;
+ * closing that properly needs nLockTime read from the pushed preimage (Phase 2 / A2).
+ */
+const ASSEMBLY_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** Presale timing, derived from the sale window in one place. */
+function presaleWindow(sale: { startsAt: Date | null; endsAt: Date | null }): {
+  open: boolean;
+  assemblable: boolean;
+  reason: string;
+} {
+  const now = Date.now();
+  const started = !sale.startsAt || sale.startsAt.getTime() <= now;
+  const endsAt = sale.endsAt?.getTime() ?? null;
+  const ended = endsAt !== null && endsAt <= now;
+  const graceOver = endsAt !== null && endsAt + ASSEMBLY_GRACE_MS <= now;
+  return {
+    open: started && !ended,
+    assemblable: !graceOver,
+    reason: !started ? 'the presale has not opened yet' : ended ? 'the presale deadline has passed' : '',
+  };
+}
+
+/**
+ * Mark still-open pledges `expired` once the deadline and the settlement grace have
+ * both passed without assembly — the assurance contract failed, so nothing is owed and
+ * nothing should be counted. Contributors keep their coins (they were never moved) and
+ * can still withdraw; expiring only stops a dead raise from advertising a total it will
+ * never collect, and stops a stale pledge set from being assembled later.
+ */
+export async function expirePledgesPastDeadline(saleId: string): Promise<{ expired: number }> {
+  const sale = await prisma.sale.findUnique({ where: { id: saleId } });
+  if (!sale || sale.type !== 'escrow_presale') return { expired: 0 };
+  if (presaleWindow(sale).assemblable) return { expired: 0 };
+  const res = await prisma.pledge.updateMany({
+    where: { saleId, state: 'pledged' },
+    data: { state: 'expired' },
+  });
+  if (res.count > 0) revalidatePath('/');
+  return { expired: res.count };
 }
 
 /**
@@ -149,6 +201,11 @@ export async function recordPledge(input: {
     });
     if (!sale || sale.type !== 'escrow_presale') return { ok: false, error: 'not an escrow presale' };
     if (sale.status !== 'live') return { ok: false, error: 'presale is not open' };
+    // The deadline was enforced only in the UI: `saleState` hid the button while this
+    // action still accepted anything posted to it. A pledge is a standing authorisation
+    // with no expiry of its own, so accepting one after the close is not cosmetic.
+    const win = presaleWindow(sale);
+    if (!win.open) return { ok: false, error: win.reason };
     if (sale.softCap == null) return { ok: false, error: 'presale has no soft cap' };
     const payoutAddress = sale.token.project.payoutAddress;
     if (!payoutAddress) return { ok: false, error: 'project has no payout address' };
@@ -249,6 +306,10 @@ export async function getPledgesForAssembly(
   });
   if (!sale || sale.type !== 'escrow_presale') return { ok: false, error: 'not an escrow presale' };
   if (!(await isProjectOwner(sale.token.projectId, identityPubkey))) return { ok: false, error: 'not the project owner' };
+  if (!presaleWindow(sale).assemblable) {
+    await expirePledgesPastDeadline(saleId);
+    return { ok: false, error: 'the settlement window closed — these pledges can no longer be assembled' };
+  }
   const payout = sale.token.project.payoutAddress;
   if (!payout) return { ok: false, error: 'project has no payout address' };
   if (sale.softCap == null) return { ok: false, error: 'no soft cap set' };
@@ -295,6 +356,7 @@ export async function markAssemblyBroadcast(
   const sale = await prisma.sale.findUnique({ where: { id: saleId }, include: { token: true } });
   if (!sale) return { ok: false, error: 'sale not found' };
   if (!(await isProjectOwner(sale.token.projectId, identityPubkey))) return { ok: false, error: 'not the project owner' };
+  if (!presaleWindow(sale).assemblable) return { ok: false, error: 'the settlement window closed' };
   if (!/^[0-9a-fA-F]{64}$/.test(assuranceTxid)) return { ok: false, error: 'invalid assurance txid' };
   const price = Number(sale.priceSats) || 1;
 
@@ -335,7 +397,8 @@ export async function getPresaleState(saleId: string): Promise<{
   raisedSats: string;
   pledgeCount: number;
 } | null> {
-  // Reconcile first: a withdrawn pledge must not be advertised as money raised.
+  // Reconcile first: neither a withdrawn nor a dead-raise pledge is money raised.
+  await expirePledgesPastDeadline(saleId);
   await reconcileWithdrawnPledges(saleId);
   const agg = await prisma.pledge.aggregate({
     where: { saleId, state: { in: ['pledged', 'assembled'] } },
@@ -361,6 +424,7 @@ export async function markPledgeWithdrawn(
   if (!pledge) return { ok: false, error: 'pledge not found' };
   if (pledge.contributor !== contributor) return { ok: false, error: 'not your pledge' };
   if (pledge.state === 'assembled') return { ok: false, error: 'that pledge is already funded' };
+  if (pledge.state === 'withdrawn') return { ok: true }; // already recorded
 
   // The chain is the authority — only record a withdrawal that actually happened.
   const check = await isOutputUnspent(pledge.txid, pledge.vout);
@@ -394,9 +458,12 @@ export async function getMyPledges(
   derivationSuffix: string;
 }[]> {
   if (!contributor) return [];
+  await expirePledgesPastDeadline(saleId);
   await reconcileWithdrawnPledges(saleId);
+  // `expired` is included deliberately: after a failed raise is exactly when a
+  // contributor most needs the reclaim, so it must not vanish from the list.
   const rows = await prisma.pledge.findMany({
-    where: { saleId, contributor, state: 'pledged' },
+    where: { saleId, contributor, state: { in: ['pledged', 'expired'] } },
     orderBy: { createdAt: 'asc' },
   });
   return rows.map((p) => ({

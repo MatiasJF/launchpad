@@ -181,7 +181,7 @@ export function ContributeCard({ s }: { s: SaleCardVM }) {
       <div className="mt-5">
         {status === 'pledged' ? (
           <div className="rounded-md border border-teal/40 bg-teal/10 px-4 py-3 text-sm text-teal">
-            ✓ Pledged. Your sats stay in your wallet until the soft cap is met — withdraw below to take the pledge back.
+            ✓ Pledged. Your sats stay in your wallet — withdraw below any time to take the pledge back.
           </div>
         ) : capReached ? (
           <Button variant="secondary" block disabled>
@@ -220,8 +220,9 @@ export function ContributeCard({ s }: { s: SaleCardVM }) {
               </li>
             ))}
           </ul>
-          <p className="mt-2 font-mono text-[0.65rem] text-faint">
-            Withdrawing spends your own coin, which voids the pledge. Costs {WITHDRAW_FEE_SATS} sats in fees.
+          <p className="mt-2 font-mono text-[0.65rem] leading-relaxed text-faint">
+            Withdrawing spends your own coin, which voids the pledge — the only way to take it back.
+            Costs {WITHDRAW_FEE_SATS} sats in fees.
           </p>
         </div>
       )}
@@ -235,7 +236,12 @@ export function ContributeCard({ s }: { s: SaleCardVM }) {
       {error && <p className="mt-3 break-words text-xs text-danger">⚠ {error}</p>}
 
       <p className="mt-3 flex items-center gap-1.5 font-mono text-xs text-teal">
-        <ShieldCheck width={14} height={14} /> trustless — funds never leave your wallet until the cap is met
+        <ShieldCheck width={14} height={14} /> non-custodial — your sats stay in your own wallet
+      </p>
+      <p className="mt-1 font-mono text-[0.65rem] leading-relaxed text-faint">
+        A pledge fixes where your sats can go — only this project&rsquo;s payout address, never anywhere
+        else. It does not fix when: the signature stays valid until you withdraw, and the deadline is
+        enforced by this app, not by the blockchain.
       </p>
     </div>
   );
