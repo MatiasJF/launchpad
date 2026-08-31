@@ -60,6 +60,8 @@ present, not implemented.
 - Pledge server actions → `apps/web/lib/escrow-actions.ts` (`recordPledge` with on-chain + signature validation · `reconcileWithdrawnPledges` · `getMyPledges` · `markPledgeWithdrawn` · `getPledgesForAssembly` · `markAssemblyBroadcast`)
 - Escrow presale mainnet round-trip → `apps/web/scripts/e2e-presale.mjs` (`pnpm --filter @launchpad/web e2e:presale`; `--deliver=<saleId>` resumes delivery once the vault confirms)
 - Mainnet run txid ledgers → `docs/mainnet-runs/*.jsonl` (one record per broadcast, so a run's proof outlives the scrollback)
+- Recover a stranded derived output (ADR-035) → `packages/bsv/src/recover/` (`recoverDerivedOutput`, `internalizeRecovered`) · operator bench at `apps/web/app/admin/recover/` + `components/RecoverStranded.tsx`
+- Refund internalisation (a reclaim only lands once the wallet adopts it) → `internalizePledgeRefund` in `packages/bsv/src/pledge/index.ts`
 
 ## App
 

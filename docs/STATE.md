@@ -95,10 +95,24 @@ sees **both the pledge and the withdrawal** in the wallet. The withdrawal is the
 wallet never built it, so its presence is `internalizeAction` adopting the coin — the pre-fix attempt left
 no wallet record at all.
 
+**Both phases of ADR-025 are now proven (2026-08-31).** The presale's second phase — instant buy above
+the soft cap — was built in July and never exercised. The harness now covers it from both sides: an
+instant buy during the pledge phase is **refused** by `reserveOrder` (not merely hidden by the UI), and
+once pledges are assembled the sale switches over and a real buy goes through — 5 tokens for 500 sats
+paid on-chain, verified server-side by `verifyPaymentToAddress` against a cost the client never supplies.
+A buy beyond the allocation is still refused (*"only 5 tokens left in this sale"*).
+
+The two order kinds settle **together**: delivery `bc05f10b…` paid 10 tokens (pledge A → client), 10
+(pledge C → operator) and 5 (top-up → operator) in one transaction, with 15 of the 40 minted as change.
+Twelve steps green.
+
+**Stranded-output recovery shipped.** `@launchpad/bsv/recover` (`recoverDerivedOutput` +
+`internalizeRecovered`) sweeps a coin the wallet can derive but never adopted — the pre-ADR-035 refunds.
+Driven from `/admin/recover`, since only the owner's wallet can sign. `signP2pkhInput` gained an optional
+`derivationOverride` so an output locked to a non-BRC-29 derivation can be spent at all.
+
 **Open:** the harness **cannot** verify internalisation (`FlatKeyWallet.internalizeAction` is a no-op
-stub), so that step needs a real wallet each time — it prints that limit rather than implying a pass. The
-970 sats from the pre-fix `572a0609…` remain recoverable but stranded. Still untested: the instant-buy
-top-up above the soft cap.
+stub), so that step needs a real wallet each time — it prints that limit rather than implying a pass.
 
 ## The external audit is OUT, and ADR-032 waits on it (2026-08-28)
 

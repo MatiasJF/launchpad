@@ -59,7 +59,7 @@ const { createPledge, assembleAssuranceTx, withdrawPledge, PLEDGE_BASKET } = awa
 const { issueStasGenesis } = await import('@launchpad/bsv/genesis');
 const { batchTransferStas, MAX_BATCH_RECIPIENTS } = await import('@launchpad/bsv/settle');
 const { signP2pkhInput } = await import('@launchpad/bsv/settle/p2pkh');
-const { Transaction, KeyDeriver, PrivateKey } = await import('@bsv/sdk');
+const { Transaction, KeyDeriver, PrivateKey, P2PKH } = await import('@bsv/sdk');
 const { FlatKeyWallet } = await import('./lib/flat-key-wallet.mjs');
 
 // ── reporter ──────────────────────────────────────────────────────────────────────
@@ -303,6 +303,12 @@ async function main() {
     const bRow = await prisma.pledge.findFirst({ where: { saleId: state.sale.id, txid: b.utxo.txid, vout: b.utxo.vout } });
     if (!bRow) throw fail('pledge B row not found after recordPledge', {});
     state.pledgeBId = bRow.id;
+    // The two phases are exclusive: while pledges are still being gathered there is
+    // nothing to buy, and reserveOrder — not just the UI — has to say so.
+    const early = await O.reserveOrder({ projectId: state.project.id, buyerIdentity: opIdentity, receiveAddress: op.address, tokens: 1 });
+    kv('buy in pledge phase', early.ok ? 'ALLOWED' : `refused — ${early.error}`);
+    if (early.ok) throw fail('an instant buy was accepted during the pledge phase', {});
+
     const st = await E.getPresaleState(state.sale.id);
     kv('raised', `${st.raisedSats} / ${SOFT_CAP} sats  (${st.pledgeCount} pledges)`);
     if (Number(st.raisedSats) !== SOFT_CAP) throw fail(`raised ${st.raisedSats} != soft cap ${SOFT_CAP}`, {});
@@ -484,11 +490,56 @@ async function main() {
     state.orderIds = orders.map((o) => o.id);
   });
 
+  // 9.5 ── THE SECOND PHASE: instant buy above the soft cap ────────────────────────
+  await step('TOP-UP — with the soft cap funded, the sale switches to instant buy', async () => {
+    const TOKENS = 5, cost = TOKENS * PRICE;
+    const vm = await prisma.pledge.count({ where: { saleId: state.sale.id, state: 'assembled' } });
+    kv('assembled pledges', `${vm} (this is what flips the sale to its buy phase)`);
+
+    const res = await O.reserveOrder({
+      projectId: state.project.id, buyerIdentity: opIdentity, receiveAddress: op.address, tokens: TOKENS,
+    });
+    if (!res.ok) throw fail(`reserveOrder refused after the soft cap was funded: ${res.error}`, {});
+    kv('reserved', `${res.orderId} for ${TOKENS} tokens (${cost} sats)`);
+
+    // Buyer pays the project's payout address. The cost is recomputed server-side in
+    // confirmOrderPayment and verified ON-CHAIN, so the number sent here is not trusted.
+    const payScript = new P2PKH().lock(client.address).toHex();
+    const pay = await opWallet.createAction({
+      description: 'presale top-up payment',
+      outputs: [{ lockingScript: payScript, satoshis: cost, outputDescription: 'top-up' }],
+      options: { randomizeOutputs: false, acceptDelayedBroadcast: false },
+    }, ORIGINATOR);
+    if (!pay?.txid) throw fail('top-up payment createAction returned no txid', {});
+    let payRaw = ''; try { payRaw = Transaction.fromAtomicBEEF(pay.tx).toHex(); } catch { payRaw = ''; }
+    const bc = await broadcastRawTx(payRaw, pay.txid);
+    if (!bc.ok && !/already|known/i.test(bc.error ?? '')) throw fail(`top-up payment broadcast rejected: ${bc.error}`, {});
+    const payTxid = bc.txid || pay.txid;
+    record({ txid: payTxid, purpose: 'topup-payment', satoshis: cost, tokens: TOKENS });
+    kv('paid', `${cost} sats -> ${client.address}  ${wocTx(payTxid)}`);
+
+    const conf = await O.confirmOrderPayment(res.orderId, cost, payTxid);
+    if (!conf.ok) throw fail(`confirmOrderPayment failed: ${conf.error}`, {});
+    const order = await prisma.order.findUnique({ where: { id: res.orderId } });
+    kv('order', `${order.kind} ${order.tokens} tokens state=${order.state}`);
+    if (order.state !== 'pending') throw fail(`order is ${order.state}, not settle-eligible`, {});
+    state.topUpOrderId = res.orderId;
+
+    // Over-selling the hard cap must still be impossible.
+    const over = await O.reserveOrder({
+      projectId: state.project.id, buyerIdentity: opIdentity, receiveAddress: op.address, tokens: 9999,
+    });
+    kv('over hard cap', over.ok ? 'ALLOWED' : `refused — ${over.error}`);
+    if (over.ok) throw fail('a buy beyond the sale allocation was accepted', {});
+  });
+
   // 10 ── DELIVER the tokens (mirrors ProjectManage.batchSettle exactly) ──────────
   await step('DELIVER — batch-settle the contribution orders into real STAS', async () => {
     const batch = await O.getBatchForSale(state.sale.id);
     if (!batch.ok) throw fail(`getBatchForSale failed: ${batch.error} — escrow contributions never surface for settlement`, {});
     kv('recipients', batch.recipients.map((r) => `${r.amount}->${r.address.slice(0, 10)}…`).join(', '));
+    const kinds = await prisma.order.groupBy({ by: ['kind'], where: { saleId: state.sale.id, state: 'pending' }, _count: true });
+    kv('order kinds', kinds.map((k) => `${k.kind}x${k._count}`).join(' + ') + '  (pledges and top-ups settle together)');
 
     const pool0 = await resolveCurrentPool(batch.mintTxid);
     if ('error' in pool0) throw fail(`resolveCurrentPool: ${pool0.error}`, {});

@@ -22,6 +22,14 @@ export interface SignP2pkhInputArgs {
   sourceSatoshis: number;
   sighashType: number;
   originator: string;
+  /**
+   * Override the key this input is signed with. Defaults to the BRC-29 triple the
+   * two-tx flow locks its funding output to. Needed to spend a coin locked to some
+   * OTHER derivation the wallet owns — e.g. sweeping an output that was paid to a
+   * derived address and never adopted, where the original keyID was not a BRC-29
+   * nonce pair.
+   */
+  derivationOverride?: { protocolID: WalletProtocol; keyID: string; counterparty: 'self' | 'anyone' | string; forSelf?: boolean };
 }
 
 /** Returns the funding input's unlocking script hex (`<DER sig + sighash> <pubkey>`). */
@@ -39,7 +47,7 @@ export async function signP2pkhInput(args: SignP2pkhInputArgs): Promise<string> 
     originator,
   } = args;
 
-  const derivation = {
+  const derivation = args.derivationOverride ?? {
     protocolID: BRC29_PROTOCOL_ID,
     keyID: `${derivationPrefix} ${derivationSuffix}`,
     counterparty: 'anyone' as const,

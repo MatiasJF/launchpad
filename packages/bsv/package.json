@@ -13,6 +13,7 @@
     "./receive": "./src/receive/index.ts",
     "./genesis": "./src/issue/genesis.ts",
     "./pledge": "./src/pledge/index.ts",
+    "./recover": "./src/recover/index.ts",
     "./settle/funding": "./src/settle/twoTx/fundingOutput.ts",
     "./settle/p2pkh": "./src/settle/twoTx/p2pkhInput.ts",
     "./settle/base-funding": "./src/settle/operatorBaseFunding.ts"
