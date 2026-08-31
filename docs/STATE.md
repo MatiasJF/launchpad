@@ -85,9 +85,15 @@ derives its own BRC-29 self-payment destination (no caller-supplied address — 
 returns an atomic BEEF, and `internalizePledgeRefund` calls `internalizeAction` so the wallet actually
 adopts the coin. The card reports "in your balance" and "on-chain but not adopted" as different outcomes.
 
-The basket stays — it keeps a pledge out of the change pool so the wallet cannot spend it from under a
-live signature — but the claim of native user-facing visibility is **withdrawn**. The app, not the wallet,
-is where a contributor sees their pledges.
+**The basket is inert, and ADR-033's pledge-visibility fix did nothing** (corrected in ADR-035 after the
+owner reported a second time that no such basket exists). `createAction` does honour the tag
+(`createAction.js:327`), but the two benefits claimed for it are not real: change is only ever drawn from
+the `default` basket (`:53`, `:661`) and explicit outputs are `change: false` regardless (`:135`), so it
+protects nothing that was at risk; and nothing in the codebase reads `PLEDGE_BASKET` back — the only
+reference was a harness diagnostic against a shim whose `listOutputs` ignores its arguments, so it printed
+a meaningless count that read as a pass. The pledge appears in the wallet because the wallet **built that
+transaction**. The tag is kept as a free, correct label, but no claim rests on it. **The app, not the
+wallet, is where a contributor sees their pledges.**
 
 **Retested in BSV Desktop and it holds.** Pledge `47bd0a33…` reclaimed by `20b11ff8…`, 970 sats to
 `14xJ3cUu…` (a fresh BRC-29 payment key, not the STAS key that stranded the first attempt), and the owner

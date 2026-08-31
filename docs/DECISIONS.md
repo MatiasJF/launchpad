@@ -579,9 +579,31 @@ Append-only; newest at the bottom. Template per entry:
 
 - **The basket question is answered, negatively.** ADR-033 left "does BSV Desktop display a
   `launchpad-pledge` basket" open. It does not — no such basket appears, though the funding transaction
-  shows in history under its description. The basket is **kept**: it stops the wallet spending a pledge
+  shows in history under its description. ~~The basket is **kept**: it stops the wallet spending a pledge
   as change and voids nothing, and it makes the coin findable via `listOutputs({ basket })`. But it buys
-  **programmatic** visibility only, and the claim of native user-facing visibility is withdrawn.
+  **programmatic** visibility only, and the claim of native user-facing visibility is withdrawn.~~
+
+  **Correction, 2026-08-31 (same day), after the owner reported a second time that no such basket exists
+  anywhere.** The struck sentence was wrong twice and was not checked before being written down.
+  Verified against `@bsv/wallet-toolbox@2.4.20`:
+  - `createAction.js:327` **does** honour a per-output `basket`, so the tag is applied. That much holds.
+  - *"It stops the wallet spending a pledge as change"* is **false**. `changeBasketName = 'default'`
+    (`:53`) and change is only ever allocated from that basket (`:661`); explicit outputs are recorded
+    `change: false` (`:135`) whether or not a basket is given. An explicit output was never in the change
+    pool, so the basket protects nothing that was ever at risk.
+  - *"Findable via `listOutputs({ basket })`"* is true in principle and **worth nothing here**: no code
+    reads `PLEDGE_BASKET` back. The sole reference was a harness diagnostic running against
+    `FlatKeyWallet`, whose `listOutputs` ignores its arguments and returns base UTXOs — so it printed a
+    count that read as a pass and meant nothing. That line has been replaced with an explicit
+    "not verifiable here".
+
+  **So the basket is honoured but inert, and ADR-033's pledge-visibility fix did nothing.** The pledge is
+  visible in the wallet because the wallet *built that transaction*, not because of the basket. The tag
+  is kept — it is free, semantically correct, and the only thing that would make a wallet-side
+  cross-check of pledges possible — but it is a label, not a mechanism, and no claim rests on it.
+  **The app, not the wallet, is where a contributor sees their pledges.**
+
+  The real fix in this ADR is the refund internalisation, which was independently confirmed to work.
 
 - **Consequences.** The app — not the wallet — is the interface for seeing pledges, and that is now what
   the docs say. One item stays open and cannot be closed from here: **the harness cannot verify

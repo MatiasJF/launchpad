@@ -316,11 +316,12 @@ async function main() {
 
   // 5 ── THE TRUSTLESS REFUND: contributor B reclaims their own pledge ────────────
   await step('WITHDRAW — contributor B reclaims their pledge with no operator cooperation', async () => {
-    // The pledge must be visible to the contributor's own wallet, or "just spend
-    // that coin" is advice they cannot act on. A basketless output is invisible to
-    // listOutputs and never selected — which is what shipped before.
-    const listed = await clientWallet.listOutputs({ basket: PLEDGE_BASKET, limit: 100 }, ORIGINATOR).catch(() => null);
-    kv('pledge basket', `${PLEDGE_BASKET} → ${listed ? `${(listed.outputs ?? []).length} output(s) visible` : 'listOutputs unsupported by this shim'}`);
+    // NOT a basket check. FlatKeyWallet.listOutputs ignores its arguments and returns
+    // base UTXOs, so querying PLEDGE_BASKET here once printed a count that looked like
+    // a pass and meant nothing. Whether a wallet honours or shows a basket cannot be
+    // answered by this shim; it took a real wallet to find out that it does neither
+    // usefully. Left as a label only.
+    kv('pledge basket', `${PLEDGE_BASKET} — set on the output; NOT verifiable here (shim ignores basket)`);
 
     const b = state.pledgeB;
     const src = await getSourceBeefDeep(b.utxo.txid);
