@@ -1,0 +1,10 @@
+{"broadcastAt":"2026-08-31T11:37:15.670Z","txid":"1a390205bd98c378cf5948cd76381c125ec1211bb8522d2186b8420cef6936e7","purpose":"stas-contract"}
+{"broadcastAt":"2026-08-31T11:37:15.738Z","txid":"5541d0279e865042974f2b9a83e2dd09ede3123845cde4f955623f9e639e5344","purpose":"stas-genesis","tokenId":"fac93f4b5af2974f39af8466447d68552af68092"}
+{"broadcastAt":"2026-08-31T11:37:38.725Z","txid":"fada22c2565c75ac4ad200ca2eaa2dbf28a6efb55ad2e2fd730ed3ab64a3671b","purpose":"pledge-funding-A","satoshis":1000,"contributor":"client"}
+{"broadcastAt":"2026-08-31T11:37:54.857Z","txid":"b2a094fa31336440a3bbb72f29a59400c7ea42660d347d3624b6436b2e5e1fd8","purpose":"pledge-funding-B","satoshis":1000,"contributor":"operator-as-contributor"}
+{"broadcastAt":"2026-08-31T11:38:27.027Z","txid":"499da880ddf2dffb3cda2645b1a76eee0942310b4c8def98435938c6c935c515","purpose":"pledge-withdraw-B","reclaimed":970}
+{"broadcastAt":"2026-08-31T11:38:38.842Z","txid":"9d03157fd0fcf3468219f736d94ed069c7fd802158d2aaffffc179b796b864ee","purpose":"pledge-funding-C","satoshis":1000,"contributor":"operator-as-contributor"}
+{"broadcastAt":"2026-08-31T11:39:15.719Z","txid":"5dc38b4c529934de3ffa8213cce2a64b84727af20cabfb38dc8d2216c79b178f","purpose":"assurance","estimatedFeeSats":40,"pledgeCount":2}
+{"broadcastAt":"2026-08-31T11:39:18.696Z","txid":"5dc38b4c529934de3ffa8213cce2a64b84727af20cabfb38dc8d2216c79b178f","purpose":"assurance-verified","trueSize":487,"feePaid":40,"feeRate":0.0821}
+{"broadcastAt":"2026-08-31T11:39:29.953Z","txid":"d79e7f9b58f74c4d8417397167543679fce6b791059ecfa8520067fa346b250b","purpose":"topup-payment","satoshis":500,"tokens":5}
+{"broadcastAt":"2026-08-31T11:39:30.514Z","txid":"5541d0279e865042974f2b9a83e2dd09ede3123845cde4f955623f9e639e5344","purpose":"delivery-deferred-unconfirmed-vault","saleId":"cmth5xs5k000441ggz2rr5jhu"}

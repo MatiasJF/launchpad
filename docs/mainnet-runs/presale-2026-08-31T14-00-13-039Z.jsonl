@@ -1,0 +1,5 @@
+{"broadcastAt":"2026-08-31T14:01:50.678Z","txid":"2fb0244affa13b6c4387d6403724d6c2d7fd804511c03e057b6ea317619b18ef","purpose":"stas-contract"}
+{"broadcastAt":"2026-08-31T14:01:50.749Z","txid":"a7f9325c1f98a0ecb09efa10e690b0b8b38a9b1ed7c5b2e26864842cfb231f55","purpose":"stas-genesis","tokenId":"6558fb46808687adf000103e124cd07aab4b2eb9"}
+{"broadcastAt":"2026-08-31T14:02:35.067Z","txid":"1eee2db300b68221f45c8f21689dade4eec721eb55fc9417c01d80987ec8841c","purpose":"pledge-funding-A","satoshis":1000,"contributor":"client"}
+{"broadcastAt":"2026-08-31T14:02:42.355Z","txid":"6ae2d1309274c3be8320349279761d7db56388ae90fc9a1535058b6b37aaca90","purpose":"pledge-funding-B","satoshis":1000,"contributor":"operator-as-contributor"}
+{"broadcastAt":"2026-08-31T14:02:48.413Z","txid":"444ee99c212573d0db083eb3d1c5087b7dd874b9b14c87095237b9e07cc50e8f","purpose":"pledge-withdraw-B","reclaimed":970}
