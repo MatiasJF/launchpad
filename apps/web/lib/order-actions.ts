@@ -4,7 +4,7 @@ import { prisma } from '@launchpad/db';
 import type { Prisma } from '@launchpad/db';
 import { revalidatePath } from 'next/cache';
 import { isAdmin } from './auth';
-import { verifyPaymentToAddress } from './settle-actions';
+import { verifyPaymentToAddress , getTxStatus } from './settle-actions';
 
 /**
  * How long a reservation holds its slice of the allocation before it lazily
@@ -318,4 +318,56 @@ export async function markOrderSettled(orderId: string, transferTxid: string): P
     data: { entity: 'Order', entityId: orderId, type: 'settled', payloadHash: transferTxid },
   });
   revalidatePath('/admin');
+}
+
+/**
+ * Un-settle orders whose delivery transaction has vanished.
+ *
+ * `markOrdersSettled` flips orders to `settled` the moment the transfer is BROADCAST, so
+ * between broadcast and a block the database asserts a delivery that has not happened
+ * yet. Usually that resolves itself — measured on mainnet, a 0.05 sat/B delivery took
+ * ~19 blocks but did land (ADR-036). The bad case is eviction: a transaction dropped
+ * from every mempool leaves orders marked delivered forever, and `portfolio-actions`
+ * shows those tokens to a buyer who does not have them.
+ *
+ * Reverting is deliberately hard to trigger: ONLY a definitive 404 counts. An
+ * unreachable API returns `known: null` and nothing is touched, because un-settling a
+ * real delivery would be far worse than briefly over-claiming one.
+ */
+export async function reconcileSettlements(saleId?: string): Promise<{ reverted: number; checked: number }> {
+  const orders = await prisma.order.findMany({
+    where: { state: 'settled', txid: { not: null }, ...(saleId ? { saleId } : {}) },
+    select: { id: true, txid: true },
+  });
+  if (orders.length === 0) return { reverted: 0, checked: 0 };
+
+  // One lookup per distinct transaction — a batch delivery settles many orders at once.
+  const byTxid = new Map<string, string[]>();
+  for (const o of orders) {
+    const t = o.txid as string;
+    byTxid.set(t, [...(byTxid.get(t) ?? []), o.id]);
+  }
+
+  const gone: { id: string; txid: string }[] = [];
+  for (const [txid, ids] of byTxid) {
+    const st = await getTxStatus(txid);
+    if (st.known === false) for (const id of ids) gone.push({ id, txid });
+  }
+
+  if (gone.length) {
+    await prisma.$transaction([
+      prisma.order.updateMany({
+        where: { id: { in: gone.map((g) => g.id) } },
+        // Back to pending so the batch settle picks them up again; drop the dead txid
+        // so nothing keeps pointing at a transaction that no longer exists.
+        data: { state: 'pending', txid: null },
+      }),
+      prisma.event.createMany({
+        data: gone.map((g) => ({ entity: 'Order', entityId: g.id, type: 'settlement_reverted', payloadHash: g.txid })),
+      }),
+    ]);
+    revalidatePath('/');
+    revalidatePath('/admin');
+  }
+  return { reverted: gone.length, checked: byTxid.size };
 }

@@ -1,0 +1,10 @@
+{"broadcastAt":"2026-08-31T14:04:41.714Z","txid":"b0345c35ab9f93b7717ea0d417a653afda1e6994c4b2729170c4d9e45abb9044","purpose":"stas-contract"}
+{"broadcastAt":"2026-08-31T14:04:41.799Z","txid":"564e90265ef88b96be203c5b32294be91f867bdc3e36da92dc569904228293e9","purpose":"stas-genesis","tokenId":"41045c0633ec0f2bed6cbe0c6ab5eff3ad2b5c77"}
+{"broadcastAt":"2026-08-31T14:05:20.008Z","txid":"c0f338452bb55d8f23ac177cea711c685dca1f02f9abe95af6f73702e5edc67a","purpose":"pledge-funding-A","satoshis":1000,"contributor":"client"}
+{"broadcastAt":"2026-08-31T14:05:27.711Z","txid":"3aa75061d31c88b0e9c7727bdeb120de12d29a1797df307aea72835f29534111","purpose":"pledge-funding-B","satoshis":1000,"contributor":"operator-as-contributor"}
+{"broadcastAt":"2026-08-31T14:05:30.637Z","txid":"0dfcbacafc5f3cdcc7dcea4d2d5257a4c4add83ea55b6b2d16cd832b971f24de","purpose":"pledge-withdraw-B","reclaimed":970}
+{"broadcastAt":"2026-08-31T14:05:43.487Z","txid":"ee248a626245627f12c19aada1e17edd34941a12cc75bd9fcaed71dd6037ce30","purpose":"pledge-funding-C","satoshis":1000,"contributor":"operator-as-contributor"}
+{"broadcastAt":"2026-08-31T14:06:40.626Z","txid":"f366a128d5744e53cac333f63a8d1574f9598e32df5ee9e9a68208c783396839","purpose":"assurance","estimatedFeeSats":40,"pledgeCount":2}
+{"broadcastAt":"2026-08-31T14:06:41.209Z","txid":"f366a128d5744e53cac333f63a8d1574f9598e32df5ee9e9a68208c783396839","purpose":"assurance-verified","trueSize":487,"feePaid":40,"feeRate":0.0821}
+{"broadcastAt":"2026-08-31T14:06:50.624Z","txid":"e4d6220822c8a26d13cc5c9e52299835ca66d93c03ebd7768adbd79c5542e1b9","purpose":"topup-payment","satoshis":500,"tokens":5}
+{"broadcastAt":"2026-08-31T14:07:40.155Z","txid":"11d2fb62c269b22c56e5c778a6fc61b2bb8ca6c2ef4756523d720a2b42ea3cf8","purpose":"stas-delivery-chunk-1","recipients":3}

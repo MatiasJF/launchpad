@@ -621,3 +621,99 @@ Append-only; newest at the bottom. Template per entry:
 - **Outstanding:** the 970 sats from `572a0609…` remain stranded at `1AFSVTV87bqa5wsWeTWa7Ehx6eQNfSqCYV`,
   the STAS-derived address of the pre-fix attempt. Provably the owner's and recoverable by re-deriving
   that key; the fix prevents recurrence but does not move them retroactively.
+
+---
+
+## ADR-036 · Batch delivery fee RAISED 0.05 → 0.1: buying confirmation LATENCY, not avoiding a floor · Accepted · 2026-08-31
+
+- **Context.** The shipped STAS path never got the calibration ADR-031 gave the curve: `batch.ts` sat at
+  `FEE_RATE = 0.05` and `settle/index.ts` at `0.1`, both picked conservatively and untested. Measured
+  against the 0.0101 sat/B the covenant refund proved mineable (block 964189), every delivery looked like
+  a **4.7x overpayment** — 377 sats on a 7,900-byte transaction that "should" have cost 80.
+
+- **The premise was wrong, and measuring inverted it.** Probing at **7,000 bytes** — the size a real batch
+  delivery actually is, per `calibrate-fee-rate.ts`'s own warning that the answer depends on size:
+
+  | rate | fee | result after 8 blocks |
+  |---|---|---|
+  | 0.15 | 1050 | **mined into the block it was broadcast** |
+  | 0.10 | 700 | **mined into the block it was broadcast** |
+  | 0.05 | 350 | still unconfirmed |
+  | 0.025 · 0.01 · 0.005 · 0.001 | 175 · 70 · 35 · 7 | still unconfirmed |
+
+  Production agreed. Of three real deliveries sent at 0.05: `170cc017` mined in block 964690; `da8b0d47`
+  and `bc05f10b` were **still in the mempool 18 blocks later**. One in three.
+
+  So `batch.ts` was not generous, it was **underpaying**, and it had been getting away with it.
+
+- **Why the covenant's number does not transfer.** ADR-031 optimised a curve spend whose successors chain
+  on *unconfirmed* outputs, so a slow confirmation costs nothing but nerves. A STAS delivery chains onto
+  the previous delivery's token change, and `getSourceBeef` needs a **merkle proof** — so an unmined
+  delivery blocks every delivery behind it. That is exactly why the presale harness needed a `--deliver`
+  resume mode. Here, underpaying does not save money; it converts fees into a stalled settlement queue.
+
+- **Decision.** `batch.ts` goes to **0.1**, matching `settle/index.ts` — the only rate observed mineable at
+  this size today. Recorded in the code, not just here, because the next person will have the same
+  "we're overpaying" instinct.
+
+- **0.1 is the FLOOR, not a cushion.** It is the lowest rate seen mined, so it has no headroom, and the
+  tool's own advice is to sit above the floor rather than on it. Deliberately not raised further: 0.1 is
+  what `settle/index.ts` has always used in production without trouble, and inventing a higher number
+  without evidence is the mistake that produced 0.05. **If deliveries start lagging, re-probe before
+  assuming the floor held** — `--probe --size 7000` then `--check --size 7000` (`--size` is required on
+  both; the state file is keyed by it).
+
+- **The floor moves.** `170cc017` was mined at 0.0475 in block 964690; ten blocks later nothing at or
+  below 0.05 could get in. ADR-031 established that a mineable rate is only proven *for the size probed*.
+  This adds: only for **the moment probed**. A calibration is a reading, not a constant.
+
+- **Left open, and it is not small.** `markOrdersSettled` flips orders to `settled` immediately after
+  broadcast, so a delivery that is merely *broadcast* is recorded as delivered. If a node evicts one
+  before it is mined, the database asserts a delivery that never happened — and ADR-031's settlement
+  record reads from that database. Same shape as ADR-035's lesson that broadcasting is not finishing.
+  Not fixed here; raising the fee shortens the exposure window, which is not the same as closing it.
+
+- ### Correction, 2026-08-31, ~2 hours after the above was written
+
+  **Everything got mined, including 0.001 sat/B.** Block 964709 swept the entire low-fee backlog. The
+  probes were broadcast around block 964699:
+
+  | rate | fee | mined in | latency |
+  |---|---|---|---|
+  | 0.15 · 0.10 | 1050 · 700 | **964700** | ~1 block |
+  | 0.05 · 0.025 · 0.01 · 0.005 · 0.001 | 350 · 175 · 70 · 35 · **7** | **964709** | ~10 blocks |
+
+  Both "stuck" production deliveries (`da8b0d47`, `bc05f10b`) also landed in 964709, ~19 blocks after
+  broadcast. So the claim above — *"0.05 was still unconfirmed"* — was true when written and **wrong as a
+  conclusion**. It is not that low rates fail to be mined. **At 7 KB there is no observable floor at all,
+  down to 7 satoshis; there is a latency gradient.**
+
+  **The decision does not change, but its justification does.** The real trade is:
+  - **0.1** → mined in ~1 block, 700 sats per 7 KB
+  - **≤0.05** → mined in ~10 blocks (≈1.5–2 hours), 350 sats or less
+
+  For this path that latency is the cost, because the next delivery chains onto this one's token change
+  and `getSourceBeef` needs a merkle proof. A project settling several batches serially would wait hours
+  between them. Paying 350 extra satoshis to turn ~2 hours into ~10 minutes is the right trade — but it
+  is a **latency purchase**, not a correctness fix, and this ADR should never have implied otherwise.
+
+  **This is the second time in one task that an 8-block window produced a confident wrong answer**, the
+  first being the 2-block `--check`. Both times the data was real and the window was the flaw. The
+  standing rule from ADR-031 needs a third clause: a mineable rate is proven for the size probed, the
+  moment probed, **and only after the backlog behind it has cleared**.
+
+- **The open item above is now closed.** `reconcileSettlements(saleId?)` un-settles orders whose delivery
+  transaction has vanished: one lookup per distinct txid (a batch settles many orders at once), reverting
+  to `pending` and clearing the dead `txid` so the batch settle picks them up again. It is wired into
+  `getProjectSettlementRecord` — the public claim that a project has paid its holders — which now also
+  counts only `state: 'settled'` mints rather than every `curve_graduation_mint` row.
+
+  **Reverting is deliberately hard to trigger: only a definitive 404 counts.** `getTxStatus` returns
+  `known: null` on any network trouble and nothing is touched, because un-settling a real delivery is far
+  worse than briefly over-claiming one. That distinction between *"no"* and *"don't know"* is the third
+  time it has mattered today — after `getOutputInfo` returning `null` for two different reasons, and
+  `/spent` answering 404 for both an unspent and a nonexistent output.
+
+  Verified against the live database: 38 settled orders across 27 distinct transactions, **0 reverted**,
+  with `known=true` for a mined delivery, `known=false` for a fabricated txid and `known=null` for a
+  malformed one.

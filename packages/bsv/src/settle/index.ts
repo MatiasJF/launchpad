@@ -165,6 +165,9 @@ export async function transferStas(
   //    It has been now — see ADR-031 and service/calibrate-fee-rate.ts. Left at 0.1 here
   //    because these are stas-js transfer paths, not the covenant spends that calibration
   //    covered, and lowering them needs its own measurement.
+  // Re-probed 2026-08-31 at 7,000 bytes: 0.1 was mined into the block it was broadcast,
+  // while everything at 0.05 and below sat unconfirmed for 8+ blocks. 0.1 is correct and
+  // is now also what batch.ts uses. It is the FLOOR, not a cushion — see batch.ts.
   const FEE_RATE = 0.1;
   const MIN_FEE = 40; // sats — floor so a small tx still relays
   const estTx2Size =

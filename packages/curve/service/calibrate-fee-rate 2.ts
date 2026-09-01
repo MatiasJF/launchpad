@@ -26,20 +26,10 @@ import { Transaction, P2PKH, PrivateKey, Script } from '@bsv/sdk';
 
 const WOC = 'https://api.whatsonchain.com/v1/bsv/main';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const STATE_FILE = path.resolve(__dirname, '../../../.fee-calibration.json');
 
-
-/**
- * Transaction size to probe at, in bytes. Defaults to an ADR-030 pool spend (~24.7KB, measured),
- * but is overridable with `--size N` because **the answer depends on it**: a node's absolute
- * minimum fee bites harder on a small transaction than a large one, so a rate proven mineable at
- * 24.7KB is NOT automatically mineable at Option B's ~7.4KB. Probe at the size you will actually
- * broadcast.
- */
-const sizeArg = process.argv.indexOf('--size');
-const POOL_TX_BYTES = sizeArg >= 0 ? Math.max(500, Number(process.argv[sizeArg + 1]) || 24_700) : 24_700;
-
-/** Probe state is per-size, so an Option B probe cannot clobber the ADR-030 one. */
-const STATE_FILE = path.resolve(__dirname, `../../../.fee-calibration-${POOL_TX_BYTES}.json`);
+/** The size a real ADR-030 pool spend actually is, measured on mainnet. */
+const POOL_TX_BYTES = 24_700;
 /** Descending: the first that is both accepted AND mined is the answer. */
 const RATES = [0.15, 0.10, 0.05, 0.025, 0.01, 0.005, 0.001];
 
@@ -154,24 +144,7 @@ async function probe() {
 }
 
 async function check() {
-  if (!fs.existsSync(STATE_FILE)) {
-    // The state file is keyed by SIZE, so `--check` without the same `--size` the probe
-    // used looks for a different run and reports "run --probe first" about a probe that
-    // did run. Say which sizes actually exist instead of sending the reader in circles.
-    const dir = path.dirname(STATE_FILE);
-    const found = fs
-      .readdirSync(dir)
-      .map((f) => /^\.fee-calibration-(\d+)\.json$/.exec(f)?.[1])
-      .filter(Boolean);
-    console.error(`no probe state for ${POOL_TX_BYTES}-byte transactions.`);
-    if (found.length) {
-      console.error(`probe state DOES exist for: ${found.join(', ')} bytes.`);
-      console.error(`--size must match the probe: --check --size ${found[0]}`);
-    } else {
-      console.error('run --probe first.');
-    }
-    process.exit(1);
-  }
+  if (!fs.existsSync(STATE_FILE)) { console.error('no probe state — run --probe first'); process.exit(1); }
   const { probes } = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) as { probes: Probe[] };
   log('Checking which probes were MINED (acceptance alone proves nothing)\n');
   log('  rate (sat/B) │    fee │ status');
